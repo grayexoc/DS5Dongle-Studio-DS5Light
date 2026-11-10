@@ -1,5 +1,5 @@
-DS5Light v1.0.0 — Modified
-통합 릴리즈 v1.0.0 / DS5Light v1.0.0 / Studio 펌웨어 v30.
+DS5Light v1.0.4 — Modified
+통합 릴리즈 v1.0.4 / DS5Light v1.0.4 / Studio 펌웨어 v32.
 SETUP_KO.md · RELEASE_NOTES.md
 
 실행
@@ -25,7 +25,6 @@ Studio 슬롯 목록은 동글에 저장된 프로필을 조회합니다. 불러
 Studio설정 → 추천 프리셋에서 프리셋과 저장 슬롯을 선택하고 저장 후 사용을 누릅니다.
 Studio Presert 폴더에는 DS_Native.json, Audio_Haptic_01.json, Audio_Haptic_02.json이 있습니다.
 현재 구성의 오디오햅틱 항목만 바꾸고 현재 트리거·자이로·매크로는 유지합니다. 이 현재 구성이 대상 슬롯의 다른 설정까지 대체하므로 덮어쓰기 전에 확인하세요.
-기존 studio-presets 포털 내보내기 파일은 현재 빌드에 포함하지 않습니다.
 
 마이크 버튼 키보드매핑
 설정 및 진단 탭에서 사용을 켜고 키 지정을 선택하세요. 기본값은 사용 안 함 / F8입니다.

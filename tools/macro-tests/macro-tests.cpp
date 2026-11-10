@@ -36,6 +36,8 @@ Config_body &get_config() { return g_cfg; }
 
 static bool g_suspended_stub = false;
 static bool g_wake_owns_stub = false;
+static bool g_ps_owns_stub = false;
+bool ps_shortcut_owns_keyboard() { return g_ps_owns_stub; }
 bool wake_host_is_suspended(void) { return g_suspended_stub; }
 bool wake_owns_keyboard(void)     { return g_wake_owns_stub; }
 
@@ -87,6 +89,7 @@ static void fresh_device() {
     g_cfg.macro_disable = MACRO_NONE_ENABLED;
     g_suspended_stub = false;
     g_wake_owns_stub = false;
+    g_ps_owns_stub = false;
     g_sent_n = 0;
     g_ep_ready = true;
     reset_report();

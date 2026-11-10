@@ -55,6 +55,7 @@ from ui_controls import circle_image, RadioChoice, CircleCheck, SectionTitle, Au
 from mute_shortcut import MuteShortcut, KEYS, MODIFIERS, binding_label, validate_binding
 
 from ui_controls import GlobalCaptureOverlay, RoundedCard, DiagnosticCanvas, draw_ui_symbol
+from ui_dpi import enable_dpi_awareness,install_dpi,fit_window,px,watch_scale,scale_styles
 
 from battery_status import BatteryMonitor
 
@@ -163,7 +164,7 @@ class Switch(tk.Canvas):
 
     def __init__(self,parent,variable,command):
 
-        super().__init__(parent,width=44,height=26,bg=CARD,highlightthickness=1,
+        super().__init__(parent,width=px(parent,44),height=px(parent,26),bg=CARD,highlightthickness=1,
 
                          highlightbackground=CARD,highlightcolor=ACCENT,takefocus=1,cursor='hand2')
 
@@ -177,7 +178,11 @@ class Switch(tk.Canvas):
 
         variable.trace_add('write',lambda *args:self.draw())
 
+        watch_scale(self,self._scale_switch)
         self.draw()
+
+    def _scale_switch(self):
+        self.configure(width=px(self,44),height=px(self,26));self.draw()
 
     def invoke(self):
 
@@ -199,17 +204,17 @@ class Switch(tk.Canvas):
 
         on=self.variable.get(); color=ACCENT if on and self.enabled else '#3a3832'
 
-        self.create_oval(2,3,22,23,fill=color,outline=color)
+        self.create_oval(*(px(self,v) for v in (2,3,22,23)),fill=color,outline=color)
 
-        self.create_oval(22,3,42,23,fill=color,outline=color)
+        self.create_oval(*(px(self,v) for v in (22,3,42,23)),fill=color,outline=color)
 
-        self.create_rectangle(12,3,32,23,fill=color,outline=color)
+        self.create_rectangle(*(px(self,v) for v in (12,3,32,23)),fill=color,outline=color)
 
         x=25 if on else 5
 
         knob='#2b2110' if on and self.enabled else '#c4c0b6' if self.enabled else '#77736b'
 
-        self.create_oval(x,6,x+14,20,fill=knob,outline=knob)
+        self.create_oval(*(px(self,v) for v in (x,6,x+14,20)),fill=knob,outline=knob)
 
 
 
@@ -281,31 +286,41 @@ class TabStrip(tk.Canvas):
 
         self.font=tkfont.Font(family=_ui_tr('맑은 고딕'),size=12,weight='bold')
 
-        self.icon_widths=[18 if icon in ('waveform','gear','sliders') else self.font.measure(icon) for icon in self.icons]
+        self._measure_tabs()
 
-        self.tab_padding=max(8,round((41-self.font.metrics('linespace'))/2))
+        self.bind('<Configure>',lambda _event:self.draw())
 
-        self.tab_widths=[self.font.measure(label)+self.icon_widths[i]+8+2*self.tab_padding for i,label in enumerate(labels)]
+        self.bind('<Motion>',self._motion); self.bind('<Leave>',self._leave); self.bind('<Button-1>',self._click)
 
-        self.label_tracking=[0.0]*len(labels)
+        watch_scale(self,self._scale_tabs)
+        self.draw()
 
-        if LANGUAGE=='ko' and len(labels)>=2:
+    def _measure_tabs(self):
+        self.icon_widths=[px(self,18) if icon in ('waveform','gear','sliders') else self.font.measure(icon) for icon in self.icons]
+
+        self.tab_padding=max(px(self,8),round((px(self,41)-self.font.metrics('linespace'))/2))
+
+        self.tab_widths=[self.font.measure(label)+self.icon_widths[i]+px(self,8)+2*self.tab_padding for i,label in enumerate(self.labels)]
+
+        self.label_tracking=[0.0]*len(self.labels)
+
+        if LANGUAGE=='ko' and len(self.labels)>=2:
 
             # Use Settings/Diagnostics as the base, with extra room for Studio.
 
             shared_width=self.tab_widths[1]
 
-            self.tab_widths=[shared_width]*len(labels)
+            self.tab_widths=[shared_width]*len(self.labels)
 
-            if len(labels)==3:
+            if len(self.labels)==3:
 
-                self.tab_widths[2]+=12
+                self.tab_widths[2]+=px(self,12)
 
-            for i,label in enumerate(labels):
+            for i,label in enumerate(self.labels):
 
                 if i==1: continue
 
-                label_room=self.tab_widths[i]-self.icon_widths[i]-8-2*self.tab_padding
+                label_room=self.tab_widths[i]-self.icon_widths[i]-px(self,8)-2*self.tab_padding
 
                 text_width=sum(self.font.measure(ch) for ch in label)
 
@@ -313,13 +328,10 @@ class TabStrip(tk.Canvas):
 
         self.tab_width=self.tab_widths[-1]
 
-        self.configure(width=sum(self.tab_widths)+8*(len(labels)-1))
+        self.configure(height=px(self,44),width=sum(self.tab_widths)+px(self,8)*(len(self.labels)-1))
 
-        self.bind('<Configure>',lambda _event:self.draw())
-
-        self.bind('<Motion>',self._motion); self.bind('<Leave>',self._leave); self.bind('<Button-1>',self._click)
-
-        self.draw()
+    def _scale_tabs(self):
+        self._measure_tabs();self.draw()
 
     def _motion(self,event):
 
@@ -355,7 +367,7 @@ class TabStrip(tk.Canvas):
 
     def _left(self,index):
 
-        left=sum(self.tab_widths[:index])+index*8
+        left=sum(self.tab_widths[:index])+index*px(self,8)
 
         return max(left,self.winfo_width()-self.tab_widths[index]) if len(self.labels)==3 and index==2 else left
 
@@ -367,7 +379,7 @@ class TabStrip(tk.Canvas):
 
             x=self._left(index)
 
-            width=self.tab_widths[index]; y=1; bottom=42
+            width=self.tab_widths[index]; y=px(self,1); bottom=px(self,42)
 
             selected=index==self.selected
 
@@ -395,23 +407,23 @@ class TabStrip(tk.Canvas):
 
                          if tracked else self.font.measure(label))
 
-            start=x+(width-icon_width-8-label_width)/2
+            start=x+(width-icon_width-px(self,8)-label_width)/2
 
             center_y=(y+bottom)/2
 
             if icon in ('waveform','gear','sliders'):
 
-                icon_size=18*.9 if icon in ('gear','sliders') else 18
+                icon_size=px(self,18)*.9 if icon in ('gear','sliders') else px(self,18)
 
-                draw_ui_symbol(self,icon,start+(icon_width-icon_size)/2,center_y-icon_size/2+2,icon_size,ACCENT,tags=(tag,f'icon-{index}'))
+                draw_ui_symbol(self,icon,start+(icon_width-icon_size)/2,center_y-icon_size/2+px(self,2),icon_size,ACCENT,tags=(tag,f'icon-{index}'))
 
             else:
 
-                self.create_text(start,center_y+2,text=icon,font=self.font,fill=ACCENT,anchor='w',tags=(tag,f'icon-{index}'))
+                self.create_text(start,center_y+px(self,2),text=icon,font=self.font,fill=ACCENT,anchor='w',tags=(tag,f'icon-{index}'))
 
             if tracked:
 
-                text_x=start+icon_width+8
+                text_x=start+icon_width+px(self,8)
 
                 for character in label:
 
@@ -423,7 +435,7 @@ class TabStrip(tk.Canvas):
 
             else:
 
-                self.create_text(start+icon_width+8,center_y,text=label,font=self.font,
+                self.create_text(start+icon_width+px(self,8),center_y,text=label,font=self.font,
 
                                  anchor='w',fill=foreground,tags=(tag,))
 
@@ -437,19 +449,24 @@ class HapticSlider(tk.Canvas):
 
     def __init__(self,parent,variable,command,maximum=100,reference=None,background=CARD,width=200):
 
-        super().__init__(parent,width=width,height=36 if reference is not None else 24,bg=background,highlightthickness=0,borderwidth=0,takefocus=1,cursor='hand2')
+        super().__init__(parent,width=px(parent,width),height=px(parent,36 if reference is not None else 24),bg=background,highlightthickness=0,borderwidth=0,takefocus=1,cursor='hand2')
 
         self.variable=variable; self.command=command; self.enabled=True
 
         self.label_font=tkfont.Font(family=_ui_tr('맑은 고딕'),size=7)
 
-        self.pad=max(9,(self.label_font.measure(f'{maximum}%')+1)//2+2) if reference is not None else 9
+        self.pad=max(px(self,9),(self.label_font.measure(f'{maximum}%')+1)//2+px(self,2)) if reference is not None else px(self,9)
 
-        self.maximum=maximum; self.reference=reference
+        self.maximum=maximum; self.reference=reference;self._logical_width=width
+        watch_scale(self,self._scale_slider)
 
         self.bind('<Configure>',lambda _event:self.draw()); self.bind('<Button-1>',self._click); self.bind('<B1-Motion>',self._drag)
 
         self.bind('<KeyPress>',self._key); variable.trace_add('write',lambda *_:self.draw()); self.draw()
+
+    def _scale_slider(self):
+        self.pad=max(px(self,9),(self.label_font.measure(f'{self.maximum}%')+1)//2+px(self,2)) if self.reference is not None else px(self,9)
+        self.configure(width=px(self,self._logical_width),height=px(self,36 if self.reference is not None else 24));self.draw()
 
     def _set_from_x(self,x):
 
@@ -490,36 +507,40 @@ class HapticSlider(tk.Canvas):
 
     def draw(self):
 
-        self.delete('all'); width=max(self.winfo_width(),2*self.pad+1); y=12; left=self.pad; right=width-self.pad
+        self.delete('all'); width=max(self.winfo_width(),2*self.pad+1); y=px(self,12); left=self.pad; right=width-self.pad
 
         knob=left+(right-left)*max(0,min(self.maximum,self.variable.get()))/self.maximum
 
-        self.create_rectangle(left,y-3,right,y+3,fill='#242321',outline=BORDER,width=1)
+        self.create_rectangle(left,y-px(self,3),right,y+px(self,3),fill='#242321',outline=BORDER,width=1)
 
         edge=ACCENT if self.enabled else DISABLED
 
-        if knob>left: self.create_rectangle(left,y-2,knob,y+2,fill=edge,outline=edge,width=0)
+        if knob>left: self.create_rectangle(left,y-px(self,2),knob,y+px(self,2),fill=edge,outline=edge,width=0)
 
-        self.create_oval(knob-7,y-7,knob+7,y+7,fill=CARD,outline=edge,width=2)
+        self.create_oval(knob-px(self,7),y-px(self,7),knob+px(self,7),y+px(self,7),fill=CARD,outline=edge,width=px(self,2))
 
-        self.create_oval(knob-2,y-2,knob+2,y+2,fill=edge,outline=edge)
+        self.create_oval(knob-px(self,2),y-px(self,2),knob+px(self,2),y+px(self,2),fill=edge,outline=edge)
 
         if self.reference is not None:
 
             ref=left+(right-left)*self.reference/self.maximum
 
-            self.create_line(ref,19,ref,23,fill=ACCENT)
+            self.create_line(ref,px(self,19),ref,px(self,23),fill=ACCENT)
 
             for x,label,anchor in ((left,'0%','nw'),(ref,f'{self.reference}%','n'),(right,f'{self.maximum}%','ne')):
 
-                self.create_text(x,23,text=label,anchor=anchor,fill=MUTED,font=self.label_font)
+                self.create_text(x,px(self,23),text=label,anchor=anchor,fill=MUTED,font=self.label_font)
 
 
 
 class App:
 
+    def _scale_cards(self):
+        self._dpi_cards.configure(height=px(self.root,256))
+
     def __init__(self,root):
 
+        install_dpi(root)
         self.root=root; self.engine=None; self.connection=None; self.last_render=None; self.device_channel_cache={}
 
         self.active_process_pid=None; self.active_process_started=None; self.active_process_name=None
@@ -543,7 +564,7 @@ class App:
 
         root.iconbitmap(default=str(Path(__file__).resolve().parent/'assets'/'dslight.ico'))
 
-        root.geometry('860x1000'); root.minsize(860,860)
+        fit_window(root,860,1000,logical=True,min_width=px(root,860),min_height=px(root,860))
 
         root.bind('<Map>',lambda event:root.after_idle(lambda:apply_windows_titlebar_theme(root)) if event.widget is root else None,add='+')
 
@@ -670,6 +691,7 @@ class App:
         style.configure('TScrollbar',background='#242424',troughcolor='#111110',arrowcolor=MUTED,bordercolor=BORDER,lightcolor=BORDER,darkcolor=BORDER,gripcount=0,relief='flat')
 
         style.map('TScrollbar',background=[('disabled','#202020'),('pressed','#484848'),('active','#363636')],arrowcolor=[('disabled',DISABLED),('active',FG)])
+        scale_styles(root,style,('.', 'Accent.Footer.TButton', 'Accent.TButton', 'Filter.TButton', 'Horizontal.TScale', 'Limiter.TCombobox', 'Muted.TLabel', 'Process.Treeview', 'Selected.Filter.TButton', 'Selected.TButton', 'Studio.TEntry', 'TButton', 'TCheckbutton', 'TCombobox', 'TEntry', 'TFrame', 'TLabel', 'TRadiobutton', 'TScrollbar', 'Treeview.Heading'))
 
         root.option_add('*TCombobox*Listbox.background','#111110'); root.option_add('*TCombobox*Listbox.foreground',FG)
 
@@ -717,15 +739,11 @@ class App:
 
         self.controls=replace(self.controls,mode='normal')
 
-        saved_width=max(860,min(10000,int(prefs.get('window_width',860))))
+        saved_width=max(860,min(10000,int(prefs.get('window_width',px(root,860)))))
 
-        saved_height=max(860,min(10000,int(prefs.get('window_height',1000))))
+        saved_height=max(860,min(10000,int(prefs.get('window_height',px(root,1000)))))
 
-        saved_width=min(saved_width,max(860,root.winfo_screenwidth()-80))
-
-        saved_height=min(saved_height,max(860,root.winfo_screenheight()-100))
-
-        root.geometry(f'{saved_width}x{saved_height}')
+        fit_window(root,saved_width,saved_height,min_width=px(root,860),min_height=px(root,860))
 
         self._preferences_ready=False; self._preferences_job=None
 
@@ -797,9 +815,9 @@ class App:
 
         outer=tk.Frame(root,bg=BG); outer.pack(fill='both',expand=True,padx=PAGE_MARGIN_X,pady=(PAGE_MARGIN_Y,PAGE_MARGIN_X)); outer.columnconfigure(0,weight=1); outer.rowconfigure(1,weight=1)
 
-        self.header=head=tk.Frame(outer,bg=BG,height=80)
+        self.header=head=tk.Frame(outer,bg=BG)
 
-        head.grid(row=0,column=0,sticky='ew',pady=(0,SPACE_LG));head.grid_propagate(False)
+        head.grid(row=0,column=0,sticky='ew',pady=(0,SPACE_LG))
 
         head.columnconfigure(0,weight=1);head.rowconfigure(0,weight=1)
 
@@ -982,7 +1000,8 @@ class App:
 
         self.studio=StudioPanel(self,self.studio_card.content)
 
-        cards=tk.Frame(self.game_page,bg=BG,height=256); cards.grid(row=2,column=0,sticky='ew'); cards.grid_propagate(False); cards.columnconfigure(0,weight=1,uniform='cards'); cards.columnconfigure(1,weight=1,uniform='cards'); cards.rowconfigure(0,weight=1)
+        cards=tk.Frame(self.game_page,bg=BG,height=px(root,256)); cards.grid(row=2,column=0,sticky='ew'); cards.grid_propagate(False); cards.columnconfigure(0,weight=1,uniform='cards'); cards.columnconfigure(1,weight=1,uniform='cards'); cards.rowconfigure(0,weight=1)
+        self._dpi_cards=cards;watch_scale(cards,self._scale_cards)
 
         left_box=self.card(cards); left_box.grid(row=0,column=0,sticky='nsew',padx=(0,SPACE_LG//2)); left=left_box.content
 
@@ -1206,7 +1225,7 @@ class App:
 
         self.footer=self.card(outer); self.footer.grid(row=2,column=0,sticky='ew',pady=(16,0))
 
-        self.footer.configure(height=88); self.footer.pack_propagate(False); footer=self.footer.content
+        footer=self.footer.content
 
         footer.columnconfigure(0,weight=1)
 
@@ -2856,6 +2875,7 @@ def smoke(app,report):
 
 def main():
 
+    enable_dpi_awareness()
     root=tk.Tk(); lock=None
 
     try:

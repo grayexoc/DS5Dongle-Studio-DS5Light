@@ -5,6 +5,7 @@ import zlib
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk
+from ui_dpi import px,ui_scale,watch_scale
 
 
 def widget_trace(widget, variable, callback):
@@ -78,18 +79,24 @@ class RoundedCard(tk.Frame):
         super().__init__(parent, bg=background, borderwidth=0,
                          highlightthickness=0)
         self._surface, self._outline, self._radius = surface, outline, radius
+        self._insets=(inset_x,inset_y)
         self._backdrop = tk.Canvas(self, bg=background, borderwidth=0,
                                    highlightthickness=0, takefocus=0)
         self._backdrop.place(x=0, y=0, relwidth=1, relheight=1, bordermode='ignore')
         self.content = tk.Frame(self, bg=surface, borderwidth=0, highlightthickness=0)
-        self.content.pack(fill='both', expand=True, padx=inset_x, pady=inset_y)
+        self.content.pack(fill='both', expand=True, padx=px(self,inset_x), pady=px(self,inset_y))
         self._backdrop.bind('<Configure>', self._draw_card)
+        watch_scale(self,self._scale_card)
 
-    def _draw_card(self, event):
+    def _scale_card(self):
+        self.content.pack_configure(padx=px(self,self._insets[0]),pady=px(self,self._insets[1]))
+        self._draw_card()
+
+    def _draw_card(self, event=None):
         canvas = self._backdrop
         canvas.delete('all')
-        left, top, right, bottom = .5, .5, event.width-1.5, event.height-1.5
-        r = min(self._radius, max(0, (right-left)/2), max(0, (bottom-top)/2))
+        left, top, right, bottom = .5, .5, canvas.winfo_width()-1.5, canvas.winfo_height()-1.5
+        r = min(px(self,self._radius), max(0, (right-left)/2), max(0, (bottom-top)/2))
         if r <= 0:
             return
         canvas.create_rectangle(left+r, top, right-r, bottom,
@@ -263,10 +270,21 @@ def install_combobox_selection_cleanup(root, foreground, background, disabled_fo
               selectforeground=[('disabled', disabled_foreground), ('!disabled', foreground)])
     root.option_add('*TCombobox.exportSelection', False)
 
+    def guard_wheel(event):
+        widget=event.widget
+        if not getattr(widget,'_wheel_selected',False):return 'break'
+
+    root.bind_class('DS5ComboWheel','<MouseWheel>',guard_wheel)
+    root.bind_class('DS5ComboWheel','<Button-1>',lambda e:setattr(e.widget,'_wheel_selected',True))
+    root.bind_class('DS5ComboWheel','<FocusOut>',lambda e:setattr(e.widget,'_wheel_selected',False))
+
     def schedule(event):
         widget = event.widget
         if not isinstance(widget, ttk.Combobox):
             return
+
+        tags=widget.bindtags()
+        if 'DS5ComboWheel' not in tags:widget.bindtags((tags[0],'DS5ComboWheel')+tags[1:])
 
         def clear():
             try:
@@ -287,6 +305,10 @@ def install_combobox_selection_cleanup(root, foreground, background, disabled_fo
 
 def circle_image(master, color, size=14, radio=False, selected=False):
     """Generate an antialiased transparent circle once, with no image library."""
+    root=master._root()
+    if not hasattr(root,'_circle_image_cache'):root._circle_image_cache={}
+    key=(color,size,radio,selected)
+    if key in root._circle_image_cache:return root._circle_image_cache[key]
     rgb=bytes.fromhex(color.lstrip('#'))
     radius=size/2-1
     rows=bytearray()
@@ -299,30 +321,31 @@ def circle_image(master, color, size=14, radio=False, selected=False):
                     d=((x+(sx+.5)/4-size/2)**2+(y+(sy+.5)/4-size/2)**2)**.5
                     visible=d<=radius
                     if radio:
-                        visible=radius-1.6<=d<=radius or selected and d<=radius*.45
+                        visible=radius-max(1.6,1.6*size/20)<=d<=radius or selected and d<=radius*.45
                     coverage+=bool(visible)
             rows.extend(rgb); rows.append(round(255*coverage/16))
     def chunk(name,data):
         return struct.pack('!I',len(data))+name+data+struct.pack('!I',zlib.crc32(name+data)&0xffffffff)
     png=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack('!2I5B',size,size,8,6,0,0,0))
     png+=chunk(b'IDAT',zlib.compress(bytes(rows)))+chunk(b'IEND',b'')
-    return tk.PhotoImage(master=master,data=base64.b64encode(png).decode('ascii'))
+    result=tk.PhotoImage(master=root,data=base64.b64encode(png).decode('ascii'))
+    root._circle_image_cache[key]=result
+    return result
 
 
 class RadioChoice(tk.Canvas):
     def __init__(self,parent,text,value,variable,command,background,foreground,muted,accent,disabled):
         self.font=tkfont.Font(family='맑은 고딕',size=10)
-        super().__init__(parent,width=self.font.measure(text)+30,height=28,bg=background,
+        super().__init__(parent,width=self.font.measure(text)+px(parent,30),height=max(px(parent,28),self.font.metrics('linespace')+px(parent,8)),bg=background,
                          highlightthickness=0,highlightbackground=background,highlightcolor=background,
                          takefocus=1,borderwidth=0,cursor='hand2')
         self.text=text; self.value=value; self.variable=variable; self.command=command
         self.foreground=foreground; self.disabled=disabled; self.enabled=True
-        self.icons={(enabled,selected):circle_image(self,accent if enabled and selected else muted if enabled else disabled,
-                                                  size=20,radio=True,selected=selected)
-                    for enabled in (True,False) for selected in (True,False)}
+        self._accent,self._muted=accent,muted;self._icon_scale=None
         widget_trace(self,self.variable,lambda *_:self.draw())
         self.bind('<Button-1>',lambda _:self.invoke())
         self.bind('<space>',lambda _:self.invoke()); self.bind('<Return>',lambda _:self.invoke())
+        watch_scale(self,self.draw)
         self.draw()
     def invoke(self):
         if self.enabled:
@@ -332,21 +355,27 @@ class RadioChoice(tk.Canvas):
         if enabled==self.enabled: return
         self.enabled=enabled; self.configure(takefocus=int(enabled),cursor='hand2' if enabled else 'arrow'); self.draw()
     def draw(self):
+        scale=ui_scale(self)
+        if self._icon_scale!=scale:
+            check=getattr(self,'_check_style',False)
+            self.icons={(enabled,selected):circle_image(self,
+                self._accent if enabled and selected else self.disabled if not enabled or check and selected else self._muted,
+                size=max(1,px(self,20)),radio=not selected if check else True,selected=selected)
+                for enabled in (True,False) for selected in (True,False)}
+            self._icon_scale=scale
+        height=max(px(self,28),self.font.metrics('linespace')+px(self,8))
+        self.configure(width=self.font.measure(self.text)+px(self,30),height=height)
         self.delete('all')
-        self.create_image(11,14,image=self.icons[(self.enabled,self.variable.get()==self.value)])
-        self.create_text(26,14,text=self.text,anchor='w',font=self.font,
+        self.create_image(px(self,11),height/2,image=self.icons[(self.enabled,self.variable.get()==self.value)])
+        self.create_text(px(self,26),height/2,text=self.text,anchor='w',font=self.font,
                          fill=self.foreground if self.enabled else self.disabled)
 
 
 class CircleCheck(RadioChoice):
     """Independent boolean setting, with a gold disk for its checked state."""
     def __init__(self,parent,text,variable,command,**colors):
+        self._check_style=True
         super().__init__(parent,text,True,variable,command,**colors)
-        self.icons={(enabled,selected):circle_image(self,
-                    colors['accent'] if enabled and selected else colors['disabled'] if selected else colors['muted'],
-                    size=20,radio=not selected)
-                    for enabled in (True,False) for selected in (True,False)}
-        self.draw()
     def invoke(self):
         if self.enabled:
             self.focus_set(); self.variable.set(not self.variable.get()); self.command()
@@ -357,20 +386,22 @@ class SectionTitle(tk.Canvas):
     """Bold section title with a gold symbol and compact tracking."""
     def __init__(self,parent,number,title,background,foreground,accent):
         self.font=tkfont.Font(family='맑은 고딕',size=12,weight='bold')
-        self.tracking=-1
-        def character_advance(character):
+        self.number,self.title,self._title_foreground,self._title_accent=number,title,foreground,accent
+        super().__init__(parent,bg=background,highlightthickness=0,borderwidth=0,takefocus=0)
+        watch_scale(self,self._draw_title);self._draw_title()
+
+    def _draw_title(self):
+        self.delete('all');self.tracking=-px(self,1)
+        def advance(character):
             width=self.font.measure(character)+self.tracking
             return width*.5 if character.isspace() else width
-        advance=lambda text:sum(character_advance(ch) for ch in text)
-        vector_icon=number in ('camera','filter','channels')
-        number_width=18 if vector_icon else advance(number); gap=4
-        super().__init__(parent,width=number_width+gap+advance(title)+4,
-                         height=self.font.metrics('linespace')+4,bg=background,
-                         highlightthickness=0,borderwidth=0,takefocus=0)
-        self.number=number; self.title=title
-        if vector_icon:
-            draw_ui_symbol(self,number,0,(self.font.metrics('linespace')+4-18)/2,18,accent)
-        for text,x,color in ((('' if vector_icon else number),0,accent),(title,number_width+gap,foreground)):
+        vector=self.number in ('camera','filter','channels')
+        icon=px(self,18);gap=px(self,4)
+        number_width=icon if vector else sum(advance(c) for c in self.number)
+        height=self.font.metrics('linespace')+px(self,4)
+        self.configure(width=number_width+gap+sum(advance(c) for c in self.title)+px(self,4),height=height)
+        if vector:draw_ui_symbol(self,self.number,0,(height-icon)/2,icon,self._title_accent)
+        for text,x,color in [(('' if vector else self.number),0,self._title_accent),(self.title,number_width+gap,self._title_foreground)]:
             for character in text:
-                self.create_text(x,1,text=character,anchor='nw',font=self.font,fill=color)
-                x+=character_advance(character)
+                self.create_text(x,px(self,1),text=character,anchor='nw',font=self.font,fill=color)
+                x+=advance(character)

@@ -1,5 +1,5 @@
-DS5Light v1.0.0 — Modified
-Combined release v1.0.0 / DS5Light v1.0.0 / Studio firmware v30.
+DS5Light v1.0.4 — Modified
+Combined release v1.0.4 / DS5Light v1.0.4 / Studio firmware v32.
 SETUP.md · RELEASE_NOTES.md
 
 Run
@@ -25,7 +25,6 @@ Without a saved profile selected, the Load button queries the available profiles
 In Studio settings → Recommended presets, choose a preset and a save slot, then Save and use.
 Studio Presert contains DS_Native.json, Audio_Haptic_01.json and Audio_Haptic_02.json.
 Only audio-haptics fields in the current configuration change; current triggers, gyro and macros remain. The resulting current configuration replaces the chosen slot, including its other settings.
-The legacy studio-presets portal exports are not shipped by the current build.
 
 Microphone button keyboard mapping
 Enable the feature under Devices & launch and select Set keys. The default is disabled / F8.

@@ -140,12 +140,13 @@ class MacroTools:
         from studio_button_names import NAMES
         source=' + '.join(n for i,n in enumerate(NAMES) if chord&(1<<i)) or _ui_tr('입력 미지정')
         keyname=lambda c:next((k for k,v in HID_KEYS.items() if v==c),f'HID {c}') if c else _ui_tr('미지정')
+        OUT_BUTTONS=list(OUT_BUTTONS)+[_ui_tr('프로필 {0}번').format(i) for i in range(1,9)]
         target=OUT_BUTTONS[data[17]] if data[17] and data[17]<len(OUT_BUTTONS) else ' + '.join(keyname(c) for c in data[7:11] if c) or _ui_tr('출력 미지정')
         if data[4]&32:
             source=_ui_tr('오른쪽 스틱') if data[4]&64 else _ui_tr('왼쪽 스틱')
             target=' · '.join(d+' '+keyname(c) for d,c in zip(('↑','→','↓','←'),data[7:11]))
         elif data[4]&128:source=(_ui_tr('오른쪽') if data[4]&4 else _ui_tr('왼쪽'))+_ui_tr(' 터치 · ')+[_ui_tr('위'),_ui_tr('아래'),_ui_tr('왼쪽'),_ui_tr('오른쪽')][data[4]&3]+_ui_tr(' 밀기')
-        return source+' → '+target+'\n'+CONDITIONS[condition(data)]+(_ui_tr(' · 조건 버튼 숨김') if data[5]&4 else '')
+        return (_ui_tr('[시프트] ') if data[5]&32 else '')+source+' → '+target+'\n'+CONDITIONS[condition(data)]+(_ui_tr(' · 전환 신호음') if data[5]&64 else '')+(_ui_tr(' · 조건 버튼 숨김') if data[5]&4 else '')
     def new_macro(self):
         if self.busy or not self.loaded:return
         if 'macro_disable' not in self.doc.values:self.progress.configure(text=_ui_tr('매크로 사용 설정을 먼저 읽어 주세요.'));return
@@ -155,7 +156,7 @@ class MacroTools:
             return
         index=next((i for i in range(32) if str(i) in self.doc.macros and not any(self.doc.macros[str(i)])),None)
         if index is None:self.progress.configure(text=_ui_tr('32개 매크로가 모두 사용 중입니다.'));return
-        row=[0]*35;row[11]=27;row[19:35]=_ui_tr('새 매크로 {0}').format(f'{index + 1:02d}').encode('utf-8').ljust(16,b'\0')
+        row=[0]*35;row[11]=27;row[5]=32 if getattr(self,'macro_layer',False) else 0;row[19:35]=_ui_tr('새 매크로 {0}').format(f'{index + 1:02d}').encode('utf-8').ljust(16,b'\0')
         # Keep a new row entirely inside the editor until explicitly committed.
         self.edit_macro(index,initial=row)
     def delete_macro(self,index):
@@ -196,33 +197,33 @@ class MacroTools:
         variable=tk.StringVar(value='' if value is None else format(value,'.5g'));self.vars[key]=variable
         lo,hi=(0,10) if key=='trigger_reduce' else f[5]
         varentry=variable
-        if key=='trigger_reduce':
+        if key in ('trigger_reduce','rumble_gain'):
             from studio_scope import trigger_display,trigger_raw
-            varentry=tk.StringVar(value='' if value is None else f'{trigger_display(value):g}')
+            display=lambda v:trigger_display(v) if key=='trigger_reduce' else v/100
+            varentry=tk.StringVar(value='' if value is None else f'{display(value):g}')
             def change(*_):
                 if getattr(self,'_syncing_fields',False):return
                 try:
                     v=float(varentry.get())
-                    if not 1<=v<=10:raise ValueError()
-                    variable.set(str(trigger_raw(v)))
-                except ValueError:self.invalid[key]=_ui_tr('적응형 트리거 세기는 1~10입니다.');self.update_state()
+                    if not 1<=v<=(10 if key=='trigger_reduce' else 2):raise ValueError()
+                    variable.set(str(trigger_raw(v) if key=='trigger_reduce' else round(v*100)))
+                except ValueError:self.invalid[key]=_ui_tr('적응형 트리거 세기는 1~10입니다.') if key=='trigger_reduce' else _ui_tr('일반 진동 세기는 1~2입니다.');self.update_state()
             widget_trace(box,varentry,change)
         valuebox=tk.Frame(box,bg=BG);valuebox.grid(row=0,column=1,sticky='e')
         entry=ttk.Entry(valuebox,style='Studio.TEntry',textvariable=varentry,width=4,justify='right',state='normal' if valid and not self.busy else 'disabled');entry.pack(side='left')
-        if key=='rumble_gain':tk.Label(valuebox,text='%',bg=BG,fg=MUTED).pack(side='left',padx=(3,0))
         if key=='inactive_time':tk.Label(valuebox,text=_ui_tr('분'),bg=BG,fg=MUTED).pack(side='left',padx=(5,0))
         if f[2]=='f32':lo=float(lo);hi=float(hi)
         marker,kind=reference_point(key)
-        slider=RangeSlider(box,variable,lo,hi,enabled=valid and not self.busy,marker=marker,marker_label=kind,trigger=key=='trigger_reduce')
+        slider=RangeSlider(box,variable,lo,hi,enabled=valid and not self.busy,marker=marker,marker_label=kind,trigger=key=='trigger_reduce',display_scale=100 if key=='rumble_gain' else 1)
         self.range_controls[key]=(entry,slider,title)
         self.field_views[key]=(title,[entry,slider],[])
         slider.grid(row=1,column=0,columnspan=2,sticky='ew',pady=(4,0))
         def changed(*_):
             self.number_changed(key,variable.get())
-            if key=='trigger_reduce':
+            if key in ('trigger_reduce','rumble_gain'):
                 try:
-                    display=f'{trigger_display(float(variable.get())):g}'
-                    if varentry.get()!=display:varentry.set(display)
+                    shown=f'{slider.display(float(variable.get())):g}'
+                    if varentry.get()!=shown:varentry.set(shown)
                 except ValueError:pass
         widget_trace(box,variable,changed)
     def render_macro_tools(self):
@@ -241,7 +242,7 @@ class MacroTools:
         try:
             data=json.loads(Path(name).read_text(encoding='utf-8-sig'));records=macro_records(data.get('macros',{}))
             for record in records.values():normalize_macro(record)
-            if not messagebox.askyesno(_ui_tr('공유 매핑 교체'),_ui_tr('모든 프로필이 공유하는 일반 매크로 정의를 편집에 불러옵니다. 공유 매핑·매크로 저장 전에는 전송되지 않습니다. 계속할까요?'),parent=self.parent):return
+            if not messagebox.askyesno(_ui_tr('공유 매핑 교체'),_ui_tr('모든 프로필이 공유하는 일반 매크로 정의를 편집에 불러옵니다. Pico 매핑·매크로 저장 전에는 전송되지 않습니다. 계속할까요?'),parent=self.parent):return
             # Motion definitions are excluded and remain untouched.
             for key,old in self.doc.macro_baseline.items():
                 if not old[4]&16:self.doc.macros[key]=records.get(key,[0]*35)

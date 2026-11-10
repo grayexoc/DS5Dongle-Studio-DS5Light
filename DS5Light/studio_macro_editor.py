@@ -15,7 +15,7 @@ class MacroEditor(InlineCapture):
     def __init__(self,ui,index,embedded=False,initial=None):
         from studio_settings_ui import BUTTONS,OUT_BUTTONS,HID_KEYS,CircleCheck
         self.ui=ui;self.index=index;self.draft=MacroDraft(initial if initial is not None else ui.doc.macros[str(index)])
-        self.BUTTONS=BUTTONS;self.OUT_BUTTONS=OUT_BUTTONS;self.HID_KEYS=HID_KEYS
+        self.BUTTONS=BUTTONS;self.OUT_BUTTONS=list(OUT_BUTTONS)+[_ui_tr('프로필 {0}번').format(i) for i in range(1,9)];OUT_BUTTONS=self.OUT_BUTTONS;self.HID_KEYS=HID_KEYS
         self.updating=False;self.closed=False;self.step=0;self.step_hosts=[]
         old=self.draft.initial
         self.embedded=embedded
@@ -36,6 +36,8 @@ class MacroEditor(InlineCapture):
         activation=tk.Frame(top,bg=BG);activation.grid(row=1,column=0,columnspan=2,sticky='w',pady=(8,0))
         CircleCheck(activation,text=_ui_tr('현재 프로필에서 사용'),variable=self.enabled,command=lambda:None,background=BG).pack(side='left')
         ui.help_icon(activation,_ui_tr('이 프로필에서 현재 행을 사용할지 선택합니다. 매핑·매크로 목록은 모든 프로필이 공유하며 사용 여부만 프로필별로 저장합니다.')).pack(side='left',padx=5)
+        layerbar=tk.Frame(top,bg=BG);layerbar.grid(row=5,column=0,columnspan=2,sticky='w',pady=6)
+        self._layerbar=layerbar
         stepbar=tk.Frame(top,bg=BG);stepbar.grid(row=2,column=0,columnspan=2,sticky='ew',pady=(12,0));self.step_buttons=[]
         for i,text in enumerate((_ui_tr('⌘ 실행 조건'),_ui_tr('▶ 실행 동작'))):
             button=ttk.Button(stepbar,text=text,command=lambda i=i:self.go_step(i),style='Filter.TButton');button.grid(row=0,column=i,sticky='ew',padx=(0,6));stepbar.columnconfigure(i,weight=1);self.step_buttons.append(button)
@@ -57,6 +59,8 @@ class MacroEditor(InlineCapture):
         self.output_kind=tk.StringVar(value=OUTPUTS[old['output_kind']]);self.output=tk.StringVar(value=OUT_BUTTONS[old['output']] if old['output']<len(OUT_BUTTONS) else '')
         self.hold=tk.StringVar(value=str(old['hold']));self.threshold=tk.StringVar(value=str(old['threshold'] or 48));self.release=tk.StringVar(value=str(old['release']))
         self.hide=tk.BooleanVar(value=old['hide']);self.always=tk.BooleanVar(value=old['always'])
+        self.layer=tk.BooleanVar(value=old['layer']);self.chime=tk.BooleanVar(value=old['chime'])
+        CircleCheck(self._layerbar,text=_ui_tr('시프트 레이어에서 사용'),variable=self.layer,command=lambda:None,background=BG).pack(side='left')
         self.buttons=[tk.BooleanVar(value=bool(old['chord']&(1<<i))) for i in range(len(BUTTONS))]
         self.keys=[tk.StringVar(value=next((k for k,v in HID_KEYS.items() if v==code),f'HID {code}')) for code in old['keys']]
         self.gestures={_ui_tr('왼쪽 스틱'):160,_ui_tr('오른쪽 스틱'):224}
@@ -92,6 +96,10 @@ class MacroEditor(InlineCapture):
         self.output_area=tk.Frame(two,bg=CARD);self.output_area.columnconfigure(1,weight=1);self.output_area.grid(row=2,column=0,columnspan=2,sticky='ew')
         self.output_control=ControllerChoice(self.output_area,textvariable=self.output,values=[]);self.form(self.output_area,0,_ui_tr('실행할 동작'),_ui_tr('원래 버튼 대신 보낼 단일 버튼 또는 마우스 동작입니다. 듀얼센스 출력 조합키는 현재 펌웨어 형식에서 지원하지 않습니다.'),self.output_control)
         self.output_record=ttk.Button(self.output_area,text=_ui_tr('버튼 눌러 지정'),command=lambda:self.start_capture('output'));self.output_record.grid(row=1,column=1,sticky='e',pady=6)
+        self.chime_area=tk.Frame(two,bg=CARD);self.chime_area.grid(row=5,column=0,columnspan=2,sticky='ew',pady=8)
+        CircleCheck(self.chime_area,text=_ui_tr('전환 신호음'),variable=self.chime,command=lambda:None,background=CARD).pack(side='left')
+        ttk.Button(self.chime_area,text=_ui_tr('미리듣기'),command=self.preview_chime).pack(side='left',padx=10)
+        tk.Label(self.chime_area,text=_ui_tr('듀얼센스 스피커 · 프로필 스피커 음량 적용'),bg=CARD,fg=MUTED).pack(side='left')
         self.key_area=tk.Frame(two,bg=CARD);self.key_area.grid(row=3,column=0,columnspan=2,sticky='ew',pady=8)
         self.key_controls=[];self.key_captions=[]
         for i,var in enumerate(self.keys):
@@ -122,9 +130,13 @@ class MacroEditor(InlineCapture):
         self.previous=ttk.Button(actions,text=_ui_tr('이전'),command=lambda:self.go_step(self.step-1),width=10);self.previous.pack(side='left',padx=(0,8))
         self.next_button=ttk.Button(actions,text=_ui_tr('다음'),command=lambda:self.go_step(self.step+1),width=14);self.next_button.pack(side='left',padx=(0,8))
         self.save=ttk.Button(actions,text=_ui_tr('편집에 반영'),command=self.commit,width=12,style='Accent.TButton');self.save.pack(side='left')
-        self.variables=[self.name,self.enabled,self.kind,self.mode,self.output_kind,self.output,self.hold,self.threshold,self.release,self.hide,self.always,self.gesture,*self.buttons,*self.keys]
+        self.variables=[self.name,self.enabled,self.kind,self.mode,self.output_kind,self.output,self.hold,self.threshold,self.release,self.hide,self.always,self.layer,self.chime,self.gesture,*self.buttons,*self.keys]
         for variable in self.variables:widget_trace(d,variable,self.refresh)
         self.last_kind=old['kind'];self.last_output_kind=old['output_kind'];self.refresh()
+    def preview_chime(self):
+        if self.ui.busy:return
+        self.ui.task('chime_preview',lambda:self.ui.with_client(lambda client:client.macro_features(preview=True)))
+
     def caption(self,parent,text,help_text):
         box=tk.Frame(parent,bg=parent.cget('bg'));tk.Label(box,text=text,bg=parent.cget('bg'),fg=FG,anchor='w').pack(side='left')
         self.ui.help_icon(box,help_text).pack(side='left',padx=(5,0));return box
@@ -161,7 +173,7 @@ class MacroEditor(InlineCapture):
         known=sum(1<<i for i,var in enumerate(self.buttons) if var.get());unknown=self.draft.initial['chord']&~((1<<len(self.buttons))-1)
         return dict(name=self.name.get(),kind=kind,gesture=0 if kind=='button' else self.gestures[self.gesture.get()],chord=known|unknown,
             condition=next(k for k,v in CONDITIONS.items() if v==self.mode.get()),hold=int(self.hold.get()),output_kind=outkind,
-            output=0 if outkind=='keyboard' else self.OUT_BUTTONS.index(self.output.get()),keys=keys,release=int(self.release.get()),threshold=self.threshold_value(),hide=self.hide.get(),always=self.always.get())
+            output=0 if outkind=='keyboard' else self.OUT_BUTTONS.index(self.output.get()),keys=keys,release=int(self.release.get()),threshold=self.threshold_value(),hide=self.hide.get(),always=self.always.get(),layer=self.layer.get(),chime=self.chime.get())
     def refresh(self,*_):
         if self.updating or self.closed:return
         self.updating=True
@@ -182,7 +194,7 @@ class MacroEditor(InlineCapture):
             self.input_summary.set(' + '.join(name for name,v in zip(self.button_names,self.buttons) if v.get()) or _ui_tr('실행할 버튼을 선택하세요.'))
             self.input_glyphs.set_values(name for name,v in zip(self.button_names,self.buttons) if v.get())
             self.button_dropdown.refresh()
-            indices=list(range(11,16)) if outkind=='mouse' else [*range(1,11),*range(16,23)]
+            indices=list(range(11,16)) if outkind=='mouse' else list(range(23,31)) if outkind=='profile' else [*range(1,11),*range(16,23)]
             choices=[self.OUT_BUTTONS[i] for i in indices];self.output_control.configure(values=choices)
             if outkind!=self.last_output_kind:
                 self.stop_capture()
@@ -190,6 +202,7 @@ class MacroEditor(InlineCapture):
             self.last_output_kind=outkind
             self.output_area.grid_remove() if outkind=='keyboard' else self.output_area.grid()
             self.output_record.grid() if outkind=='controller' else self.output_record.grid_remove()
+            self.chime_area.grid() if outkind=='profile' else self.chime_area.grid_remove()
             self.key_area.grid() if outkind=='keyboard' else self.key_area.grid_remove()
             self.record_key_button.grid_remove() if kind=='stick' else self.record_key_button.grid()
             for i,caption in enumerate(self.key_captions):caption.configure(text=[_ui_tr('위 ↑'),_ui_tr('오른쪽 →'),_ui_tr('아래 ↓'),_ui_tr('왼쪽 ←')][i] if kind=='stick' else _ui_tr('키 {0}').format(f'{i + 1}'))
@@ -207,7 +220,7 @@ class MacroEditor(InlineCapture):
             records=dict(self.ui.doc.macros);records[str(self.index)]=raw;mask=int(self.ui.doc.values.get('macro_disable',0xffffffff))
             mask=mask&~(1<<self.index) if self.enabled.get() else mask|(1<<self.index)
             warnings=[s for s in conflicts(records,mask) if f'{self.index+1:02d} ·' in s or f'· {self.index+1:02d} ·' in s]
-            self.feedback.set('\n'.join(warnings[:2]) or _ui_tr('편집에 반영한 뒤 공유 매핑·매크로 저장을 누르세요. 사용 체크는 현재 프로필에 저장합니다.'))
+            self.feedback.set('\n'.join(warnings[:2]) or _ui_tr('편집에 반영한 뒤 Pico 매핑·매크로 저장을 누르세요. 사용 체크는 현재 프로필에 저장합니다.'))
             self.save.configure(state='normal' if not self.ui.busy else 'disabled')
         except (ValueError,KeyError,StopIteration) as exc:
             self.feedback.set(str(exc) or _ui_tr('입력과 출력 항목을 확인하세요.'));self.save.configure(state='disabled')

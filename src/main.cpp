@@ -1570,7 +1570,21 @@ int main() {
         // this the engine would assert the first key of a combo and never
         // advance to release it - macro_on_input only STARTS a macro.
         #ifdef ENABLE_WAKE_HID
+        ps_shortcut_task();
         macro_task();
+        uint8_t macro_slot; bool macro_chime; uint32_t macro_source;
+        if (macro_take_profile(macro_slot, macro_chime, macro_source)) {
+            uint8_t active; bool edited; uint8_t name[SLOT_NAME_LEN];
+            const bool same = active_profile_get(active, edited, name) && active == macro_slot;
+            if (!same) {
+                bool reenum = false; uint8_t stage = 0;
+                if (slot_activate(macro_slot, reenum, stage)) {
+                    if (reenum) usb_schedule_reconnect();
+                    if (macro_chime) audio_profile_chime();
+                }
+            }
+            macro_block_until_release(macro_source);
+        }
         gyro_mouse_task();   // USB send happens HERE, never in the BT callback
         #endif
         // Catch up at most three USB milliseconds; return BT airtime between blocks.

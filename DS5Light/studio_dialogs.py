@@ -3,6 +3,7 @@ from studio_i18n import text as _ui_tr
 import tkinter as tk
 from tkinter import ttk
 from localization import tr
+from ui_dpi import fit_window,scale_styles,install_dpi
 
 def _theme(dialog):
     import sys
@@ -19,13 +20,16 @@ def _styles(parent):
     style.configure('Dialog.TButton',background='#242321',foreground='#eee9df',padding=(12,6))
     style.configure('Accent.Dialog.TButton',background='#d6ad52',foreground='#211a0d',padding=(12,6))
     style.map('Accent.Dialog.TButton',background=[('active','#e7c875')])
+    scale_styles(parent._root(),style,('Dialog.TButton','Accent.Dialog.TButton'))
 
 def _show(dialog,owner,focus):
+    install_dpi(owner._root()).watch_window(dialog)
     dialog.bind('<Map>',lambda e:dialog.after_idle(lambda:_theme(dialog)) if e.widget is dialog else None,add='+')
     dialog.update_idletasks();_theme(dialog);w,h=dialog.winfo_reqwidth(),dialog.winfo_reqheight()
-    x=max(0,min(dialog.winfo_screenwidth()-w-10,owner.winfo_rootx()+(owner.winfo_width()-w)//2));y=max(0,min(dialog.winfo_screenheight()-h-50,owner.winfo_rooty()+(owner.winfo_height()-h)//2))
+    x=owner.winfo_rootx()+(owner.winfo_width()-w)//2;y=owner.winfo_rooty()+(owner.winfo_height()-h)//2
     previous=owner.grab_current()
-    dialog.geometry(f'{w}x{h}+{x}+{y}');dialog.deiconify();dialog.grab_set();focus.focus_set();dialog.wait_window()
+    fit_window(dialog,w,h,position=(x,y),reference=owner)
+    dialog.deiconify();dialog.grab_set();focus.focus_set();dialog.wait_window()
     if previous is not None:
         try:
             if previous.winfo_exists():previous.grab_set()
@@ -56,7 +60,7 @@ def profile_name(parent,initial=''):
 
 def confirm_delete(parent):
     return _confirm(parent,_ui_tr('매핑 삭제'),_ui_tr('매핑을 삭제할까요?'),
-                    _ui_tr('이 매핑을 사용하는 모든 프로필에 영향을 줍니다.\n삭제 내용은 공유 매핑·매크로 저장을 눌러야 장치에 반영됩니다.'),_ui_tr('삭제'))
+                    _ui_tr('이 매핑을 사용하는 모든 프로필에 영향을 줍니다.\n삭제 내용은 Pico 매핑·매크로 저장을 눌러야 장치에 반영됩니다.'),_ui_tr('삭제'))
 
 def confirm_bootloader(parent):
     return _confirm(parent,_ui_tr('Pico 부트로더'),_ui_tr('부트로더로 재시작할까요?'),
@@ -70,7 +74,7 @@ def profile_switch(parent,shared=False):
     box=tk.Frame(dialog,bg='#151515',padx=24,pady=22);box.pack()
     tk.Label(box,text=_ui_tr('저장하지 않은 변경이 있습니다.'),bg='#151515',fg='#d6ad52',font=(_ui_tr('맑은 고딕'),12,'bold')).pack(anchor='w')
     text=_ui_tr('변경을 저장한 뒤 다른 프로필로 전환할까요?')
-    if shared:text+=_ui_tr('\n공유 매핑·매크로 변경도 저장하며, 모든 프로필에 영향을 줍니다.')
+    if shared:text+=_ui_tr('\nPico 매핑·매크로 변경도 저장하며, 모든 프로필에 영향을 줍니다.')
     tk.Label(box,text=text,bg='#151515',fg='#eee9df',wraplength=420,justify='left').pack(anchor='w',pady=(12,20))
     actions=tk.Frame(box,bg='#151515');actions.pack()
     focus=None

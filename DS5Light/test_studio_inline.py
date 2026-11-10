@@ -14,7 +14,11 @@ class ReadTests(unittest.TestCase):
         raw=reply(12,[0,4,125,1,1,126,1,42,127,1,0,0,1,19])
         d=Fake([raw]);c=SettingsClient(d,sleep=lambda _:None)
         self.assertEqual(identity_fields(c),('v1.42.0',19));self.assertTrue(c.bulk)
-        self.assertEqual(len(d.sent),1)
+        self.assertEqual(len(d.sent),2)
+    def test_fork_version_string_overrides_upstream_numbers(self):
+        raw=reply(12,[0,4,125,1,1,126,1,42,127,1,0,0,1,19])
+        d=Fake([raw,reply(5,b'1.4.7-exp.26')]);c=SettingsClient(d,sleep=lambda _:None)
+        self.assertEqual(identity_fields(c),('v1.4.7-exp.26',19))
     def test_stale_single_field_response_is_ignored(self):
         d=Fake([reply(4,[19,100]),reply(4,[18,1])]);c=SettingsClient(d,sleep=lambda _:None)
         self.assertEqual(c.read_one(FIELDS['auto_haptics_enable']),1)

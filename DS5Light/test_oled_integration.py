@@ -237,7 +237,7 @@ class AppPolicyTests(unittest.TestCase):
 
 class SignalEquivalenceTests(unittest.TestCase):
     def baseline(self,name):
-        path=Path('reports/oled-integration-20261027/before')/(name+'.py')
+        path=Path(__file__).parent/'tests/fixtures/oled-signal'/(name+'.py')
         spec=importlib.util.spec_from_file_location('oled_baseline_'+name,path);m=importlib.util.module_from_spec(spec);sys.modules[spec.name]=m;spec.loader.exec_module(m);return m
     def test_mix_and_gain_equal_previous_bytes_through_transitions(self):
         from channel_mix import ChannelMixer

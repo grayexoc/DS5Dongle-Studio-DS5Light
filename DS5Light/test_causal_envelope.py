@@ -8,7 +8,7 @@ from core import Processor, Controls, RATE
 
 
 def old_module():
-    path=Path(__file__).parent/'reports/causal-envelope-quality/before/core.py'
+    path=Path(__file__).parent/'tests/fixtures/causal-envelope/core.py'
     spec=importlib.util.spec_from_file_location('_envelope_baseline',path)
     module=importlib.util.module_from_spec(spec)
     sys.modules[spec.name]=module

@@ -40,12 +40,13 @@ $ds5DataFiles = @(
     'assets/ds5-light-logo.svg;assets',
     'assets/dualsense-controls.svg;assets',
     'assets/diagnostic-controller.svg;assets',
+    'assets/edge;assets/edge',
     'vendor/ds5audio_original.py;vendor',
     'vendor/LICENSE-Studio.txt;vendor',
     'vendor/tksvg0.16/pkgIndex.tcl;vendor/tksvg0.16',
     'vendor/tksvg0.16/tksvg016t.dll;vendor/tksvg0.16'
 )
-$ds5BundleArguments = @('--noconfirm','--clean','--onedir','--windowed','--name','DS5Light','--distpath','dist','--icon','assets/dslight.ico','--add-binary','ProcessCapture.exe;.','--exclude-module','matplotlib','--exclude-module','pandas','--exclude-module','torch','--exclude-module','IPython')
+$ds5BundleArguments = @('--noconfirm','--clean','--onedir','--windowed','--name','DS5Light','--distpath','dist','--icon','assets/dslight.ico','--manifest','DS5Light.manifest','--add-binary','ProcessCapture.exe;.','--exclude-module','matplotlib','--exclude-module','pandas','--exclude-module','torch','--exclude-module','IPython')
 foreach ($ds5DataFile in $ds5DataFiles) { $ds5BundleArguments += @('--add-data',$ds5DataFile) }
 $ds5BundleArguments += 'app.py'
 & $ds5BuildPython -m PyInstaller @ds5BundleArguments
@@ -59,7 +60,7 @@ Get-ChildItem -LiteralPath $ds5Internal -File | Where-Object { $_.Name -eq 'ucrt
 & $ds5BuildPython package_notices.py
 if ($LASTEXITCODE -ne 0) { throw '라이선스 고지 준비 실패' }
 # Copy release documents and the three user-provided Studio profiles.
-Copy-Item LICENSE.txt,LICENSE_EN.txt,README.txt,DISTRIBUTION_POLICY_KO.md,default_config.json,README_KO.txt,SOURCES.md,README.md,PRODUCT_KO.md,SETUP.md,SETUP_KO.md,RELEASE_NOTES.md -Destination dist/DS5Light
+Copy-Item MAPPING_GUIDE_KO.md,DPI_LAYOUT_KO.md,LICENSE.txt,LICENSE_EN.txt,README.txt,DISTRIBUTION_POLICY_KO.md,default_config.json,README_KO.txt,SOURCES.md,README.md,PRODUCT_KO.md,SETUP.md,SETUP_KO.md,RELEASE_NOTES.md -Destination dist/DS5Light
 $ds5PresetOutput = Join-Path $PSScriptRoot 'dist/DS5Light/Studio Presert'
 New-Item -ItemType Directory -Force -Path $ds5PresetOutput | Out-Null
 foreach ($ds5PresetName in @('DS_Native.json','Audio_Haptic_01.json','Audio_Haptic_02.json')) {

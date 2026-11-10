@@ -5,7 +5,7 @@ from studio_fields import FIELDS
 
 LABELS = {}
 
-for line in _ui_tr('\nauto_haptics_enable|오디오햅틱 모드\nauto_haptics_gain|오디오햅틱 세기\nauto_haptics_smooth|진동 부드러움\nauto_haptics_gate|작은 소리 차단\nmix_native_level|기본 햅틱 혼합량\nmix_native_filter|기본 햅틱 누설 억제\nah_dsp_source|햅틱 입력 채널\nauto_haptics_lowpass_hz|저역 통과 기준\nauto_haptics_slope|주파수 차단 기울기\nah_xover_hz|저음·고음 분리 기준\nah_low_gain|저음 충격 세기\nah_high_gain|고음 대역 세기\nauto_mute_replace|Replace 모드 스피커 음소거\nauto_mute_mix|Mix 모드 스피커 음소거\nrumble_haptic_strength|Mix 일반 진동 혼합 세기\neffect_leak_volume|스피커 효과음 세기\neffect_leak_sensitivity|효과음 감지 민감도\neffect_leak_decay|효과음 잔향 길이\neffect_leak_attack|효과음 시작 속도\neffect_leak_output_hp_hz|스피커 저음 차단\neffect_leak_hp_hz|효과음 감지 주파수\neffect_leak_lp_hz|스피커 고음 차단\neffect_leak_max_burst|효과음 최대 길이\neffect_leak_hold|효과음 유지 시간\nhaptics_gain|햅틱 파형 증폭\nspeaker_volume|듀얼센스 스피커 음량\nheadset_volume|듀얼센스 헤드셋 음량\nspeaker_gain|스피커 증폭\nsync_spk_headset_volume|스피커·헤드셋 음량 연동\nlock_volume|음량 고정\ndisable_mic|듀얼센스 마이크 끄기\ndisable_speaker|듀얼센스 오디오 끄기\nmacro_disable|활성 매크로\ncontroller_mode|듀얼센스 종류\npolling_rate_mode|입력 보고 주기\naudio_buffer_length|동글 오디오 버퍼\ninactive_time|자동 연결 해제 대기\ndisable_inactive_disconnect|자동 연결 해제 사용 안 함\ndisable_pico_led|Pico LED 끄기\nlightbar_off|라이트바 끄기\nplayer_led_mode|플레이어 LED 표시\nplayer_led_bright|플레이어 LED 밝기\nenable_wake|PS 버튼으로 PC 깨우기\nbatt_notify_enable|라이트바 배터리 알림\ntouch_mouse|터치패드 마우스\ntouch_mouse_sens|터치패드 이동 속도\ntouch_mouse_min|터치패드 미세 움직임 차단\ntouch_mouse_invert|터치패드 방향 반전\ntouch_mouse_trackball|트랙볼 관성\ntouch_mouse_friction|트랙볼 감속\nhaptics_aa|햅틱 파형 부드러움\ntrigger_reduce|트리거 힘 줄이기\nr2t_mode|XInput·DS4 일반 진동을 트리거에 연동\nr2t_on_press|트리거를 누를 때만 진동\nr2t_strength|트리거 진동 세기\nr2t_frequency|트리거 진동 주파수\nsynth_force|게임 트리거 효과 덮어쓰기\nat_mode|R2 저항 작동 조건\nat_strength|R2 기본 저항\nat_threshold|R2 작동을 허용할 L2 깊이\nat_start_pos|R2 저항 시작 위치\nat_shape|R2 저항 형태\nat_strength_b|R2 두 번째 저항\nat_detent_pos|R2 벽·스냅 위치\nat_deadzone|R2 입력 시작 구간\nt2_mode|R2 2단계 입력\nt2_pos|R2 2단계 경계\nt2_button|R2 2단계 버튼\nat_pushback|R2 반동 세기\nat_kick_style|R2 반동 형태\nat_pushback_freq|R2 반동 주파수\nat_pushback_src|반동 감지 소스\nat_l2_mode|L2 저항 작동 조건\nat_l2_strength|L2 기본 저항\nat_l2_threshold|L2 작동을 허용할 R2 깊이\nat_l2_start_pos|L2 저항 시작 위치\nat_l2_shape|L2 저항 형태\nat_l2_strength_b|L2 두 번째 저항\nat_l2_detent_pos|L2 벽·스냅 위치\nat_l2_deadzone|L2 입력 시작 구간\nt2_l2_mode|L2 2단계 입력\nt2_l2_pos|L2 2단계 경계\nt2_l2_button|L2 2단계 버튼\nat_l2_pushback|L2 반동 세기\nat_l2_kick_style|L2 반동 형태\nat_l2_pushback_freq|L2 반동 주파수\ngyro_mode|자이로 작동 조건\ngyro_sens|자이로 가로 감도\ngyro_axis|자이로 회전 기준\ngyro_invert|자이로 방향 반전\ngyro_sens_y|자이로 세로 감도\ngyro_output|자이로 출력 방식\nflick_angle|Flick Stick 회전 각도\nflick_counts_360|360도 회전 마우스 이동량\ngyro_sens_mode|자이로 감도 기준\ngyro_natural_x10|자연 감도 배율 ×10\ngyro_natural_y_x10|자연 세로 배율 ×10\ngyro_scale_trim_x100|자이로 회전 보정 ×100\nrstick_invert|오른쪽 스틱 방향 반전\nstick_mouse|스틱 마우스\nstick_mouse_sens|스틱 마우스 가로 속도\nstick_mouse_sens_y|스틱 마우스 세로 속도\nstick_mouse_deadzone|스틱 마우스 데드존\nstick_mouse_curve|스틱 마우스 반응 곡선\nstick_mouse_invert|스틱 마우스 방향 반전\n').strip().splitlines():
+for line in _ui_tr('\nauto_haptics_enable|오디오햅틱 모드\nauto_haptics_gain|오디오햅틱 세기\nauto_haptics_smooth|진동 부드러움\nauto_haptics_gate|작은 소리 차단\nmix_native_level|기본 햅틱 혼합량\nmix_native_filter|기본 햅틱 누설 억제\nah_dsp_source|햅틱 입력 채널\nauto_haptics_lowpass_hz|저역 통과 기준\nauto_haptics_slope|주파수 차단 기울기\nah_xover_hz|저음·고음 분리 기준\nah_low_gain|저음 충격 세기\nah_high_gain|고음 대역 세기\nauto_mute_replace|Replace 모드 스피커 음소거\nauto_mute_mix|Mix 모드 스피커 음소거\nrumble_haptic_strength|Mix 일반 진동 혼합 세기\neffect_leak_volume|스피커 효과음 세기\neffect_leak_sensitivity|효과음 감지 민감도\neffect_leak_decay|효과음 잔향 길이\neffect_leak_attack|효과음 시작 속도\neffect_leak_output_hp_hz|스피커 저음 차단\neffect_leak_hp_hz|효과음 감지 주파수\neffect_leak_lp_hz|스피커 고음 차단\neffect_leak_max_burst|효과음 최대 길이\neffect_leak_hold|효과음 유지 시간\nhaptics_gain|햅틱 파형 증폭\nspeaker_volume|듀얼센스 스피커 음량\nheadset_volume|듀얼센스 헤드셋 음량\nspeaker_gain|스피커 증폭\nsync_spk_headset_volume|스피커·헤드셋 음량 연동\nlock_volume|음량 고정\ndisable_mic|듀얼센스 마이크 끄기\ndisable_speaker|듀얼센스 오디오 끄기\nmacro_disable|활성 매크로\ncontroller_mode|듀얼센스 종류\npolling_rate_mode|입력 보고 주기\naudio_buffer_length|동글 오디오 버퍼\ninactive_time|자동 연결 해제 대기\ndisable_inactive_disconnect|자동 연결 해제 사용 안 함\ndisable_pico_led|Pico LED 끄기\nlightbar_off|라이트바 끄기\nplayer_led_mode|플레이어 LED 표시\nplayer_led_bright|플레이어 LED 밝기\nenable_wake|PS 버튼으로 PC 깨우기\nbatt_notify_enable|라이트바 배터리 알림\ntouch_mouse|터치패드 마우스\ntouch_mouse_sens|터치패드 이동 속도\ntouch_mouse_min|터치패드 미세 움직임 차단\ntouch_mouse_invert|터치패드 방향 반전\ntouch_mouse_trackball|트랙볼 관성\ntouch_mouse_friction|트랙볼 감속\nhaptics_aa|햅틱 파형 부드러움\ntrigger_reduce|트리거 힘 줄이기\nr2t_mode|일반 진동을 트리거에 연동\nr2t_on_press|트리거를 누를 때만 진동\nr2t_strength|트리거 진동 세기\nr2t_frequency|트리거 진동 주파수\nsynth_force|게임 트리거 효과 덮어쓰기\nat_mode|R2 저항 작동 조건\nat_strength|R2 기본 저항\nat_threshold|R2 작동을 허용할 L2 깊이\nat_start_pos|R2 저항 시작 위치\nat_shape|R2 저항 형태\nat_strength_b|R2 두 번째 저항\nat_detent_pos|R2 벽·스냅 위치\nat_deadzone|R2 입력 시작 구간\nt2_mode|R2 2단계 입력\nt2_pos|R2 2단계 경계\nt2_button|R2 2단계 버튼\nat_pushback|R2 반동 세기\nat_kick_style|R2 반동 형태\nat_pushback_freq|R2 반동 주파수\nat_pushback_src|반동 감지 소스\nat_l2_mode|L2 저항 작동 조건\nat_l2_strength|L2 기본 저항\nat_l2_threshold|L2 작동을 허용할 R2 깊이\nat_l2_start_pos|L2 저항 시작 위치\nat_l2_shape|L2 저항 형태\nat_l2_strength_b|L2 두 번째 저항\nat_l2_detent_pos|L2 벽·스냅 위치\nat_l2_deadzone|L2 입력 시작 구간\nt2_l2_mode|L2 2단계 입력\nt2_l2_pos|L2 2단계 경계\nt2_l2_button|L2 2단계 버튼\nat_l2_pushback|L2 반동 세기\nat_l2_kick_style|L2 반동 형태\nat_l2_pushback_freq|L2 반동 주파수\ngyro_mode|자이로 작동 조건\ngyro_sens|자이로 가로 감도\ngyro_axis|자이로 회전 기준\ngyro_invert|자이로 방향 반전\ngyro_sens_y|자이로 세로 감도\ngyro_output|자이로 출력 방식\nflick_angle|Flick Stick 회전 각도\nflick_counts_360|360도 회전 마우스 이동량\ngyro_sens_mode|자이로 감도 기준\ngyro_natural_x10|자연 감도 배율 ×10\ngyro_natural_y_x10|자연 세로 배율 ×10\ngyro_scale_trim_x100|자이로 회전 보정 ×100\nrstick_invert|오른쪽 스틱 방향 반전\nstick_mouse|스틱 마우스\nstick_mouse_sens|스틱 마우스 가로 속도\nstick_mouse_sens_y|스틱 마우스 세로 속도\nstick_mouse_deadzone|스틱 마우스 데드존\nstick_mouse_curve|스틱 마우스 반응 곡선\nstick_mouse_invert|스틱 마우스 방향 반전\n').strip().splitlines():
 
     key,label=line.split('|');LABELS[key]=label
 
@@ -314,7 +314,7 @@ from studio_reference import DEFAULTS,DEFAULT_SOURCES,REFERENCE,WEB_HELP
 
 GROUPS=[(_ui_tr('장치'),['Device & Connection']),
 
- (_ui_tr('햅틱'),['Auto-Haptics & Speaker Effect Leak','Native Haptics Filter','General Haptics & Audio']),
+ (_ui_tr('햅틱·스피커'),['Auto-Haptics & Speaker Effect Leak','Native Haptics Filter','General Haptics & Audio']),
 
  (_ui_tr('트리거'),['Trigger Strength','Rumble → Trigger']),
 
@@ -370,7 +370,7 @@ REFERENCE=dict(REFERENCE,audio_buffer_length=48) # User-requested starting value
 
 TITLES['Device & Connection']=_ui_tr('장치')
 
-LABELS.update({'haptics_gain':_ui_tr('햅틱 파형 증폭'),'gyro_output':_ui_tr('자이로 작동 기준')})
+LABELS.update({'haptics_gain':_ui_tr('네이티브 햅틱 세기'),'gyro_output':_ui_tr('자이로 작동 기준')})
 
 DESCRIPTIONS.update(TRANSLATED_HELP)
 
@@ -471,11 +471,11 @@ CHOICES.update({'Mix with native':_ui_tr('Mix · 게임 진동과 혼합'),'Only
 
 
 
-LABELS.update({'rumble_gain':_ui_tr('일반 진동 세기'),'rumble_release':_ui_tr('잔향')})
+LABELS.update({'rumble_gain':_ui_tr('일반 진동 세기'),'rumble_release':_ui_tr('일반진동 잔향')})
 
 DESCRIPTIONS.update({
 
- 'rumble_gain':_ui_tr('XInput·DS4 호환 방식으로 전달되는 일반 진동을 강화합니다. 100%는 원래 세기이며, 이미 최대인 진동은 더 강해지지 않습니다. 오디오햅틱 끔에서만 작동하며 네이티브 햅틱에는 영향을 주지 않습니다.'),
+ 'rumble_gain':_ui_tr('XInput·DS4 호환 방식으로 전달되는 일반 진동을 강화합니다. 1은 원래 세기이며, 이미 최대인 진동은 더 강해지지 않습니다. 오디오햅틱 끔에서만 작동하며 네이티브 햅틱에는 영향을 주지 않습니다.'),
 
  'rumble_release':_ui_tr('진동이 약해지거나 끝날 때 짧은 여운을 남깁니다. 짧게는 20ms, 보통은 40ms입니다. 연속 타격이 뭉개지면 끔이나 짧게를 선택하세요.'),
 
@@ -533,9 +533,15 @@ if _USB_MODE_LANGUAGE != 'en':
         'audio_buffer_length': '오디오 버퍼 크기. 소리가 끊기면 64로 조정',
         'lightbar_fixed': '선택한 라이트바 색상 유지. 켤 때 라이트바 끄기 해제',
         'lightbar_rgb': '고정 색상 지정. 라이트바 끄기가 색상 고정보다 우선',
-        'rumble_gain': 'XInput·DS4 호환 일반 진동 세기 조정. 오디오햅틱 끔에서만 작동. 100%는 원래 세기',
+        'rumble_gain': 'XInput·DS4 호환 일반 진동 세기 조정. 오디오햅틱 끔에서만 작동. 1은 원래 세기',
         'rumble_release': '일반 진동이 줄거나 끝날 때 여운 추가. 짧게 20ms · 보통 40ms',
         'rumble_haptic_strength': 'Mix에서 오디오햅틱과 함께 재생하는 일반 진동 세기',
-        'haptics_gain': '햅틱 파형 증폭. 오디오햅틱 끔에서만 조절. Mix·Replace로 바꾸면 기본값 1을 적용 대기',
+        'haptics_gain': '네이티브 햅틱 세기. 오디오햅틱 끔에서만 조절. Mix·Replace로 바꾸면 기본값 1을 적용 대기',
         'usb_gamepad_mode': '켜면 XInput · 끄면 DualSense 또는 Edge. 모드 적용 시 USB 재연결',
     })
+
+LABELS['speaker_gain']=_ui_tr('듀얼센스 스피커 증폭')
+TITLES['Native Haptics Filter']=_ui_tr('햅틱 질감')
+DESCRIPTIONS['speaker_gain']=_ui_tr('음량이 부족할 때 조절\n높이면 왜곡될 수 있음')
+
+LABELS['disable_inactive_disconnect']=_ui_tr('자동 연결 해제 안함')

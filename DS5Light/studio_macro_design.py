@@ -4,7 +4,7 @@ import copy
 
 CONDITIONS={'tap':_ui_tr('짧게 누르기'),'long':_ui_tr('길게 누르기'),'double':_ui_tr('빠르게 두 번 누르기'),'hold':_ui_tr('누르는 동안 유지')}
 KINDS={'button':_ui_tr('버튼 입력'),'stick':_ui_tr('스틱 방향'),'swipe':_ui_tr('터치패드 스와이프')}
-OUTPUTS={'controller':_ui_tr('듀얼센스 버튼'),'keyboard':_ui_tr('키보드'),'mouse':_ui_tr('마우스')}
+OUTPUTS={'controller':_ui_tr('듀얼센스 버튼'),'keyboard':_ui_tr('키보드'),'mouse':_ui_tr('마우스'),'profile':_ui_tr('프로필 전환')}
 
 def condition(record):
     if record[4]&128 and not record[4]&32:return 'tap'
@@ -27,7 +27,7 @@ def conflicts(records,disable_mask=0xffffffff):
         ca=int.from_bytes(bytes(a[:4]),'little')
         for j,b in active[n+1:]:
             cb=int.from_bytes(bytes(b[:4]),'little');pair=f'{i+1:02d} · {j+1:02d}'
-            if a[4]!=b[4]:continue
+            if a[4]!=b[4] or bool(a[5]&32)!=bool(b[5]&32) or 31 in (a[17],b[17]):continue
             if a[4]&32:
                 out.append(pair+_ui_tr(' · 같은 스틱의 방향 매핑이 겹칩니다. 여러 출력이 필요한지 확인하세요.'));continue
             if a[4]&128:
@@ -52,8 +52,8 @@ class MacroDraft:
         self.initial=dict(name=bytes(record[19:35]).split(b'\0')[0].decode('utf-8','replace'),
             kind='stick' if g&32 else 'swipe' if g&128 else 'button',gesture=g,
             chord=int.from_bytes(bytes(record[:4]),'little'),condition=condition(record),hold=record[6],
-            output_kind='keyboard' if o==0 else 'mouse' if 11<=o<=15 else 'controller',output=o,
-            keys=tuple(record[7:11]),release=record[11],threshold=record[18],hide=bool(record[5]&4),always=bool(record[5]&8))
+            output_kind='profile' if 23<=o<=30 else 'keyboard' if o==0 else 'mouse' if 11<=o<=15 else 'controller',output=o,
+            keys=tuple(record[7:11]),release=record[11],threshold=record[18],hide=bool(record[5]&4),always=bool(record[5]&8),layer=bool(record[5]&32),chime=bool(record[5]&64))
     def build(self,state,strict=False):
         s=dict(state);before=self.initial;raw=list(self.original)
         if s['kind'] not in KINDS or s['condition'] not in CONDITIONS or s['output_kind'] not in OUTPUTS:raise ValueError(_ui_tr('실행 조건과 출력 종류를 확인하세요.'))
@@ -88,9 +88,13 @@ class MacroDraft:
             raw[7:11]=s['keys']
         if s['output']!=before['output'] or s['output_kind']!=before['output_kind'] or s['kind']!=before['kind']:
             output=0 if s['kind']=='stick' or s['output_kind']=='keyboard' else s['output']
-            if not 0<=output<=22 or output==0 and s['output_kind']!='keyboard' and s['kind']!='stick':raise ValueError(_ui_tr('출력 동작을 확인하세요.'))
+            if not 0<=output<=30 or output==0 and s['output_kind']!='keyboard' and s['kind']!='stick':raise ValueError(_ui_tr('출력 동작을 확인하세요.'))
             if s['output_kind']=='mouse' and output not in range(11,16):raise ValueError(_ui_tr('마우스 출력을 선택하세요.'))
-            if s['output_kind']=='controller' and output in range(11,16):raise ValueError(_ui_tr('듀얼센스 출력을 선택하세요.'))
+            if s['output_kind']=='controller' and (output in range(11,16) or output>=23):raise ValueError(_ui_tr('듀얼센스 출력을 선택하세요.'))
+            if s['output_kind']=='profile' and output not in range(23,31):raise ValueError(_ui_tr('프로필 1~8을 선택하세요.'))
             raw[17]=output
+        raw[5]=(raw[5]&~96)|(32 if s.get('layer',before['layer']) else 0)|(64 if s['output_kind']=='profile' and s.get('chime',before['chime']) else 0)
+        from studio_shift import validate_extension
+        validate_extension(raw)
         bytes(raw)
         return raw

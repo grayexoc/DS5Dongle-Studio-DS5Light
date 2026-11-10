@@ -16,6 +16,7 @@
 #include "input_buttons.h"
 #include "utils.h"
 #include "wake.h"
+#include "ps_shortcut.h"
 
 #include "hardware/flash.h"
 #include "hardware/sync.h"
@@ -68,6 +69,44 @@ static uint32_t mute_binding_mask = 0;
 static bool mute_binding_dirty = true;
 static bool       g_loaded    = false;
 static bool       g_suspended = false;
+static bool g_shifted = false, g_layer_dirty = true;
+static uint32_t g_layer_disabled = 0xffffffffu, g_effective_disable = 0xffffffffu;
+static int g_profile_request = -1;
+static bool g_profile_chime = false;
+static uint32_t g_profile_source = 0, g_profile_block = 0;
+static uint32_t g_profile_release_ms = 0;
+static bool g_profile_releasing = false;
+
+bool macro_take_profile(uint8_t &slot, bool &chime, uint32_t &source) {
+    if (g_profile_request < 0) return false;
+    slot = static_cast<uint8_t>(g_profile_request);
+    chime = g_profile_chime; source = g_profile_source;
+    g_profile_request = -1;
+    return true;
+}
+void macro_block_until_release(uint32_t source) {
+    // Moving a finger to the other half must not re-arm a held physical click.
+    constexpr uint32_t halves = BTN_PAD_CLICK_LEFT | BTN_PAD_CLICK_RIGHT;
+    if (source & halves) source = (source & ~halves) | BTN_TOUCHPAD;
+    g_profile_block = source;
+    g_profile_releasing = false;
+    g_profile_release_ms = 0;
+}
+uint32_t macro_shift_key() {
+    if (!g_loaded) macro_load();
+    const uint32_t disabled = get_config().macro_disable;
+    for (uint8_t i = 0; i < MACRO_COUNT; ++i)
+        if (macro_is_enabled(disabled, i) && g_table.rec[i].entry.out_btn == MACRO_SHIFT_KEY)
+            return g_table.rec[i].entry.chord;
+    return 0;
+}
+static void queue_profile(const MacroEntry &entry) {
+    if (g_profile_request >= 0 || g_profile_block) return;
+    g_profile_request = entry.out_btn - MACRO_PROFILE_FIRST;
+    g_profile_chime = (entry.flags & MACRO_FLAG_CHIME) != 0;
+    g_profile_source = entry.chord;
+    macro_block_until_release(entry.chord);
+}
 
 // Chord tracking
 static uint32_t g_stable       = 0;      // debounced held mask
@@ -190,6 +229,7 @@ static void table_defaults(MacroTable &t) {
 }
 
 void macro_load() {
+    g_layer_dirty = true;
     mute_binding_dirty = true;
     const auto *flashed =
         reinterpret_cast<const MacroTable *>(XIP_BASE + MACRO_FLASH_OFFSET);
@@ -335,6 +375,13 @@ bool macro_get(uint8_t idx, MacroRecord &out) {
 bool macro_set_entry(uint8_t idx, const MacroRecord &rec) {
     if (idx >= MACRO_COUNT) return false;
     if (!g_loaded) macro_load();
+    if (rec.entry.out_btn > MACRO_SHIFT_KEY) return false;
+    if (rec.entry.out_btn == MACRO_SHIFT_KEY &&
+        (rec.entry.gesture || !rec.entry.chord ||
+         (rec.entry.chord & (rec.entry.chord - 1)) ||
+         (rec.entry.chord & ~BTN_ALL))) return false;
+    macro_reset();
+    g_layer_dirty = true;
     g_table.rec[idx] = rec;
     mute_binding_dirty = true;
     // motion_len indexes motion[] two bits at a time, so a value past
@@ -357,7 +404,7 @@ bool macro_set_entry(uint8_t idx, const MacroRecord &rec) {
 // here, which is why the format needs no separate modifier field and why press
 // order between a modifier and a key is unambiguous.
 static bool send_usages(const uint8_t *usages, uint8_t n, uint32_t pressed_slots) {
-    if (!tud_hid_n_ready(MACRO_KBD_INSTANCE)) return false;
+    if (wake_owns_keyboard() || ps_shortcut_owns_keyboard() || !tud_hid_n_ready(MACRO_KBD_INSTANCE)) return false;
     uint8_t mods = 0;
     uint8_t keys[6] = {0};
     uint8_t kn = 0;
@@ -624,6 +671,11 @@ static void hold_task(const uint8_t *r, uint16_t len, uint32_t mask, uint32_t di
         // Mouse outputs never reach g_inject: that mask is indexed by the
         // T2Button enum and main.cpp walks it up to T2BTN_COUNT, so a value of
         // 11+ would either be ignored or, worse, alias a controller button.
+        if (macro_is_profile(e.out_btn)) {
+            if (!(g_scroll_latch & (1u << i))) { g_scroll_latch |= 1u << i; queue_profile(e); }
+            if (e.flags & MACRO_FLAG_REPLACE) g_suppress |= e.chord;
+            continue;
+        }
         if (macro_is_mouse_out(e.out_btn)) {
             if (e.out_btn <= MOUT_MIDDLE) {
                 g_mouse_btns |= (uint8_t) (1u << (e.out_btn - MOUT_LEFT));
@@ -697,6 +749,8 @@ static void hold_flush() {
 static void fire(int idx) {
     if (idx < 0 || g_suspended) return;
     const MacroEntry &e = g_table.rec[idx].entry;
+    if (macro_is_profile(e.out_btn)) { queue_profile(e); return; }
+    if (e.out_btn >= MACRO_SHIFT_KEY) return;
     // A controller or mouse button output is a report STATE, not a keyboard
     // sequence, so it cannot travel through playback at all - that path only
     // writes the keyboard interface. Before this, a one-shot row with such an
@@ -1037,7 +1091,7 @@ void macro_on_input(const uint8_t *report, uint16_t len) {
     if (report == nullptr || len < RPT_MIN_LEN) return;
     if (!g_loaded) macro_load();
 
-    const uint32_t disable = get_config().macro_disable;
+    uint32_t disable = get_config().macro_disable;
     if (!macro_any_enabled(disable)) {
         g_chord = 0; g_stable = 0;
         // hold_task() is the ONLY thing that clears these, and this return
@@ -1069,7 +1123,7 @@ void macro_on_input(const uint8_t *report, uint16_t len) {
 
     // Every wake rule applies: nothing may transmit while the host is
     // suspended, and nothing may be left latched when it goes down.
-    if (wake_host_is_suspended()) { macro_reset(); return; }
+    if (g_suspended || wake_host_is_suspended()) { macro_reset(); return; }
 
     const uint32_t now  = now_ms();
     // ORDER MATTERS: debounce FIRST, then latch the half.
@@ -1085,7 +1139,35 @@ void macro_on_input(const uint8_t *report, uint16_t len) {
     // Debouncing first hides the chatter, so the latch sees one clean press and
     // holds one half for its whole duration. This is what DS4Windows does:
     // decide the zone at finger-down, on a debounced press.
-    const uint32_t raw_mask = debounce(button_mask(report, len), now);
+    const uint32_t physical_mask = button_mask(report, len);
+    if (g_profile_block) {
+        if (physical_mask & g_profile_block) g_profile_releasing = false;
+        else if (!g_profile_releasing) {
+            g_profile_releasing = true;
+            g_profile_release_ms = now;
+        } else if (now - g_profile_release_ms >= MACRO_DEBOUNCE_MS) {
+            macro_block_until_release(0);
+        }
+    }
+    uint32_t raw_mask = debounce(physical_mask & ~g_profile_block, now);
+    const uint32_t shift_key = macro_shift_key();
+    const bool shifted = shift_key && (raw_mask & shift_key);
+    if (shifted != g_shifted || g_layer_disabled != disable || g_layer_dirty) {
+        const uint32_t stable = g_stable;
+        uint32_t off[32]; memcpy(off, g_off_since, sizeof(off));
+        const uint32_t blocked = g_profile_block;
+        const uint32_t release_ms = g_profile_release_ms;
+        const bool releasing = g_profile_releasing;
+        macro_reset();
+        g_profile_block = blocked;
+        g_profile_release_ms = release_ms;
+        g_profile_releasing = releasing;
+        g_stable = stable; memcpy(g_off_since, off, sizeof(off));
+        g_shifted = shifted; g_layer_disabled = disable; g_layer_dirty = false;
+        g_effective_disable = macro_layer_mask(g_table, disable, shifted);
+    }
+    disable = g_effective_disable;
+    raw_mask &= ~shift_key;
 
     // touch_task first: it maintains g_touch_x0 (where the finger landed), which
     // the click half is derived from. Running it after would use the PREVIOUS
@@ -1095,6 +1177,7 @@ void macro_on_input(const uint8_t *report, uint16_t len) {
 
     motion_task(report, len, mask, disable);
     hold_task(report, len, mask, disable);
+    if (!g_suspended && shift_key) g_suppress |= shift_key;
 
     if (g_chord != 0) {
         const int long_idx_r  = find_entry(g_chord, true,  disable);
@@ -1179,6 +1262,10 @@ void macro_on_input(const uint8_t *report, uint16_t len) {
 void macro_task() {
     hold_flush();
     if (wake_host_is_suspended()) return;
+    if (g_layer_dirty || g_layer_disabled != get_config().macro_disable) {
+        macro_reset();
+        return;
+    }
     // A deferred single tap fires once the double window closes with no second
     // press. Driven from here, not from the input path, so it still fires when
     // the user lets go and the pad falls quiet.
@@ -1198,7 +1285,7 @@ void macro_task() {
     // A long press must still fire when the chord is held perfectly still and
     // the pad stops sending fresh reports.
     if (g_chord == 0 || g_chord_fired) return;
-    const uint32_t disable = get_config().macro_disable;
+    const uint32_t disable = g_effective_disable;
     const int long_idx = find_entry(g_chord, true, disable);
     if (long_idx < 0) return;
     if ((now_ms() - g_chord_start) >= hold_ms_of(long_idx)) {
@@ -1208,11 +1295,14 @@ void macro_task() {
 }
 
 void macro_reset() {
+    g_shifted = false; g_layer_dirty = true;
+    g_profile_request = -1; macro_block_until_release(0);
     motion_clear();
     // Everything held must be released, not merely forgotten: a suspend with a
     // key still down leaves it stuck at the host.
     g_hold_n = 0;
     g_suppress = g_inject = 0;
+    g_analog_l2 = g_analog_r2 = 0;
     apply_pad_half(0);   // drop any frozen click half
     g_sup_lstick = g_sup_rstick = false;
     g_tap_chord = 0;
@@ -1226,8 +1316,10 @@ void macro_reset() {
     g_mouse_btns   = 0;
     g_mouse_scroll = 0;
     g_scroll_latch = 0;
-    if (g_hold_sent_n) { send_usages(g_hold_keys, 0, 0); g_hold_sent_n = 0; }
-    g_hold_pending = false;
+    const bool release_needed = g_hold_pending || g_hold_sent_n || g_pb_busy || g_pb_n;
+    const bool released = !release_needed || send_usages(g_hold_keys, 0, 0);
+    if (released) g_hold_sent_n = 0;
+    g_hold_pending = !released;
     g_chord      = 0;
     g_stable     = 0;
     g_touch_down = false;
@@ -1235,9 +1327,6 @@ void macro_reset() {
     if (g_pb_busy || g_pb_n) {
         // Blank report: never leave a modifier latched at the host. This is the
         // keyboard-side twin of state_release_for_suspend().
-        if (tud_hid_n_ready(MACRO_KBD_INSTANCE)) {
-            tud_hid_n_keyboard_report(MACRO_KBD_INSTANCE, 0, 0, nullptr);
-        }
         g_pb_busy = false;
         g_pb_n    = 0;
         g_pb_step = 0;
@@ -1251,4 +1340,4 @@ void macro_suspend(bool on) {
 
 bool macro_motion_capturing() { return g_mot_active; }
 
-bool macro_busy() { return g_pb_busy; }
+bool macro_busy() { return g_pb_busy || g_hold_n || g_hold_sent_n || g_hold_pending; }

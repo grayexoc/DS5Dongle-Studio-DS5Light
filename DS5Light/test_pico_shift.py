@@ -1,0 +1,122 @@
+import copy,unittest
+from unittest.mock import patch
+from studio_shift import set_shift_key,shift_key,validate_extension
+from studio_macro_design import MacroDraft,OUTPUTS,conflicts
+from studio_records import macro_records
+from studio_settings_protocol import SettingsClient
+
+
+class ShiftModelTests(unittest.TestCase):
+    def test_shift_key_stages_in_free_record_and_keeps_others(self):
+        records={str(i):[0]*35 for i in range(32)}
+        records['0'][19]=65;before=copy.deepcopy(records)
+        after,mask=set_shift_key(records,0xffffffff,19)
+        self.assertEqual(records,before);self.assertEqual(after['0'],before['0'])
+        self.assertEqual(shift_key(after)[0],1);self.assertEqual(mask,0xfffffffd)
+        restored=macro_records(after);self.assertEqual(restored,after)
+        changed,newmask=set_shift_key(after,mask,None)
+        self.assertIsNone(shift_key(changed));self.assertEqual(newmask,0xffffffff)
+
+    def test_no_free_record_and_invalid_key_do_not_mutate(self):
+        rows={str(i):[1]*35 for i in range(32)};before=copy.deepcopy(rows)
+        for key in (18,23,-1):
+            with self.assertRaises(ValueError):set_shift_key(rows,0,key)
+        self.assertEqual(rows,before)
+
+    def test_numbered_profile_and_chime_preserve_existing_layout(self):
+        row=[0]*35;row[0]=1;row[11]=27;row[12:17]=[7,6,5,4,3]
+        draft=MacroDraft(row);state=dict(draft.initial,output_kind='profile',output=30,layer=True,chime=True)
+        result=draft.build(state,strict=True)
+        self.assertEqual(len(result),35);self.assertEqual(result[17],30)
+        self.assertEqual(result[5]&96,96);self.assertEqual(result[12:17],row[12:17])
+        self.assertEqual(MacroDraft(result).build(MacroDraft(result).initial),result)
+        for output in (0,22,31):
+            with self.assertRaises(ValueError):draft.build(dict(state,output=output),strict=True)
+
+    def test_layers_do_not_report_conflicts_with_each_other(self):
+        a=[0]*35;a[0]=1;a[17]=1;b=list(a);b[5]=32
+        self.assertFalse(conflicts({'0':a,'1':b},0))
+        b[5]=0;self.assertTrue(conflicts({'0':a,'1':b},0))
+
+    def test_old_firmware_cannot_receive_extended_write(self):
+        row=[0]*35;row[0]=1;row[17]=23
+        client=SettingsClient(object())
+        with patch.object(client,'command',side_effect=TimeoutError) as command:
+            with self.assertRaisesRegex(RuntimeError,'v31'):client.write_macro(0,row)
+            self.assertEqual(command.call_count,1);self.assertEqual(command.call_args.args[0],0x20)
+
+    def test_legacy_write_needs_no_capability_read(self):
+        row=[0]*35;row[0]=1;row[17]=1
+        client=SettingsClient(object())
+        with patch.object(client,'command',return_value=bytes([0x66,24,0,0])) as command:
+            client.write_macro(0,row);self.assertEqual(command.call_count,1)
+            self.assertEqual(command.call_args.args[0],24)
+
+
+import test_studio_settings as fixture
+class ShiftUITests(unittest.TestCase):
+    setUp=fixture.NativeUITests.setUp
+    tearDown=fixture.NativeUITests.tearDown
+    editor=fixture.NativeUITests.editor
+
+    def prepare(self):
+        ui=self.editor();ui.doc.macros={str(i):[0]*35 for i in range(32)}
+        ui.doc.macro_baseline=copy.deepcopy(ui.doc.macros);ui.select_category(4);return ui
+
+    def test_inline_choice_cancel_and_stage_never_send(self):
+        from studio_button_names import NAMES
+        ui=self.prepare();before=copy.deepcopy(ui.doc.macros)
+        self.root.deiconify();self.root.update()
+        with patch.object(ui,'with_client') as hid,patch.object(ui,'task') as task:
+            ui.open_shift_picker()
+            self.root.update()
+            self.assertTrue(ui.shift_choice.expanded)
+            ui.shift_choice.choose(ui.shift_choice.values.index(NAMES[19]))
+            self.assertTrue(ui.shift_enabled.get())
+            ui.cancel_shift_key();self.assertEqual(ui.doc.macros,before)
+            ui.open_shift_picker();self.root.update();self.assertEqual(ui.shift_selection.get(),'없음')
+            ui.shift_choice.choose(ui.shift_choice.values.index(NAMES[20]))
+            ui.commit_shift_key()
+            self.assertEqual(int.from_bytes(bytes(shift_key(ui.doc.macros)[1][:4]),'little'),1<<20)
+            ui.open_shift_picker();self.assertEqual(ui.shift_selection.get(),NAMES[20])
+            hid.assert_not_called();task.assert_not_called()
+
+    def test_profile_editor_preview_and_stage(self):
+        from studio_macro_editor import MacroEditor
+        ui=self.prepare();row=[0]*35;row[0]=1
+        editor=MacroEditor(ui,0,initial=row)
+        editor.output_kind.set(OUTPUTS['profile']);editor.output.set('프로필 8번')
+        editor.chime.set(True);editor.layer.set(True);editor.refresh()
+        self.assertEqual(editor.draft.build(editor.state())[17],30)
+        with patch.object(ui,'task') as task,patch.object(ui,'with_client') as hid:
+            editor.preview_chime();self.assertEqual(task.call_args.args[0],'chime_preview');hid.assert_not_called()
+            editor.commit();hid.assert_not_called()
+        self.assertEqual(ui.doc.macros['0'][5]&96,96)
+
+    def test_inline_choice_has_icons_and_creates_no_window(self):
+        from controller_glyphs import ControllerChoice
+        from studio_button_names import NAMES
+        ui=self.prepare();self.root.deiconify();self.root.update()
+        def windows(widget):
+            import tkinter as tk
+            return [child for child in widget.winfo_children() if isinstance(child,tk.Toplevel)]
+        before=windows(self.root);ui.open_shift_picker();self.root.update()
+        self.assertEqual(windows(self.root),before)
+        self.assertIsInstance(ui.shift_choice,ControllerChoice)
+        self.assertEqual(list(ui.shift_choice.values),['없음']+NAMES[:23])
+        for name in ['L1','R1','L3','R3',NAMES[18],*NAMES[19:23]]:
+            tile=ui.shift_choice.tiles[ui.shift_choice.values.index(name)]
+            self.assertIsNotNone(tile.image)
+        ui.open_shift_picker();self.assertFalse(ui.shift_editor.winfo_manager())
+
+    def test_inline_choice_keeps_profile_disabled_and_can_clear_key(self):
+        from studio_button_names import NAMES
+        ui=self.prepare()
+        ui.doc.macros,mask=set_shift_key(ui.doc.macros,0xffffffff,19)
+        row=shift_key(ui.doc.macros);ui.doc.values['macro_disable']=mask|(1<<row[0])
+        ui.open_shift_picker();self.assertFalse(ui.shift_enabled.get())
+        ui.commit_shift_key();self.assertTrue(ui.doc.values['macro_disable']&(1<<row[0]))
+        ui.open_shift_picker();ui.shift_selection.set('없음');ui.commit_shift_key()
+        self.assertIsNone(shift_key(ui.doc.macros))
+
+if __name__=='__main__':unittest.main()

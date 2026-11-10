@@ -314,6 +314,11 @@ struct __attribute__((packed)) MacroTable {
 };
 static_assert(sizeof(MacroTable) <= 4096, "macro table must fit one flash sector");
 
+#include "macro_layer.h"
+bool macro_take_profile(uint8_t &slot, bool &chime, uint32_t &source);
+void macro_block_until_release(uint32_t source);
+uint32_t macro_shift_key();
+
 // --- API ---------------------------------------------------------------------
 
 // Load the table from flash into the RAM working image. Missing/invalid sector
@@ -378,9 +383,8 @@ uint8_t  macro_mouse_buttons();
 int8_t   macro_mouse_peek_scroll();   // without consuming
 int8_t   macro_mouse_take_scroll();   // consumes: only call once the report will be sent
 
-// True while the engine holds keys down or has queued playback steps. wake.cpp
-// uses it to avoid interleaving its F15 keystroke with a macro on the shared
-// keyboard instance.
+// True while keys are held, pending release or queued for playback. The PS
+// shortcut uses this to avoid overwriting macros on the shared keyboard.
 bool macro_busy();
 
 // Touchpad-click diagnostics for the portal: X where the finger last landed

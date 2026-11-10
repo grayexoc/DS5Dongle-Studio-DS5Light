@@ -9,6 +9,7 @@ from studio_scope import EDITABLE,CONSTRUCTION,trigger_display,trigger_raw
 from studio_range import RangeSlider
 from studio_help import reference_point
 from studio_macro_tools import MacroTools
+from studio_shift_ui import ShiftUI
 from studio_entry import EntryQueries
 from studio_read_view import StableReadView,READ_JOBS
 from studio_option_groups import OptionGroups
@@ -76,7 +77,7 @@ class StatusMessage:
     def cget(self,option):
         if option=='text':return self.text
         raise KeyError(option)
-class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,SaveFlow,EntryQueries,GyroCalibration,MacroTools):
+class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedPresets,SaveFlow,EntryQueries,GyroCalibration,MacroTools):
     def __init__(self,app,parent):
         self.app=app;self.parent=parent;self.built=False;self.busy=False;self.closed=False;self.uncertain=False;self.reconnect_wait=False;self.external_stale=False;self.pico_recognized=False;self.profile_save_needed=False
         self.init_entry_queries();self.recording=False;self.closing_recording=False;self.doc=SettingsDocument();self.path=None;self.profile_stamp=None;self.device_rows=[];self.results=queue.SimpleQueue();self.cancel=threading.Event()
@@ -131,6 +132,8 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
         style.map('Disconnected.Studio.TButton',background=[('active','#79363c'),('!disabled','#602d30')],foreground=[('!disabled','#f0c2c4')],bordercolor=[('!disabled','#a44b52')])
         style.configure('StudioNav.TButton',font=(_ui_tr('맑은 고딕'),9),padding=(6,6),foreground=MUTED,background=CARD)
         style.configure('Selected.StudioNav.TButton',font=(_ui_tr('맑은 고딕'),9,'bold'),padding=(6,6),foreground=GOLD,background='#302819')
+        from ui_dpi import scale_styles
+        scale_styles(self.parent._root(),style,('StudioNav.TButton','Selected.StudioNav.TButton'))
         self.nav_icons=('⚙','≋','⇄','⌖','⌨','▤')
         from localization import LANGUAGE
         nav_titles=('Device','Haptics','Triggers','Gyro & stick','Mapping','Profiles')
@@ -291,14 +294,12 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
         from studio_scope import AUDIO_HAPTIC_CHILDREN
         if key in AUDIO_HAPTIC_CHILDREN and values.get('auto_haptics_enable',0)==0:return False
         if key=='enable_wake':
-            power=getattr(self.app,'studio_power',None)
-            identity=self.app.studio.binding.snapshot()
-            if (getattr(power,'supported',False) and getattr(power,'key',None)==(identity.hid_path,identity.serial)
-                    and self.path==identity.hid_path):return False
+            mode=self.standby_value()
+            return mode==0 if mode is not None else not getattr(getattr(self.app,'studio_power',None),'supported',False)
         if key in ('lightbar_fixed','lightbar_rgb'):
             supported=getattr(self,'lightbar_supported',all(k in values for k in ('lightbar_fixed','lightbar_rgb')))
-            return supported and (key!='lightbar_rgb' or bool(values.get('lightbar_fixed',0)))
-        if key=='speaker_volume':return not values.get('disable_speaker',0)
+            return supported
+        if key in ('speaker_volume','speaker_gain'):return not values.get('disable_speaker',0)
         if key in ('auto_mute_mix','auto_mute_replace'):
             mode=1 if key=='auto_mute_mix' else 2
             return values.get('auto_haptics_enable')==mode and not values.get('disable_speaker',0)
@@ -336,12 +337,16 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
         for section in SECTIONS:
             if not query and section['title'] not in sections:continue
             from studio_scope import TRIGGER_FIELDS
-            ordered=[f for f in section['fields'] if f[1] not in ('rumble_gain','rumble_release') and (query or f[1] not in TRIGGER_FIELDS)]
+            ordered=[f for f in section['fields'] if f[1] not in ('rumble_gain','rumble_release','enable_wake') and (query or f[1] not in TRIGGER_FIELDS)]
             if section['title']=='Auto-Haptics & Speaker Effect Leak':
                 ordered=[f for f in ordered if f[1] not in ('auto_mute_mix','auto_mute_replace')]
             elif section['title']=='General Haptics & Audio':
+                gain_at=next(i for i,f in enumerate(ordered) if f[1]=='haptics_gain')+1
+                ordered[gain_at:gain_at]=[FIELDS['rumble_gain'],FIELDS['rumble_release']]
                 at=next(i for i,f in enumerate(ordered) if f[1]=='disable_speaker')+1
                 ordered[at:at]=[FIELDS['auto_mute_mix'],FIELDS['auto_mute_replace']]
+            if not query and section['title']=='Device & Connection':
+                ordered=[f for f in ordered if f[1] not in self.LIGHTING_FIELDS]
             fields=[f for f in ordered if f[1] in EDITABLE and (field_matches(f,section['title'],query) if query else self.visible(f[1]))]
             if section['title']=='General Haptics & Audio' and any(f[1] in ('auto_mute_mix','auto_mute_replace') for f in fields):
                 if not any(f[1]=='disable_speaker' for f in fields):
@@ -376,15 +381,9 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
                     self.field_row(speaker_children,0 if f[1]=='auto_mute_mix' else 1,f)
                 else:self.field_row(box,n,f)
                 count+=1
-        if (not query and self.category==0) or (query and any(field_matches(FIELDS[k],'Device & Connection',query) for k in ('rumble_gain','rumble_release'))):
-            box=self.card(_ui_tr('일반 진동'))
-            self.field_row(box,1,FIELDS['rumble_gain'])
-            child=tk.Frame(box,bg=CARD);child.grid(row=2,column=0,columnspan=2,sticky='ew',padx=(20,0))
-            child.columnconfigure(0,weight=1)
-            self.field_row(child,0,FIELDS['rumble_release'])
-            if not all(k in self.doc.values for k in ('rumble_gain','rumble_release')):
-                tk.Label(box,text=ui_text(_ui_tr('지원 펌웨어와 연결을 확인하세요.'),'Check firmware support and connection.'),bg=CARD,fg=MUTED).grid(row=3,column=0,columnspan=2,sticky='w',pady=(4,0))
-            count+=2
+        if not query and self.category==0:self.render_lighting()
+        if query and 'enable_wake' in self.doc.values and field_matches(FIELDS['enable_wake'],'Device & Connection',query):
+            self.render_standby_policy();count+=1
         if query:
             for feature in FEATURES:
                 if not feature_matches(feature,query):continue
@@ -443,16 +442,20 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
         note=getattr(self,'_policy_save_errors',{}).get('standby_policy',note)
         tk.Label(box,text=note,bg=CARD,fg=MUTED,wraplength=500,justify='left').grid(row=2,column=0,columnspan=2,sticky='w',pady=(4,0))
 
+        if 'enable_wake' in self.doc.values:
+            wake=tk.Frame(box,bg=CARD);wake.grid(row=3,column=0,columnspan=2,sticky='ew',padx=(20,0),pady=(4,0));wake.columnconfigure(0,weight=1)
+            self.field_row(wake,0,FIELDS['enable_wake'])
+
         dock=self.standby_value('dock_policy')
         dock_var=tk.BooleanVar(master=box,value=dock==1)
         dock_toggle=CircleCheck(box,text=ui_text('충전독 장착 시 연결 해제','Disconnect when docked'),
             variable=dock_var,command=lambda:self.change_standby_policy(dock_var,'dock_policy'),background=CARD)
-        dock_toggle.grid(row=3,column=0,columnspan=2,sticky='w',pady=(8,0))
+        dock_toggle.grid(row=4,column=0,columnspan=2,sticky='w',pady=(8,0))
         dock_toggle.set_enabled(dock is not None and not self.busy)
         dock_error=getattr(self,'_policy_save_errors',{}).get('dock_policy')
         if dock is None or dock_error:
             tk.Label(box,text=dock_error or ui_text('충전독 정책 미지원 또는 조회 실패','Dock policy unavailable'),
-                bg=CARD,fg=MUTED,wraplength=500,justify='left').grid(row=4,column=0,columnspan=2,sticky='w')
+                bg=CARD,fg=MUTED,wraplength=500,justify='left').grid(row=5,column=0,columnspan=2,sticky='w')
 
     def change_standby_policy(self,var,policy='standby_policy'):
         mode=self.standby_value(policy)
@@ -475,7 +478,7 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
         if f[4]=='number' or key=='trigger_reduce':
             self.range_row(parent,row,f,value,valid)
             return
-        title=self.option_title(parent,key,text=f[3] if key.startswith("at_") else None,foreground=FG if valid else MUTED);title.grid(row=row,column=0,sticky='w',padx=(0,12),pady=8)
+        title=self.option_title(parent,key,text=f[3] if key.startswith("at_") else None,foreground=FG if valid else MUTED);title.grid(row=row,column=0,sticky='w',padx=(18 if key in ('disable_inactive_disconnect','speaker_gain') else 0,12),pady=8)
         var=tk.StringVar(value='' if value is None else format(value,'.5g') if f[2]=='f32' else str(value));self.vars[key]=var
         controls=[];bits=[]
         if f[4]=='bool':
@@ -527,6 +530,7 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
                 variable.set(bool(self.doc.values[child]))
         if key in ('ah_xover_hz','disable_speaker','auto_haptics_enable'):self.update_band_controls()
         if key in ('disable_speaker','auto_haptics_enable'):self.update_speaker_controls()
+        if key in self.LIGHTING_FIELDS:self.refresh_lighting()
         if key in ('auto_haptics_enable','lightbar_fixed'):self.refresh_read_values()
         if key=='mix_native_level':self.refresh_read_values(keys=('mix_native_filter',))
         self.update_state()
@@ -546,7 +550,7 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
     def update_band_controls(self):
         # Update dependent controls in place so dragging the crossover retains
         # its widget, focus and scroll position. Stored gains are preserved.
-        for key in ('ah_low_gain','ah_high_gain','speaker_volume'):
+        for key in ('ah_low_gain','ah_high_gain','speaker_volume','speaker_gain'):
             controls=getattr(self,'range_controls',{}).get(key)
             if controls is None:continue
             entry,slider,title=controls
@@ -592,10 +596,10 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
             if self.doc.policy_changes:parts.append(_ui_tr('햅틱 파형 증폭 기본값 복구 필요'))
             text=' · '.join(parts)+_ui_tr(' · 아직 저장되지 않음')
         elif self.doc.policy_changes:text=_ui_tr('햅틱 파형 증폭 기본값 복구 필요 · 적용 또는 프로필 저장 시 반영')
-        elif self.doc.macros_pending_flash:text=_ui_tr('공유 매크로 임시 적용됨 · 공유 매핑·매크로 저장 필요')
+        elif self.doc.macros_pending_flash:text=_ui_tr('공유 매크로 임시 적용됨 · Pico 매핑·매크로 저장 필요')
         elif self.doc.unsaved or self.loaded and self.profile_save_needed:text=_ui_tr('임시 적용됨 · 유지하려면 현재 프로필에 저장하세요.')
         elif self.doc.save_requested:text=detail or _ui_tr('프로필 슬롯 저장 확인 · Pico 시작 설정 저장 확인')
-        elif self.write_ready and self.doc.values.get('auto_haptics_enable') in (1,2) and self.doc.values.get('haptics_gain',1)!=1:text=_ui_tr('기존 햅틱 파형 증폭값 유지 중 · 중복 증폭에 주의하세요')
+        elif self.write_ready and self.doc.values.get('auto_haptics_enable') in (1,2) and self.doc.values.get('haptics_gain',1)!=1:text=_ui_tr('기존 네이티브 햅틱 세기 유지 중 · 중복 증폭에 주의하세요')
         elif self.loaded:text=(detail or _ui_tr('조회 완료')) if self.write_ready else _ui_tr('읽기 전용 · 현재 프로필 확인 필요')
         else:text=_ui_tr('장치 설정을 읽어 주세요')
         self.notice.set(text);self.fit_notice();enabled=self.loaded and self.write_ready and not self.busy and not self.app._close_requested and not editing
@@ -683,11 +687,18 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
     def with_client(self,operation):
         if not self.path:raise ValueError(_ui_tr('Studio 장치를 선택하세요.'))
         import hid
-        with _DEVICE_LOCK:
+        import time
+        deadline=time.monotonic()+3
+        while not _DEVICE_LOCK.acquire(timeout=.1):
+            if self.cancel.is_set():raise RuntimeError(_ui_tr('Studio 작업 취소됨'))
+            if time.monotonic()>=deadline:raise TimeoutError(_ui_tr('Studio 조회 대기 시간 초과'))
+        try:
+            if self.cancel.is_set():raise RuntimeError(_ui_tr('Studio 작업 취소됨'))
             if power_blocked(self.app):raise RuntimeError(_ui_tr('Pico 절전 요청 중에는 장치 작업을 실행할 수 없습니다.'))
             d=hid.device()
             try:d.open_path(self.path);return operation(SettingsClient(d,cancel=self.cancel.is_set))
             finally:d.close()
+        finally:_DEVICE_LOCK.release()
     def stopped_task(self,kind,operation):
         if power_blocked(self.app):return
         if self.busy or self.app.studio.busy:return
@@ -718,7 +729,7 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
             if target is None:
                 self.select_category(5);self.progress.configure(text=_ui_tr('저장할 슬롯의 현재 설정 저장을 눌러 주세요.'));return
         if 'macro_disable' in self.doc.changes and self.shared_changes_pending():
-            messagebox.showinfo(_ui_tr('매크로 저장 순서'),_ui_tr('공유 매핑·매크로를 먼저 저장한 뒤 현재 프로필의 사용 체크를 적용하거나 저장하세요.'),parent=self.parent);return
+            messagebox.showinfo(_ui_tr('매크로 저장 순서'),_ui_tr('Pico 매핑·매크로를 먼저 저장한 뒤 현재 프로필의 사용 체크를 적용하거나 저장하세요.'),parent=self.parent);return
         try:validate_changes(self.doc.baseline,self.doc.changes)
         except ValueError as exc:messagebox.showerror(_ui_tr('설정 확인'),str(exc),parent=self.parent);return
         baseline=dict(self.doc.baseline);changes=dict(self.doc.changes);effects=copy.deepcopy(self.doc.effect_changes)
@@ -895,6 +906,7 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
         elif kind=='timeline_stop':self.recording=False;self.show_timeline(result)
         elif kind=='history':self.show_history(result)
         elif kind=='macro_live':self.live_result=result
+        elif kind=='chime_preview':self.progress.configure(text=_ui_tr('전환 신호음 요청 완료 · 프로필은 바뀌지 않았습니다.'),kind='info')
         elif kind=='slots':self.slots=result;self.progress.configure(text=_ui_tr('슬롯 목록 새로 고침 완료'),kind='info')
         elif kind=='slot_save':
             self.profile_save_needed=False;self.progress.configure(text=_ui_tr('프로필 슬롯 저장 응답 확인'));self.app.studio.last_read=-1e9;self.app.studio.catalog_invalid=True
@@ -968,25 +980,27 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
         pass # Per-profile switches live beside the definitions they enable.
     def render_macros(self):
         from studio_macro_design import category,populated
-        box=self.card(_ui_tr('공유 매핑·매크로'))
+        box=self.card(_ui_tr('Pico 매핑·매크로'))
         ttk.Button(box,text=_ui_tr('매핑 목록 새로 고침'),command=self.read_macro_table).grid(row=1,column=0,sticky='w',pady=(0,8))
         ttk.Button(box,text=_ui_tr('+ 매핑·매크로 추가'),style='Accent.TButton',command=self.new_macro,state='normal' if self.loaded and not self.busy else 'disabled').grid(row=1,column=1,sticky='e',pady=(0,8))
         tk.Label(box,text=_ui_tr('내용을 수정하거나 삭제하면 모든 프로필에 영향을 줍니다.\n체크한 항목만 현재 프로필에서 사용합니다.'),bg=CARD,fg=GOLD,wraplength=420,justify='left').grid(row=2,column=0,columnspan=2,sticky='w',pady=(0,8))
         shared=tk.Frame(box,bg=CARD);shared.grid(row=3,column=0,columnspan=2,sticky='ew',pady=(0,12));shared.columnconfigure(0,weight=1)
         tk.Label(shared,text=_ui_tr('현재 프로필에서 사용 ↓'),bg=CARD,fg=MUTED,anchor='w').grid(row=0,column=0,sticky='w')
-        self.shared_save_button=ttk.Button(shared,text=_ui_tr('공유 매핑·매크로 저장'),style='Accent.TButton',command=self.save_shared_macros)
+        self.shared_save_button=ttk.Button(shared,text=_ui_tr('Pico 매핑·매크로 저장'),style='Accent.TButton',command=self.save_shared_macros)
         self.shared_save_button.grid(row=0,column=1,sticky='e')
         FieldTip(self.shared_save_button,_ui_tr('매크로 동작은 모든 프로필이 공유합니다. 이 버튼은 동작만 저장합니다. 프로필별 사용 체크는 하단의 현재 프로필에 저장을 누르세요.'))
         self.macro_warning=tk.StringVar();self.macro_warning_label=tk.Label(box,textvariable=self.macro_warning,bg=CARD,fg=GOLD,wraplength=430,justify='left',anchor='w')
         self.macro_warning_label.grid(row=4,column=0,columnspan=2,sticky='ew',pady=(0,12))
         self.macro_warning_button=ttk.Button(box,text=_ui_tr('겹치는 입력 모두 보기'),command=self.show_macro_conflicts);self.macro_warning_button.grid(row=5,column=0,columnspan=2,sticky='w',pady=(0,8))
+        self.render_shift_controls(box)
         mask=int(self.doc.values.get('macro_disable',0xffffffff));n=0
         for i in range(32):
             data=self.doc.macros.get(str(i))
-            if not populated(data):continue
+            if not populated(data) or data[17]==31 or bool(data[5]&32)!=getattr(self,'macro_layer',False):continue
             name=bytes(data[19:35]).split(b'\0')[0].decode('utf-8','replace')
-            row=tk.Frame(box,bg=CARD);row.grid(row=6+n,column=0,columnspan=2,sticky='ew',pady=9);row.columnconfigure(1,weight=1);n+=1
-            v=tk.BooleanVar(value=not bool(mask&(1<<i)));check=CircleCheck(row,text=f'{i+1:02d}',variable=v,command=lambda:None,background=CARD);check.grid(row=0,column=0,rowspan=3,padx=(0,10));check.set_enabled(not self.busy and 'macro_disable' in self.doc.values)
+            row=tk.Frame(box,bg=CARD);row.grid(row=7+n,column=0,columnspan=2,sticky='ew',pady=9);row.columnconfigure(1,weight=1);n+=1
+            index_box=tk.Frame(row,bg=CARD);index_box.grid(row=0,column=0,rowspan=3,padx=(0,10),sticky='n')
+            v=tk.BooleanVar(value=not bool(mask&(1<<i)));check=CircleCheck(index_box,text=f'{i+1:02d}',variable=v,command=lambda:None,background=CARD);check.pack(side='bottom',pady=(4,0));check.set_enabled(not self.busy and 'macro_disable' in self.doc.values)
             status=tk.StringVar(value=category(data)+' · '+(_ui_tr('활성') if v.get() else _ui_tr('비활성')))
             widget_trace(check,v,lambda *_,v=v,i=i,status=status,kind=category(data):self.toggle_macro(i,v.get(),status,kind))
             tk.Label(row,text=name or _ui_tr('이름 없는 매핑'),bg=CARD,fg=FG,font=(_ui_tr('맑은 고딕'),10,'bold'),anchor='w').grid(row=0,column=1,sticky='w')
@@ -995,7 +1009,7 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
             chord=int.from_bytes(bytes(data[:4]),'little')
             source=[_ui_tr('오른쪽 스틱') if data[4]&64 else _ui_tr('왼쪽 스틱')] if data[4]&32 else [_ui_tr('터치패드 클릭')] if data[4]&128 else [name for bit,name in enumerate(NAMES) if chord&(1<<bit)]
             if source:
-                symbols=tk.Frame(summary,bg=CARD);symbols.pack(anchor='w',pady=(2,3))
+                symbols=tk.Frame(index_box,bg=CARD);symbols.pack(side='top',pady=(0,2))
                 GlyphStrip(symbols,source,limit=3).pack(side='left')
                 if data[17] and data[17]<len(OUT_BUTTONS):
                     tk.Label(symbols,text='→',bg=CARD,fg=GOLD).pack(side='left',padx=6)
@@ -1006,7 +1020,7 @@ class StudioSettings(OptionGroups,LightbarUI,StableReadView,RecommendedPresets,S
             ttk.Button(row,text=_ui_tr('삭제'),command=lambda i=i:self.delete_macro(i),width=5).grid(row=0,column=3,rowspan=3)
         if not n:
             text=_ui_tr('아직 추가한 매핑·매크로가 없습니다. + 매핑·매크로 추가로 시작하세요.') if self.doc.macros else _ui_tr('목록을 읽어 표시합니다. + 매핑·매크로 추가를 누르면 먼저 목록을 읽습니다.')
-            tk.Label(box,text=text,bg=CARD,fg=MUTED,wraplength=420,justify='left',pady=16).grid(row=6,column=0,columnspan=2,sticky='ew')
+            tk.Label(box,text=text,bg=CARD,fg=MUTED,wraplength=420,justify='left',pady=16).grid(row=7,column=0,columnspan=2,sticky='ew')
         self.update_macro_warnings()
     def edit_macro(self,index,initial=None):
         if self.busy:return

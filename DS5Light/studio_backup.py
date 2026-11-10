@@ -62,8 +62,6 @@ def backup_all(client,progress=lambda text:None):
                 fields[key]=_slot_value(field,client.read_one(field,slot.index))
             except (ValueError,OSError) as exc:
                 raise ValueError(f"{slot.index + 1:02d} / {key} · {exc}") from exc
-        if fields.get('gyro_output')==2 and fields.get('stick_mouse')==1:
-            fields['stick_mouse']=0
         validate_changes({},fields,profile_snapshot=True)
         effects={} # excluded construction area
         slots.append(dict(index=slot.index,valid=True,name=slot.name,cfgVersion=config_version(fields),fields=fields,effects={('r2' if k=='0' else 'l2'):v for k,v in effects.items()}))
@@ -93,6 +91,9 @@ def validate_backup(data):
     return rows,macros
 
 def restore_all(client,rows,macros,progress=lambda text:None):
+    from studio_shift import extended
+    if any(extended(row) for row in macros.values()):
+        client.require_macro_features(list(macros.values()))
     original,missing=client.read_fields();effects={};original_macros=client.read_macros()
     if set(missing)-OPTIONAL_FIELDS:raise RuntimeError(_ui_tr('현재 설정을 완전히 읽지 못해 복원을 시작하지 않습니다.'))
     if not LIGHTBAR_FIELDS.issubset(original):

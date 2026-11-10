@@ -8,6 +8,7 @@
 #include <cstdint>
 
 void audio_init();
+bool audio_profile_chime();
 void audio_loop();
 void audio_reset_stream();
 bool audio_prepare_sleep();

@@ -5,7 +5,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[('ProcessCapture.exe', '.')],
-    datas=[('assets/dslight.ico', 'assets'), ('assets/diagnostic-bg-120.png', 'assets'), ('assets/diagnostic-bg-160.png', 'assets'), ('assets/diagnostic-bg-240.png', 'assets'), ('assets/diagnostic-bg-320.png', 'assets'), ('assets/ds5-light-logo.svg', 'assets'), ('assets/dualsense-controls.svg', 'assets'), ('assets/diagnostic-controller.svg', 'assets'), ('vendor/ds5audio_original.py', 'vendor'), ('vendor/LICENSE-Studio.txt', 'vendor'), ('vendor/tksvg0.16/pkgIndex.tcl', 'vendor/tksvg0.16'), ('vendor/tksvg0.16/tksvg016t.dll', 'vendor/tksvg0.16')],
+    datas=[('assets/dslight.ico', 'assets'), ('assets/diagnostic-bg-120.png', 'assets'), ('assets/diagnostic-bg-160.png', 'assets'), ('assets/diagnostic-bg-240.png', 'assets'), ('assets/diagnostic-bg-320.png', 'assets'), ('assets/ds5-light-logo.svg', 'assets'), ('assets/dualsense-controls.svg', 'assets'), ('assets/diagnostic-controller.svg', 'assets'), ('assets/edge', 'assets/edge'), ('vendor/ds5audio_original.py', 'vendor'), ('vendor/LICENSE-Studio.txt', 'vendor'), ('vendor/tksvg0.16/pkgIndex.tcl', 'vendor/tksvg0.16'), ('vendor/tksvg0.16/tksvg016t.dll', 'vendor/tksvg0.16')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -33,6 +33,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['assets/dslight.ico'],
+    manifest='DS5Light.manifest',
 )
 coll = COLLECT(
     exe,

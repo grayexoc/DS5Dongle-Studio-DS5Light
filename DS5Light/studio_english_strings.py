@@ -284,7 +284,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
                                                                                                'maintained.',
  '\n다른 이동량도 측정하세요. 6500의 회전각은 3250의 약 두 배여야 합니다.': 'Measure other movements as well. The rotation angle of '
                                                    '6500 should be approximately twice that of 3250.',
- '\n공유 매핑·매크로 변경도 저장하며, 모든 프로필에 영향을 줍니다.': 'Shared mapping and macro changes are also saved and affect all '
+ '\nPico 매핑·매크로 변경도 저장하며, 모든 프로필에 영향을 줍니다.': 'Shared mapping and macro changes are also saved and affect all '
                                            'profiles.',
  '\n오차 ': 'error',
  '\n외 ': 'except',
@@ -1447,7 +1447,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '공유 매크로': 'shared macro',
  '고급 트리거 효과는 웹 설정을 이용하세요.': 'For advanced trigger effects, use web settings.',
  '공사 중 또는 제외된 설정은 쓰지 않습니다.': 'Settings under construction or excluded are not used.',
- '공유 매크로 임시 적용됨 · 공유 매핑·매크로 저장 필요': 'Shared macro temporarily applied · Shared mapping · Macro saving '
+ '공유 매크로 임시 적용됨 · Pico 매핑·매크로 저장 필요': 'Shared macro temporarily applied · Shared mapping · Macro saving '
                                     'required',
  '공사 중 또는 제외된 설정은 읽지 않습니다.': 'Settings under construction or excluded will not be read.',
  '공유 매크로 적용값 불일치 · 새로 고침으로 확인하세요.': 'Shared macro application value mismatch · Check by refreshing.',
@@ -1459,18 +1459,18 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '공유 매핑 교체': 'Replace shared mappings',
  '공유 매크로 변경 ': 'Change shared macros',
  '공유 매크로 정의 중 이 프로필에서 사용할 행을 고릅니다.': 'Select the row of shared macro definitions to use in this profile.',
- '공유 매핑·매크로 저장 중…': 'Saving shared mapping/macro...',
- '공유 매핑·매크로 저장': 'Save shared mapping and macro',
+ 'Pico 매핑·매크로 저장 중…': 'Saving shared mapping/macro...',
+ 'Pico 매핑·매크로 저장': 'Save shared mapping and macro',
  '공유 매크로가 외부에서 변경되었습니다. 새로 고침으로 확인하세요.': 'A shared macro has been changed externally. Please refresh to '
                                          'check.',
- '공유 매핑·매크로': 'Shared Mapping/Macro',
+ 'Pico 매핑·매크로': 'Shared Mapping/Macro',
  '기본': 'basic',
  '기록: ': 'record:',
  '관성 이동이 멈추는 정도입니다. 높이면 빠르게 감속합니다.': 'This is the degree to which inertial movement stops. As you increase '
                                      'it, it decelerates quickly.',
- '공유 매핑·매크로를 먼저 저장한 뒤 현재 프로필의 사용 체크를 적용하거나 저장하세요.': 'Save the shared mapping/macro first, then apply or save '
+ 'Pico 매핑·매크로를 먼저 저장한 뒤 현재 프로필의 사용 체크를 적용하거나 저장하세요.': 'Save the shared mapping/macro first, then apply or save '
                                                     'the check mark for use in the current profile.',
- '공유 매핑·매크로 저장 확인 · 모든 프로필이 공유': 'Confirm shared mapping · Save macro · Shared by all profiles',
+ 'Pico 매핑·매크로 저장 확인 · 모든 프로필이 공유': 'Confirm shared mapping · Save macro · Shared by all profiles',
  '기본값': 'default',
  '길게 누르기': 'long press',
  '기본 저항과 효과 우선순위': 'Base resistance and effect priority',
@@ -1816,7 +1816,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '매핑·매크로 추가': 'Add mapping / macro',
  '매핑·매크로 열기': 'Open mapping/macro',
  '매핑을 삭제할까요?': 'Would you like to delete the mapping?',
- '모든 프로필이 공유하는 일반 매크로 정의를 편집에 불러옵니다. 공유 매핑·매크로 저장 전에는 전송되지 않습니다. 계속할까요?': 'Generic macro definitions shared '
+ '모든 프로필이 공유하는 일반 매크로 정의를 편집에 불러옵니다. Pico 매핑·매크로 저장 전에는 전송되지 않습니다. 계속할까요?': 'Generic macro definitions shared '
                                                                           'by all profiles are brought into '
                                                                           'edit. Shared mappings and macros '
                                                                           'will not be transferred before '
@@ -1870,7 +1870,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '버튼 하나·조합, 스틱 방향, 터치패드 스와이프 중 실행할 입력을 고릅니다.': 'Choose the input you want to perform: one button or '
                                                'combination, stick direction, or touchpad swipe.',
  '변경 버리기': 'discard change',
- '변경값을 적용하고 표시된 프로필 슬롯에 저장한 뒤 Pico 시작 설정 저장을 요청합니다. 공유 매크로 정의는 별도의 공유 매핑·매크로 저장으로 저장합니다. 전송은 잠시 정지하며 확인할 수 없는 결과는 완료로 표시하지 않습니다.': 'Apply '
+ '변경값을 적용하고 표시된 프로필 슬롯에 저장한 뒤 Pico 시작 설정 저장을 요청합니다. 공유 매크로 정의는 별도의 Pico 매핑·매크로 저장으로 저장합니다. 전송은 잠시 정지하며 확인할 수 없는 결과는 완료로 표시하지 않습니다.': 'Apply '
                                                                                                                                    'the '
                                                                                                                                    'changes '
                                                                                                                                    'and '
@@ -2483,7 +2483,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '이름 변경': 'change name',
  '이 알림 단계를 사용할지 선택합니다.': 'Choose whether to enable this notification level.',
  '이 단계의 알림을 낼 배터리 잔량입니다.': 'Battery level to trigger notification at this stage.',
- '이 매핑을 사용하는 모든 프로필에 영향을 줍니다.\n삭제 내용은 공유 매핑·매크로 저장을 눌러야 장치에 반영됩니다.': 'Affects all profiles that use this '
+ '이 매핑을 사용하는 모든 프로필에 영향을 줍니다.\n삭제 내용은 Pico 매핑·매크로 저장을 눌러야 장치에 반영됩니다.': 'Affects all profiles that use this '
                                                                      'mapping.\n'
                                                                      'Deleted information will be reflected '
                                                                      'on the device only when you click Save '
@@ -2504,7 +2504,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
                                                                                  'footsteps and sound '
                                                                                  'effects may disappear.',
  '이전': 'before',
- '이미 장치에 임시 적용된 공유 매크로는 프로필 전환으로 되돌릴 수 없습니다. 공유 매핑·매크로를 먼저 저장하거나 새로 고침으로 확인하세요.': 'Shared macros that have '
+ '이미 장치에 임시 적용된 공유 매크로는 프로필 전환으로 되돌릴 수 없습니다. Pico 매핑·매크로를 먼저 저장하거나 새로 고침으로 확인하세요.': 'Shared macros that have '
                                                                                   'already been temporarily '
                                                                                   'applied to your device '
                                                                                   'cannot be reverted by '
@@ -3479,7 +3479,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
                                        'from the resistance strength.',
  '프로필 ': 'profile',
  '편집 중인 변경을 먼저 저장하거나 되돌린 뒤 이름을 변경하세요.': 'Save or revert any changes you are editing first, then rename.',
- '편집에 반영한 뒤 공유 매핑·매크로 저장을 누르세요. 사용 체크는 현재 프로필에 저장합니다.': 'After editing, click Save Shared Mapping/Macro. '
+ '편집에 반영한 뒤 Pico 매핑·매크로 저장을 누르세요. 사용 체크는 현재 프로필에 저장합니다.': 'After editing, click Save Shared Mapping/Macro. '
                                                         'Usage checks are saved to the current profile.',
  '프로세스 정렬 설정이 올바르지 않습니다.': 'Process alignment settings are incorrect.',
  '프로필 변경됨 · 다시 조회 필요': 'Profile changed · Re-view required',
@@ -4669,4 +4669,25 @@ for _key,_value in tuple(EN.items()):
     EN[_key]=_value.replace('\u200b','')
 
 # Concise text used outside field tooltips.
-EN.update({'Pico가 오디오를 쌓아 처리하는 버퍼 크기입니다. 작으면 지연이 줄고, 크면 전송이 안정적입니다. 추천값은 48입니다. 소리나 햅틱이 끊기는 등 문제가 있으면 64로 변경하세요. 앱의 PC 전송 블록 크기와는 별도입니다.': 'Pico audio buffer. Recommended: 48; try 64 if audio breaks up. Separate from the PC processing block size.', '게임의 네이티브 햅틱 파형과 Pico가 생성하는 오디오햅틱을 증폭합니다. 1은 원래 배율이며, 큰 값은 포화를 일으킬 수 있습니다. 일반 진동 세기·잔향 및 Mix 일반 진동 혼합 세기는 별도 설정입니다.': 'Scales haptic waveforms. 1 is unchanged; higher values can saturate. Separate from rumble strength and Mix rumble strength.', '게임이 보내는 효과의 형태를 유지하면서 적응형 트리거 모터의 힘을 줄입니다. 게임의 네이티브 효과에도 적용됩니다. 10은 기본 세기, 1은 가장 약함입니다. 펌웨어의 원래 11단계를 유지하므로 중간값은 소수로 표시합니다.': 'Reduces adaptive trigger force while preserving the game effect. 1: weakest. 10: original strength. Intermediate values follow the firmware steps.', '끔은 게임의 일반 진동과 네이티브 햅틱을 그대로 사용하는 모드입니다. Mix는 오디오햅틱에 게임의 네이티브 햅틱과 일반 진동 변환 신호를 섞습니다. Replace는 오디오햅틱만 사용합니다. 게임이 제공하는 신호와 연결 방식에 따라 재생되는 성분은 달라집니다.': 'Off: game rumble and native haptics. Mix: adds audio haptics. Replace: audio haptics only.', '네이티브 햅틱을 저역 통과 필터로 처리한 뒤 섞을지, 원본 그대로 섞을지 정합니다. 복제 오디오의 대사·고음이 새어 들어올 때는 필터가 도움이 되지만, 실제 네이티브 햅틱을 온전히 유지하려면 원본을 선택하세요.': 'Filtered reduces mirrored audio leakage. Raw preserves native game haptics.', '듀얼센스 스피커와 듀얼센스 단자에 연결한 헤드셋의 소리 출력을 끕니다. PC에 직접 연결한 USB 헤드셋에는 영향을 주지 않습니다. 오디오햅틱 모드를 Mix·Replace로 바꾸면 자동 체크되고 Off로 바꾸면 해제됩니다. 이후 수동으로 변경할 수 있습니다. 체크 중에는 하위 모드별 음소거가 적용되지 않으며, 적용 시 USB 재연결이 필요할 수 있습니다.': 'Disables the DualSense speaker and its headset jack, not PC USB headsets. Mode changes select this automatically; manual changes are allowed. Overrides mode-specific mutes. Applying may reconnect USB.', '변경값을 적용하고 표시된 프로필 슬롯에 저장한 뒤 Pico 시작 설정 저장을 요청합니다. 공유 매크로 정의는 별도의 공유 매핑·매크로 저장으로 저장합니다. 전송은 잠시 정지하며 확인할 수 없는 결과는 완료로 표시하지 않습니다.': 'Applies changes, saves the indicated profile slot and requests Pico startup storage. Save shared mappings and macros separately. Audio pauses briefly.', '수동은 게임마다 체감으로 감도를 맞추는 방식입니다. 자연 감도는 듀얼센스 회전과 화면 회전의 비율을 사용합니다. 1배이면 듀얼센스를 10도 돌렸을 때 화면도 10도 돌아가도록 맞춥니다. 정확한 360도 회전 마우스 이동량이 필요하며, 자연 감도는 마우스로 출력할 때만 적용됩니다. 스틱 출력은 회전각이 아닌 회전 속도를 전달합니다.': 'Manual: tune by feel. Natural: controller-to-view rotation ratio; requires mouse output and calibrated counts per 360°.', '수평 조준에 사용할 회전축을 정합니다. 좌우 회전은 듀얼센스를 돌리는 움직임, 좌우 기울임은 옆으로 기울이는 움직임을 사용합니다. 잡은 방향 기준은 가속도계로 아래 방향을 판단해 두 축을 섞으므로, 듀얼센스를 평평하게 들거나 세워도 비슷하게 조준할 수 있습니다.': 'Yaw: turn left or right. Roll: tilt sideways. Player space combines both using controller orientation.', '오디오에서 만든 햅틱의 전체 세기를 조절합니다. 네이티브 햅틱 혼합량과 Mix 일반 진동 혼합 세기는 별도입니다. 앱 상단 햅틱 세기와 함께 높이면 과도하게 증폭될 수 있습니다.': 'Scales audio-generated haptics. Raising this and the main window strength together can cause saturation.', '자이로 움직임을 어떤 입력으로 전달할지 정합니다. 오른쪽 스틱은 별도 마우스 설정 없이 쓸 수 있습니다. 마우스는 미세 조준에 유리하고 빠른 회전에서도 스틱의 최대 속도에 묶이지 않지만, 게임이 게임패드와 마우스의 동시 입력을 막으면 패드를 숨기는 별도 설정이 필요할 수 있습니다. 변경하면 USB 장치를 다시 연결합니다.': 'Choose right stick or mouse output. Some games block simultaneous mouse and gamepad input. Applying reconnects USB.', '자이로 작동 기준을 마우스로 적용한 후 사용하세요.': 'Apply Mouse output first. Switch to the game during the 3-second countdown. Disable mouse acceleration and smoothing.', '자이로 작동 기준을 마우스로 적용한 뒤 측정하세요. 전송 버튼을 누르면 3초 후 마우스 이동이 시작됩니다. 그동안 게임을 전면으로 전환하고 게임의 마우스 가속·스무딩을 끄세요.': 'Apply Mouse output first. Switch to the game during the 3-second countdown. Disable mouse acceleration and smoothing.', '작은 소리 차단 25, 24dB 기울기와 50Hz 대역 분리로 작은 소리 및 50~80Hz 대역의 반응을 줄입니다. 배경음에 의한 지속적인 반응을 줄이고 정돈된 오디오햅틱을 원할 때 사용합니다. 약한 효과음도 줄어들 수 있으며 음악·대사를 정확히 분리하는 기능은 아닙니다.': 'Reduces sustained background responses using gate 25, a 24 dB/oct filter and a 50 Hz crossover. May weaken subtle effects; does not isolate dialogue or music.', '저음·고음 분리 기준 주파수입니다. 각 좌우 채널 안에서 대역을 나누고, 저음 충격 세기와 고음 대역 세기를 반영해 다시 합칩니다. 0이면 분리를 끄며 두 세기 값은 적용되지 않습니다. 사용할 때는 저역 통과 기준보다 낮게 설정하세요.': 'Splits each channel into low and high bands for separate gain. 0 disables the split. Set below the low-pass cutoff.', '저음·고음 분리 기준부터 저역 통과 기준까지의 높은 쪽 대역이 햅틱에 기여하는 세기입니다. 낮추면 이 대역의 음악·대사와 효과음 반응이 함께 줄어듭니다. 100%는 해당 대역의 원래 비율, 0%는 해당 대역 제외입니다. 저음·고음 분리 기준이 0이면 적용되지 않습니다.': 'Gain between crossover and low-pass cutoff. Affects effects, music and dialogue. 100% is unchanged; 0% removes the band. Inactive at crossover 0.', '저음·고음 분리 기준보다 낮은 대역의 세기입니다. 분리 기준이 0이면 적용되지 않습니다.': 'Gain below the crossover, including bass in music and dialogue. 100% is unchanged; 0% removes the band. Inactive at crossover 0.', '저음·고음 분리 기준보다 높은 햅틱 대역의 세기입니다. 분리 기준이 0이면 적용되지 않습니다.': 'Gain below the crossover, including bass in music and dialogue. 100% is unchanged; 0% removes the band. Inactive at crossover 0.', '저음·고음 분리 기준보다 낮은 대역이 햅틱에 기여하는 세기입니다. 묵직한 충격과 울림을 조절하며 음악·대사의 저음도 포함됩니다. 100%는 해당 대역의 원래 비율, 0%는 해당 대역 제외입니다. 저음·고음 분리 기준이 0이면 적용되지 않습니다.': 'Gain below the crossover, including bass in music and dialogue. 100% is unchanged; 0% removes the band. Inactive at crossover 0.', '전송할 햅틱 파형의 거친 질감을 부드럽게 합니다. 네이티브 햅틱뿐 아니라 오디오햅틱과 Mix에 섞인 일반 진동 변환 신호에도 적용됩니다. 강하게 처리하면 짧은 충격이 약해질 수 있습니다. 오디오햅틱 끔에서 사용하는 일반 진동 전달 경로에는 적용되지 않습니다.': 'Smooths haptic waveforms. Strong smoothing can soften impacts. Does not affect rumble with audio haptics off.', '측정 중 듀얼센스를 수평으로 잡고 오른쪽으로 한 바퀴(360°) 돌려 시작 방향으로 돌아오세요. 남은 시간에는 가만히 유지하고 2~3회 반복해 비교하세요. 반대 방향 움직임도 합산되므로 한 방향으로만 돌리세요.': 'Hold DualSense level and rotate 360° to the right, then keep still. Avoid reverse rotation. Repeat 2–3 times.', '터치패드 아래 흰색 LED 5개의 표시 방식을 정합니다. 게임 설정 따름은 게임·듀얼센스에 맡기고, 끔은 LED를 끕니다. 배터리 잔량은 20%마다 왼쪽부터 하나씩 켜며, 충전 중에는 다음 LED가 천천히 점멸하고 20% 미만에서는 첫 LED만 깜박입니다. 잔량 표시를 쓰면 게임의 플레이어 번호 표시는 대체됩니다.': 'Controls the five white player LEDs. Battery mode shows one LED per 20%; the next blinks while charging, the first below 20%. Replaces player-number display.', '현재 게임에서 화면을 한 바퀴 돌리는 데 필요한 마우스 이동량입니다.': 'Mouse counts for a full turn: cm/360 × DPI ÷ 2.54. To calibrate a backward flick: new value = current value × 180 ÷ measured angle. Use raw input; disable acceleration. Recalibrate after changing game sensitivity.', '현재 게임에서 화면을 한 바퀴 돌리는 데 필요한 마우스 이동량입니다. 알고 있는 값이 있으면 (360도 회전에 필요한 cm) × (DPI ÷ 2.54)로 계산할 수 있습니다. 모르면 6500에서 시작해 스틱을 뒤로 끝까지 기울인 뒤 실제 회전각을 보고 현재 값 × 180 ÷ 실제 회전각으로 보정하세요. 마우스 가속은 끄고 원시 입력은 켜는 것이 좋으며, 게임 감도를 바꾸면 다시 맞춰야 합니다.': 'Mouse counts for a full turn: cm/360 × DPI ÷ 2.54. To calibrate a backward flick: new value = current value × 180 ÷ measured angle. Use raw input; disable acceleration. Recalibrate after changing game sensitivity.', '안정형보다 적극적인 오디오햅틱 반응을 원할 때 사용합니다. 작은 소리 차단 16과 부드러움 32로 미세한 반응을 줄이고 진동 변화를 완화합니다. 100Hz 저역 통과와 60Hz 대역 분리, 고음 대역 세기 60%를 사용합니다. 배경음에도 반응할 수 있으며 음악·대사를 정확히 분리하는 기능은 아닙니다.': 'More responsive than Balanced. Gate 16, smoothing 32, low-pass 100 Hz, crossover 60 Hz, high-band gain 60%. May also respond to background audio; does not isolate dialogue or music.'})
+EN.update({'Pico가 오디오를 쌓아 처리하는 버퍼 크기입니다. 작으면 지연이 줄고, 크면 전송이 안정적입니다. 추천값은 48입니다. 소리나 햅틱이 끊기는 등 문제가 있으면 64로 변경하세요. 앱의 PC 전송 블록 크기와는 별도입니다.': 'Pico audio buffer. Recommended: 48; try 64 if audio breaks up. Separate from the PC processing block size.', '게임의 네이티브 햅틱 파형과 Pico가 생성하는 오디오햅틱을 증폭합니다. 1은 원래 배율이며, 큰 값은 포화를 일으킬 수 있습니다. 일반 진동 세기·잔향 및 Mix 일반 진동 혼합 세기는 별도 설정입니다.': 'Scales haptic waveforms. 1 is unchanged; higher values can saturate. Separate from rumble strength and Mix rumble strength.', '게임이 보내는 효과의 형태를 유지하면서 적응형 트리거 모터의 힘을 줄입니다. 게임의 네이티브 효과에도 적용됩니다. 10은 기본 세기, 1은 가장 약함입니다. 펌웨어의 원래 11단계를 유지하므로 중간값은 소수로 표시합니다.': 'Reduces adaptive trigger force while preserving the game effect. 1: weakest. 10: original strength. Intermediate values follow the firmware steps.', '끔은 게임의 일반 진동과 네이티브 햅틱을 그대로 사용하는 모드입니다. Mix는 오디오햅틱에 게임의 네이티브 햅틱과 일반 진동 변환 신호를 섞습니다. Replace는 오디오햅틱만 사용합니다. 게임이 제공하는 신호와 연결 방식에 따라 재생되는 성분은 달라집니다.': 'Off: game rumble and native haptics. Mix: adds audio haptics. Replace: audio haptics only.', '네이티브 햅틱을 저역 통과 필터로 처리한 뒤 섞을지, 원본 그대로 섞을지 정합니다. 복제 오디오의 대사·고음이 새어 들어올 때는 필터가 도움이 되지만, 실제 네이티브 햅틱을 온전히 유지하려면 원본을 선택하세요.': 'Filtered reduces mirrored audio leakage. Raw preserves native game haptics.', '듀얼센스 스피커와 듀얼센스 단자에 연결한 헤드셋의 소리 출력을 끕니다. PC에 직접 연결한 USB 헤드셋에는 영향을 주지 않습니다. 오디오햅틱 모드를 Mix·Replace로 바꾸면 자동 체크되고 Off로 바꾸면 해제됩니다. 이후 수동으로 변경할 수 있습니다. 체크 중에는 하위 모드별 음소거가 적용되지 않으며, 적용 시 USB 재연결이 필요할 수 있습니다.': 'Disables the DualSense speaker and its headset jack, not PC USB headsets. Mode changes select this automatically; manual changes are allowed. Overrides mode-specific mutes. Applying may reconnect USB.', '변경값을 적용하고 표시된 프로필 슬롯에 저장한 뒤 Pico 시작 설정 저장을 요청합니다. 공유 매크로 정의는 별도의 Pico 매핑·매크로 저장으로 저장합니다. 전송은 잠시 정지하며 확인할 수 없는 결과는 완료로 표시하지 않습니다.': 'Applies changes, saves the indicated profile slot and requests Pico startup storage. Save shared mappings and macros separately. Audio pauses briefly.', '수동은 게임마다 체감으로 감도를 맞추는 방식입니다. 자연 감도는 듀얼센스 회전과 화면 회전의 비율을 사용합니다. 1배이면 듀얼센스를 10도 돌렸을 때 화면도 10도 돌아가도록 맞춥니다. 정확한 360도 회전 마우스 이동량이 필요하며, 자연 감도는 마우스로 출력할 때만 적용됩니다. 스틱 출력은 회전각이 아닌 회전 속도를 전달합니다.': 'Manual: tune by feel. Natural: controller-to-view rotation ratio; requires mouse output and calibrated counts per 360°.', '수평 조준에 사용할 회전축을 정합니다. 좌우 회전은 듀얼센스를 돌리는 움직임, 좌우 기울임은 옆으로 기울이는 움직임을 사용합니다. 잡은 방향 기준은 가속도계로 아래 방향을 판단해 두 축을 섞으므로, 듀얼센스를 평평하게 들거나 세워도 비슷하게 조준할 수 있습니다.': 'Yaw: turn left or right. Roll: tilt sideways. Player space combines both using controller orientation.', '오디오에서 만든 햅틱의 전체 세기를 조절합니다. 네이티브 햅틱 혼합량과 Mix 일반 진동 혼합 세기는 별도입니다. 앱 상단 햅틱 세기와 함께 높이면 과도하게 증폭될 수 있습니다.': 'Scales audio-generated haptics. Raising this and the main window strength together can cause saturation.', '자이로 움직임을 어떤 입력으로 전달할지 정합니다. 오른쪽 스틱은 별도 마우스 설정 없이 쓸 수 있습니다. 마우스는 미세 조준에 유리하고 빠른 회전에서도 스틱의 최대 속도에 묶이지 않지만, 게임이 게임패드와 마우스의 동시 입력을 막으면 패드를 숨기는 별도 설정이 필요할 수 있습니다. 변경하면 USB 장치를 다시 연결합니다.': 'Choose right stick or mouse output. Some games block simultaneous mouse and gamepad input. Applying reconnects USB.', '자이로 작동 기준을 마우스로 적용한 후 사용하세요.': 'Apply Mouse output first. Switch to the game during the 3-second countdown. Disable mouse acceleration and smoothing.', '자이로 작동 기준을 마우스로 적용한 뒤 측정하세요. 전송 버튼을 누르면 3초 후 마우스 이동이 시작됩니다. 그동안 게임을 전면으로 전환하고 게임의 마우스 가속·스무딩을 끄세요.': 'Apply Mouse output first. Switch to the game during the 3-second countdown. Disable mouse acceleration and smoothing.', '작은 소리 차단 25, 24dB 기울기와 50Hz 대역 분리로 작은 소리 및 50~80Hz 대역의 반응을 줄입니다. 배경음에 의한 지속적인 반응을 줄이고 정돈된 오디오햅틱을 원할 때 사용합니다. 약한 효과음도 줄어들 수 있으며 음악·대사를 정확히 분리하는 기능은 아닙니다.': 'Reduces sustained background responses using gate 25, a 24 dB/oct filter and a 50 Hz crossover. May weaken subtle effects; does not isolate dialogue or music.', '저음·고음 분리 기준 주파수입니다. 각 좌우 채널 안에서 대역을 나누고, 저음 충격 세기와 고음 대역 세기를 반영해 다시 합칩니다. 0이면 분리를 끄며 두 세기 값은 적용되지 않습니다. 사용할 때는 저역 통과 기준보다 낮게 설정하세요.': 'Splits each channel into low and high bands for separate gain. 0 disables the split. Set below the low-pass cutoff.', '저음·고음 분리 기준부터 저역 통과 기준까지의 높은 쪽 대역이 햅틱에 기여하는 세기입니다. 낮추면 이 대역의 음악·대사와 효과음 반응이 함께 줄어듭니다. 100%는 해당 대역의 원래 비율, 0%는 해당 대역 제외입니다. 저음·고음 분리 기준이 0이면 적용되지 않습니다.': 'Gain between crossover and low-pass cutoff. Affects effects, music and dialogue. 100% is unchanged; 0% removes the band. Inactive at crossover 0.', '저음·고음 분리 기준보다 낮은 대역의 세기입니다. 분리 기준이 0이면 적용되지 않습니다.': 'Gain below the crossover, including bass in music and dialogue. 100% is unchanged; 0% removes the band. Inactive at crossover 0.', '저음·고음 분리 기준보다 높은 햅틱 대역의 세기입니다. 분리 기준이 0이면 적용되지 않습니다.': 'Gain below the crossover, including bass in music and dialogue. 100% is unchanged; 0% removes the band. Inactive at crossover 0.', '저음·고음 분리 기준보다 낮은 대역이 햅틱에 기여하는 세기입니다. 묵직한 충격과 울림을 조절하며 음악·대사의 저음도 포함됩니다. 100%는 해당 대역의 원래 비율, 0%는 해당 대역 제외입니다. 저음·고음 분리 기준이 0이면 적용되지 않습니다.': 'Gain below the crossover, including bass in music and dialogue. 100% is unchanged; 0% removes the band. Inactive at crossover 0.', '전송할 햅틱 파형의 거친 질감을 부드럽게 합니다. 네이티브 햅틱뿐 아니라 오디오햅틱과 Mix에 섞인 일반 진동 변환 신호에도 적용됩니다. 강하게 처리하면 짧은 충격이 약해질 수 있습니다. 오디오햅틱 끔에서 사용하는 일반 진동 전달 경로에는 적용되지 않습니다.': 'Smooths haptic waveforms. Strong smoothing can soften impacts. Does not affect rumble with audio haptics off.', '측정 중 듀얼센스를 수평으로 잡고 오른쪽으로 한 바퀴(360°) 돌려 시작 방향으로 돌아오세요. 남은 시간에는 가만히 유지하고 2~3회 반복해 비교하세요. 반대 방향 움직임도 합산되므로 한 방향으로만 돌리세요.': 'Hold DualSense level and rotate 360° to the right, then keep still. Avoid reverse rotation. Repeat 2–3 times.', '터치패드 아래 흰색 LED 5개의 표시 방식을 정합니다. 게임 설정 따름은 게임·듀얼센스에 맡기고, 끔은 LED를 끕니다. 배터리 잔량은 20%마다 왼쪽부터 하나씩 켜며, 충전 중에는 다음 LED가 천천히 점멸하고 20% 미만에서는 첫 LED만 깜박입니다. 잔량 표시를 쓰면 게임의 플레이어 번호 표시는 대체됩니다.': 'Controls the five white player LEDs. Battery mode shows one LED per 20%; the next blinks while charging, the first below 20%. Replaces player-number display.', '현재 게임에서 화면을 한 바퀴 돌리는 데 필요한 마우스 이동량입니다.': 'Mouse counts for a full turn: cm/360 × DPI ÷ 2.54. To calibrate a backward flick: new value = current value × 180 ÷ measured angle. Use raw input; disable acceleration. Recalibrate after changing game sensitivity.', '현재 게임에서 화면을 한 바퀴 돌리는 데 필요한 마우스 이동량입니다. 알고 있는 값이 있으면 (360도 회전에 필요한 cm) × (DPI ÷ 2.54)로 계산할 수 있습니다. 모르면 6500에서 시작해 스틱을 뒤로 끝까지 기울인 뒤 실제 회전각을 보고 현재 값 × 180 ÷ 실제 회전각으로 보정하세요. 마우스 가속은 끄고 원시 입력은 켜는 것이 좋으며, 게임 감도를 바꾸면 다시 맞춰야 합니다.': 'Mouse counts for a full turn: cm/360 × DPI ÷ 2.54. To calibrate a backward flick: new value = current value × 180 ÷ measured angle. Use raw input; disable acceleration. Recalibrate after changing game sensitivity.', '안정형보다 적극적인 오디오햅틱 반응을 원할 때 사용합니다. 작은 소리 차단 16과 부드러움 32로 미세한 반응을 줄이고 진동 변화를 완화합니다. 100Hz 저역 통과와 60Hz 대역 분리, 고음 대역 세기 60%를 사용합니다. 배경음에도 반응할 수 있으며 음악·대사를 정확히 분리하는 기능은 아닙니다.': 'More responsive than Balanced. Gate 16, smoothing 32, low-pass 100 Hz, crossover 60 Hz, high-band gain 60%. May also respond to background audio; does not isolate dialogue or music.'})
+
+EN.update({'햅틱·스피커':'Haptics & speaker','네이티브 햅틱 세기':'Native haptics strength','일반진동 잔향':'Rumble decay','일반 진동을 트리거에 연동':'Rumble to triggers'})
+FIELD_LABELS.update({'haptics_gain':'Native haptics strength','rumble_release':'Rumble decay'})
+
+EN.update({'듀얼센스 스피커 증폭':'DualSense speaker gain','햅틱 질감':'Haptic texture','음량이 부족할 때 조절\n높이면 왜곡될 수 있음':'Boosts quiet speaker audio. High values can distort.'})
+FIELD_LABELS['speaker_gain']='DualSense speaker gain'
+
+EN.update({'자동 연결 해제 안함':'Disable idle disconnect','레이어':'Layer','시프트 레이어키 지정':'Set shift layer key'})
+
+EN.update({
+ '없음':'None', '기본':'Default',
+ '누르는 동안 시프트 · 미지정 입력은 기본 매핑 상속 · 시프트키는 게임에서 숨김':'Hold to activate the shift layer. Unassigned inputs use base mappings. The layer key is hidden from the game.',
+ '현재 프로필에서 사용':'Enable in current profile',
+ '십자키 위':'D-pad up','십자키 아래':'D-pad down','십자키 왼쪽':'D-pad left','십자키 오른쪽':'D-pad right',
+ '스퀘어':'Square','크로스':'Cross','서클':'Circle','트라이앵글':'Triangle',
+ 'PS 버튼':'PS button','터치패드 클릭':'Touchpad click','왼쪽 Fn':'Left Fn','오른쪽 Fn':'Right Fn',
+ '왼쪽 패들':'Left paddle','오른쪽 패들':'Right paddle',
+ '터치패드 왼쪽 클릭':'Left touchpad click','터치패드 오른쪽 클릭':'Right touchpad click',
+})
+
+EN.update({'미리듣기':'Preview','듀얼센스 스피커 · 프로필 스피커 음량 적용':'DualSense speaker · Uses profile speaker volume'})

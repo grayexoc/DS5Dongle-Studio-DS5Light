@@ -1,5 +1,8 @@
 """Explicit gyro calibration, ported from the Studio portal's final panel."""
-from studio_i18n import text as _ui_tr
+from studio_i18n import text as _translate
+
+def _ui_tr(text):
+    return _translate(text).replace('. ', '.\n')
 import math,tkinter as tk
 from tkinter import ttk
 from ui_controls import widget_trace

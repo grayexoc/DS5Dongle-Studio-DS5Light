@@ -2,6 +2,7 @@
 from studio_i18n import text as _ui_tr
 import tkinter as tk
 from localization import LANGUAGE
+from ui_dpi import px,watch_scale
 
 
 class HoverHint:
@@ -41,6 +42,8 @@ class HoverHint:
 class BatteryLogo(tk.Canvas):
     def __init__(self,parent,path,background,height=64):
         svg=path.read_text(encoding='utf-8')
+        self._svg=svg;self._logical_height=height;self._status=('waiting',None)
+        height=px(parent,height)
         self.full=tk.PhotoImage(master=parent,data=svg,format=('svg','-scaletoheight',height))
         # Only the gold pulse becomes subdued when its status is unknown.
         # TkSVG ignores stroke-opacity on this gradient stroke. Gradient stop
@@ -52,8 +55,19 @@ class BatteryLogo(tk.Canvas):
         self._background=background;self._last=None;self._scale=height/188
         self.hint=HoverHint(self,_ui_tr('배터리 정보 조회 대기') if LANGUAGE=='ko' else 'Battery status pending')
         self.show_status('waiting',None)
+        watch_scale(self,self._scale_logo)
+
+    def _scale_logo(self):
+        height=px(self,self._logical_height)
+        self.full=tk.PhotoImage(master=self,data=self._svg,format=('svg','-scaletoheight',height))
+        muted=self._svg.replace('stop-opacity="1"','stop-opacity="0.25"')
+        self.unknown=tk.PhotoImage(master=self,data=muted,format=('svg','-scaletoheight',height))
+        self.configure(width=self.full.width(),height=self.full.height())
+        self._scale=height/188;self._last=None
+        self.show_status(*self._status)
 
     def show_status(self,state,value):
+        self._status=(state,dict(value) if value is not None else None)
         key=(state,tuple(sorted(value.items())) if value else None)
         if key==self._last:return
         self._last=key;self.delete('all')

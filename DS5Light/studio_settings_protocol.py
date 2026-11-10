@@ -289,9 +289,28 @@ class SettingsClient(StudioClient):
             if row[2]!=0 or len(row)<39:raise RuntimeError(_ui_tr('매크로 읽기 실패'))
             out[str(index)]=list(row[4:39])
         return out
+    def macro_features(self, preview=False):
+        token=secrets.token_bytes(4);sub=int(preview)
+        try:row=self.command(0x20,bytes([sub])+token,0x84,bytes([sub])+token,echo_offset=4)
+        except TimeoutError as exc:
+            raise RuntimeError(_ui_tr('시프트·프로필 전환 지원을 확인하지 못했습니다. v31 이상 실험 펌웨어를 확인하세요.')) from exc
+        if preview and row[2]==2:
+            raise RuntimeError(_ui_tr('듀얼센스를 연결하고 PC 절전을 해제한 뒤 미리듣기를 눌러 주세요.'))
+        if row[2] or len(row)<10 or row[3]!=1 or not preview and row[9]&7!=7:
+            raise RuntimeError(_ui_tr('시프트·프로필 전환은 v31 이상 실험 펌웨어가 필요합니다.'))
+        self._macro_extensions=True
+        return row
+
+    def require_macro_features(self, records):
+        from studio_shift import extended,validate_extension
+        for row in records:validate_extension(row)
+        if any(extended(row) for row in records) and not getattr(self,'_macro_extensions',False):
+            self.macro_features()
+
     def write_macro(self,index,data):
         if not 0<=index<32 or len(data)!=35:raise ValueError(_ui_tr('매크로 형식 오류'))
         if data[4]&0x10:raise ValueError(_ui_tr('실험 기능인 모션 제스처는 편집하지 않습니다.'))
+        self.require_macro_features([data])
         r=self.command(24,bytes([index])+bytes(data),0x84,bytes([index]))
         if r[2]!=0:raise RuntimeError(_ui_tr('매크로 적용 실패'))
     def commit_macros(self):

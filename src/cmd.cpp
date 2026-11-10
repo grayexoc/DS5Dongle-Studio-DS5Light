@@ -1114,6 +1114,19 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             feature_data[0x84].assign(reply, reply + sizeof(reply));
             break;
         }
+        case 0x20: {
+            uint8_t reply[63]{0x66, 0x20, 1, 1};
+            if (bufsize >= 5) {
+                reply[4] = buffer[0]; memcpy(reply + 5, buffer + 1, 4);
+                if (buffer[0] == 0) { reply[2] = 0; reply[9] = 7; }
+                else if (buffer[0] == 1) {
+                    manual_power_note_activity(1000);
+                    reply[2] = audio_profile_chime() ? 0 : 2;
+                }
+            }
+            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            break;
+        }
         case 0x1d: {
             // Dock disconnect policy. [0] reads; [1, enabled] writes and saves.
             uint8_t reply[63]{0x66, 0x1d, 1, 1, 0};

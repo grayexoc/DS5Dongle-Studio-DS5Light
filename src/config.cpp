@@ -916,6 +916,7 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
     static Config_body prev_body;   // static: keep it off the USB task stack
     prev_body = config.body;
     set_config(reinterpret_cast<const uint8_t *>(&slot_body), sizeof(slot_body));
+    macro_reset();
     state_rumble_reset();            // never carry a release across profile boundaries
     const Config_body &o = prev_body;
     const Config_body &n = config.body;

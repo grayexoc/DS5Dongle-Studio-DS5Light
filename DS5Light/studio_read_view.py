@@ -59,9 +59,9 @@ class StableReadView:
                 for bitvar,index in bits:
                     selected=bool(int(value or 0)&(1<<index))
                     if bitvar.get()!=selected:bitvar.set(selected)
-                if key=='trigger_reduce' and key not in self.invalid:
+                if key in ('trigger_reduce','rumble_gain') and key not in self.invalid:
                     entry=controls[0]
-                    display='' if value is None else f'{trigger_display(value):g}'
+                    display='' if value is None else f'{trigger_display(value) if key=="trigger_reduce" else value/100:g}'
                     name=str(entry.cget('textvariable'))
                     if str(self.parent.getvar(name))!=display:self.parent.setvar(name,display)
                 valid=key in self.doc.values and self.enabled_for(key)
@@ -81,6 +81,7 @@ class StableReadView:
                         colour='#eee9df' if valid else '#aaa393'
                         if str(child.cget('fg'))!=colour:child.configure(fg=colour)
         finally:self._syncing_fields=False
+        self.refresh_lighting()
         self.refresh_option_groups()
         if keys is None:self.refresh_read_extras()
         self.update_state()
@@ -88,7 +89,7 @@ class StableReadView:
     def extras_signature(self):
         common=(self.category,self.loaded,self.write_ready,self.pico_recognized,self.path)
         if self.category==4:
-            return common+(tuple((key,tuple(record)) for key,record in self.doc.macros.items()),self.doc.values.get('macro_disable'))
+            return common+(tuple((key,tuple(record)) for key,record in self.doc.macros.items()),self.doc.values.get('macro_disable'),getattr(self,'macro_layer',False))
         if self.category==0:return (0,self.standby_value(),self.standby_value('dock_policy'),self.busy)
         if self.category==5:return common+(tuple(sorted((self.profile_stamp or {}).items())),tuple((slot.index,slot.state,slot.name) for slot in self.slots))
         if self.category==2:

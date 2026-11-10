@@ -7,11 +7,9 @@
 - **Process capture:** C# implementation using Microsoft's application-loopback API; [official documentation/sample](https://learn.microsoft.com/en-us/samples/microsoft/windows-classic-samples/applicationloopbackaudio-sample/).
 - **PyAudioWPatch 0.2.12.8:** Exact source and wheel provenance is recorded in `licenses/PyAudioWPatch-0.2.12.8/PROVENANCE.json`; Apache text and original PyAudio/PortAudio notices are retained.
 - **Dependencies:** See `requirements*.txt` and the built release's `THIRD_PARTY/manifest.json`. Third-party components retain their own terms.
-
 - Separate StudioProxy evaluation code, research source archives, videos, conversations and unrelated device backups are excluded from this repository.
 - **Localization (0.9.0):** UI-only English strings and an independent language preference. Audio DSP, channel mixing, capture and preset schema are unchanged from 0.8.7. English license translation does not replace the controlling Korean original.
 
-- The root ds5dongle-slots.json is the user-supplied Studio backup; it is not automatically applied.
 
 ## Modified build: Studio slot client
 
@@ -23,6 +21,6 @@ The user-provided `assets/ds5-light-logo.svg` is rendered directly at the header
 
 The wordmark's CSS class declarations are expanded into SVG presentation attributes to preserve its white and gold strokes in TkSVG. Path geometry is unchanged; the viewBox is trimmed to visible artwork so the drawing matches the adjacent icon height. Content credentials for the unmodified input are omitted from the modified artwork. The original input and rendering diagnosis are retained in the local `reports/` directory.
 
-## Experimental native Studio settings editor
+## Integrated native Studio settings editor
 
-The 135 non-experimental field definitions in studio_fields.py are data extracted from the local user-provided DS5Dongle-Studio-master/ds5-config-portal.html (v1.42.0). Firmware command references are src/cmd.cpp, src/config.h, src/macro.h and src/input_buttons.h. Original Studio notices remain in vendor/LICENSE-Studio.txt. The native Tkinter editor, staged document, validation and worker integration are implemented in studio_settings_ui.py, studio_document.py, studio_settings_protocol.py, studio_records.py and studio_backup.py. Experimental feature fields and motion-macro editing are excluded. See EXPERIMENTAL_KO.md for scope and validation limits.
+The original field definitions in studio_fields.py are data extracted from the local user-provided DS5Dongle-Studio-master/ds5-config-portal.html (v1.42.0). Firmware command references are src/cmd.cpp, src/config.h, src/macro.h and src/input_buttons.h. Original Studio notices remain in vendor/LICENSE-Studio.txt. The native Tkinter editor, staged document, validation and worker integration are implemented in studio_settings_ui.py, studio_document.py, studio_settings_protocol.py, studio_records.py and studio_backup.py. The app also supports firmware-specific settings and Pico mapping extensions; see SETUP.md and MAPPING_GUIDE_KO.md for the current workflow and limits.

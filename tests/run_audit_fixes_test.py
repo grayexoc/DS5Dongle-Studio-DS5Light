@@ -233,6 +233,8 @@ using uint=unsigned;
 constexpr int SAMPLE_SIZE=64,CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX=4;
 struct Config{uint8_t auto_haptics_enable=1;}config;
 Config&get_config(){return config;}
+#include "profile_chime.h"
+ProfileChime profile_chime;
 std::atomic<bool> audio_link_active{false};
 bool link=true,audio_input_seen=false,stream_reset_requested=false,speaker_filters_reset=false;
 uint32_t now=0,last_audio_input_ms=0;int resets=0,clears=0,discards=0;

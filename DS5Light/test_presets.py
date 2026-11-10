@@ -57,3 +57,10 @@ class PresetTests(unittest.TestCase):
 
 
 if __name__ == '__main__': unittest.main()
+
+
+class FreshSlotsTests(unittest.TestCase):
+    def test_first_slot_starts_empty(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store=PresetStore(Path(directory)/'presets.json')
+            self.assertTrue(all(item is None for item in store.slots))

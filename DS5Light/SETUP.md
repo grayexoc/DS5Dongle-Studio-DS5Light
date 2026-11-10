@@ -4,9 +4,9 @@
 
 ## Package and firmware
 
-Use the complete `DS5Light-win-x64-v1.0.0.zip` package on Windows 10/11 x64. Extract it into a writable folder, keep `_internal` beside `DS5Light.exe`, and run the executable. Python is not required for the packaged app.
+Use the complete `DS5Light-win-x64-v1.0.4.zip` package on Windows 10/11 x64. Extract it into a writable folder, keep `_internal` beside `DS5Light.exe`, and run the executable. Python is not required for the packaged app.
 
-The combined release is v1.0.0, the app is v1.0.0, and the firmware is Studio v30. Firmware is a separate release attachment: `ds5-studio-light_v30.uf2`. That attachment is for Raspberry Pi Pico 2 W; it is not for RP2040 Pico W or Waveshare boards. The app does not flash firmware automatically.
+The combined release is v1.0.4, the app is v1.0.4, and the firmware is Studio v32. Firmware is a separate release attachment: `ds5-studio-light_v32.uf2`. That attachment is for Raspberry Pi Pico 2 W; it is not for RP2040 Pico W or Waveshare boards. The app does not flash firmware automatically.
 
 Back up current settings and slots before changing firmware or saving profiles. This fork's additional settings and diagnostics require corresponding firmware support. An existing compatible Studio installation may support basic audio forwarding without all of these additions. A flash_nuke reset is not part of the routine setup.
 
@@ -27,7 +27,6 @@ Back up current settings and slots before changing firmware or saving profiles. 
 
 Recommended presets change only the allowed **audio-haptics fields of the current configuration**. Current device, gyro, trigger and macro settings are retained. The resulting current configuration is saved to the chosen slot: overwriting a slot does not preserve that slot's previous non-audio settings. A full-profile import/restore or loading an existing dongle slot has a different scope and can change other settings.
 
-The old `studio-presets/*.profile.json` files in the source tree are legacy web-portal exports. They are not the three app recommendations and are not shipped by the current build script. Use the app workflow above for this package.
 
 ## Start audio haptics
 
@@ -44,7 +43,7 @@ Automatic, stereo, 5.1 and 7.1 capture are supported. Center, LFE and rear/side 
 - Stop audio processing before using the Native preset or a suitable existing native profile. Turning off only the PC filter leaves audio forwarding active.
 - The audio-haptics tab can load existing dongle slots. Loading a slot applies its entire saved configuration, including triggers and gyro.
 - No haptics: check the controller connection, selected output, active Studio profile and its audio-haptics mode, then check capture activity and gain.
-- Additional device settings/tests depend on firmware support. Available features differ between XInput and DualSense modes.
+- Additional device settings/tests depend on firmware support. XInput is experimental and differs from DualSense mode.
 - Timing shown in diagnostics is PC-side timing or a queue-based estimate, not a measurement of physical controller latency.
 
 Settings and presets are described in [README.txt](README.txt). Original projects: [Studio](https://github.com/artzox/DS5Dongle-Studio) and [DS5Light](https://github.com/fnflwkd/DS5Light).

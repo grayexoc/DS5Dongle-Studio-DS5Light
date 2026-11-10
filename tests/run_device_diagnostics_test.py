@@ -8,7 +8,11 @@ base = root.parent / 'DS5Dongle-Studio-build'
 out = base / 'reports/device-diagnostics-tests'
 out.mkdir(parents=True, exist_ok=True)
 source = (root / 'src/cmd.cpp').read_text(encoding='utf-8')
-commands = source[source.index('        case 0x1e: {\n'):source.index('        case 0x1d: {\n')]
+dispatch = source.index('void pico_cmd_set(')
+commands = source[source.index('        case 0x1e: {\n',dispatch):source.index('        case 0x1d: {\n',dispatch)]
+assert 'case 0x20:' in commands
+setter = source.index('static bool set_field_in(')
+assert 'case 0x20:' not in source[setter:source.index('\n}',setter)]
 bt = (root / 'src/bt.cpp').read_text(encoding='utf-8')
 start = bt.index('void bt_diagnostic_snapshot(')
 counter = bt[start:bt.index('\n}', start) + 2]
@@ -25,6 +29,8 @@ std::map<uint8_t,std::vector<uint8_t>> feature_data;
 bool ready=true, processing=false;
 uint8_t auto_mode=0, test_kind=255;
 unsigned starts=0, activity=0;
+bool chime_ok=true;unsigned chimes=0;
+bool audio_profile_chime(){++chimes;return chime_ok;}
 struct Config {uint8_t auto_haptics_enable=0;} config;
 Config &get_config(){config.auto_haptics_enable=auto_mode;return config;}
 enum class ManualPowerState {Idle, Stopping};
@@ -73,7 +79,16 @@ int main(){
  ready=true;power=ManualPowerState::Stopping;command(0x1f,payload,5);assert(starts==before);
  payload[0]=0;processing=true;command(0x1f,payload,5);
  assert(feature_data[0x84][2]==0&&test_kind==0&&starts==before+1);
- puts("PASS: real diagnostic/test commands: tags, pages, wire offsets, malformed payload, no read side effects, test gates and unconditional STOP");
+ // Capability and preview requests must reach the real command dispatch.
+ payload[0]=0;before=activity;command(0x20,payload,5);r=feature_data[0x84];
+ assert(r.size()==63&&r[0]==0x66&&r[1]==0x20&&r[2]==0&&r[3]==1&&r[4]==0&&r[9]==7);
+ assert(!memcmp(r.data()+5,payload+1,4)&&chimes==0&&activity==before);
+ for(unsigned n=0;n<5;++n){command(0x20,payload,n);assert(feature_data[0x84][2]==1);}
+ payload[0]=2;command(0x20,payload,5);assert(feature_data[0x84][2]==1&&chimes==0);
+ payload[0]=1;command(0x20,payload,5);r=feature_data[0x84];
+ assert(r[2]==0&&r[4]==1&&!memcmp(r.data()+5,payload+1,4)&&chimes==1&&activity==before+1);
+ chime_ok=false;command(0x20,payload,5);assert(feature_data[0x84][2]==2&&chimes==2);
+ puts("PASS: real diagnostic/test/extension commands: tags, capabilities, preview gates, malformed payload and no read side effects");
 }
 '''
 (out / 'commands.cpp').write_text(code, encoding='utf-8')

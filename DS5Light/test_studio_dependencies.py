@@ -46,7 +46,7 @@ class UITests(unittest.TestCase):
     def test_device_rumble_mode_switch(self):
         ui=self.editor();ui.doc.values.update(rumble_gain=125,rumble_release=1)
         ui.doc.baseline.update(rumble_gain=125,rumble_release=1)
-        ui.select_category(0)
+        ui.select_category(1)
         for mode in (0,1,2,0):
             ui.changed('auto_haptics_enable',mode)
             self.assertEqual(str(ui.range_controls['rumble_gain'][0].cget('state')),'normal' if mode==0 else 'disabled')

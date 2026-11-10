@@ -12,6 +12,15 @@ def identity_fields(client):
     version=_ui_tr('미확인')
     if not any(key in missing for key in ('fw_major','fw_minor','fw_patch')):
         version='v'+'.'.join(str(values[k]) for k in ('fw_major','fw_minor','fw_patch'))
+    # Firmware string includes fork/experimental versions; numeric fields may stay upstream.
+    try:
+        import re
+        raw=client.metadata(5)
+        text=raw[3:].split(b'\0',1)[0].decode('ascii').strip()
+        if re.fullmatch(r'v?\d+(?:\.\d+){0,2}[A-Za-z0-9 ._+()/-]*',text):
+            version=text if text.startswith('v') else 'v'+text
+    except (AttributeError,OSError,TimeoutError,UnicodeError):
+        pass
     return version,values.get('config_version')
 
 def snapshot(preferred,cancel=lambda:False,binding=None,deadline=None):

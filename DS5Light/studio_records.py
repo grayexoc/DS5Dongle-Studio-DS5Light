@@ -38,8 +38,10 @@ def macro_records(value):
             raw[19:35]=name.ljust(16,b'\0')
         else:raw=row
         if not isinstance(raw,list) or len(raw)!=35 or any(type(v)is not int or not 0<=v<=255 for v in raw):raise ValueError(_ui_tr('매크로 레코드는 35바이트여야 합니다.'))
-        if raw[18]>120 or raw[17]>22:raise ValueError(_ui_tr('매크로 출력/스틱 범위 오류'))
+        if raw[18]>120 or raw[17]>31:raise ValueError(_ui_tr('매크로 출력/스틱 범위 오류'))
         if raw[4]&16:continue # excluded experimental motion: preserve local definition
+        from studio_shift import validate_extension
+        validate_extension(raw)
         out[str(index)]=list(raw)
     return out
 

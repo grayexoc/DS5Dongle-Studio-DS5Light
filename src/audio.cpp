@@ -14,6 +14,7 @@
  */
 
 #include "audio.h"
+#include "profile_chime.h"
 #include "haptic_mix.h"
 #include "bt.h"
 #include "resample.h"
@@ -31,6 +32,7 @@
 #include "config.h"
 #include "state_mgr.h"
 #include "usb.h"
+#include "wake.h"
 
 #define INPUT_CHANNELS    4
 #define OUTPUT_CHANNELS   2
@@ -123,6 +125,16 @@ static std::atomic<uint8_t> audio_stop_state{0};
 static std::atomic<bool> audio_worker_failed{false};
 static uint32_t last_audio_input_ms = 0;
 static bool audio_input_seen = false;
+static ProfileChime profile_chime;
+bool audio_profile_chime() {
+#if DISABLE_SPEAKER_PROC
+    return false;
+#else
+    if (!bt_is_ready() || wake_host_is_suspended()) return false;
+    profile_chime.start(to_ms_since_boot(get_absolute_time()), time_us_32());
+    return true;
+#endif
+}
 static bool stream_reset_requested = false;
 void audio_reset_stream() { stream_reset_requested = true; audio_input_seen = false; }
 static_assert(std::atomic<bool>::is_always_lock_free);
@@ -305,7 +317,9 @@ void __not_in_flash_func(audio_loop)() {
         resampler.Reset();
         if (discard_usb) tud_audio_clear_ep_out_ff();
     }
-    const bool speaker_enabled = connected && !get_config().disable_speaker;
+    if (!connected) profile_chime.stop();
+    const bool chiming = connected && profile_chime.active(to_ms_since_boot(get_absolute_time()));
+    const bool speaker_enabled = connected && (!get_config().disable_speaker || chiming);
 #if !DISABLE_SPEAKER_PROC
     // Observe transitions even when no USB audio arrives. Never reset core1's
     // encoder/resampler here: the worker owns those objects.
@@ -370,11 +384,13 @@ void __not_in_flash_func(audio_loop)() {
     }
 
     // 1. 读取 USB 音频数据
-    if (!tud_audio_available()) return;
+    const bool synthetic_chime = !tud_audio_available();
+    if (synthetic_chime && (!chiming || !profile_chime.synthetic_due(time_us_32()))) return;
+    if (!synthetic_chime) profile_chime.host_input(time_us_32());
 
-    int16_t raw[192];
-    memcpy(raw, usb_remainder, usb_remainder_bytes);
-    const uint32_t bytes_read = usb_remainder_bytes + tud_audio_read(
+    int16_t raw[192]{};
+    if (!synthetic_chime) memcpy(raw, usb_remainder, usb_remainder_bytes);
+    const uint32_t bytes_read = synthetic_chime ? sizeof(raw) : usb_remainder_bytes + tud_audio_read(
         reinterpret_cast<uint8_t *>(raw) + usb_remainder_bytes,
         sizeof(raw) - usb_remainder_bytes);
     // Both published UAC1 playback descriptors advertise four int16 channels.
@@ -382,9 +398,11 @@ void __not_in_flash_func(audio_loop)() {
     constexpr int actual_ch = CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX;
     static_assert(actual_ch == 4, "Update playback descriptors with the channel format");
     constexpr uint kFrameBytes = actual_ch * sizeof(int16_t);
-    usb_remainder_bytes = bytes_read % kFrameBytes;
-    memcpy(usb_remainder, reinterpret_cast<const uint8_t *>(raw) +
-           bytes_read - usb_remainder_bytes, usb_remainder_bytes);
+    if (!synthetic_chime) {
+        usb_remainder_bytes = bytes_read % kFrameBytes;
+        memcpy(usb_remainder, reinterpret_cast<const uint8_t *>(raw) +
+               bytes_read - usb_remainder_bytes, usb_remainder_bytes);
+    }
     // Diagnostic: expose the live detection so the portal can show what's
     // actually happening (esp. under DS4Windows).
     extern volatile uint16_t g_diag_bytes_read;
@@ -395,8 +413,10 @@ void __not_in_flash_func(audio_loop)() {
     if (frames == 0) {
         return;
     }
-    last_audio_input_ms = to_ms_since_boot(get_absolute_time());
-    audio_input_seen = true;
+    if (!synthetic_chime) {
+        last_audio_input_ms = to_ms_since_boot(get_absolute_time());
+        audio_input_seen = true;
+    }
     // Never join a pre-disable partial block to newly enabled speaker audio.
     if (!speaker_enabled || speaker_filters_reset) audio_buf_pos = 0;
     // 2. 从4ch中提取ch3/ch4，转换为float输入重采样器
@@ -754,6 +774,11 @@ void __not_in_flash_func(audio_loop)() {
         } else {
             spk_l_out = raw[i * actual_ch]     / 32768.0f * spk_gain;
             spk_r_out = raw[i * actual_ch + 1] / 32768.0f * spk_gain;
+        }
+        if (chiming) {
+            const float cue = profile_chime.next();
+            spk_l_out = std::clamp(spk_l_out + cue, -1.0f, 1.0f);
+            spk_r_out = std::clamp(spk_r_out + cue, -1.0f, 1.0f);
         }
         audio_buf[audio_buf_pos++] = spk_l_out;
         audio_buf[audio_buf_pos++] = spk_r_out;

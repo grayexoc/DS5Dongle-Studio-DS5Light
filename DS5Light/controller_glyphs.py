@@ -6,6 +6,7 @@ from studio_i18n import text as _ui_tr
 from pathlib import Path
 import tkinter as tk
 from ui_controls import widget_trace
+from ui_dpi import px,watch_scale
 
 CARD='#151515';FG='#eee9df';MUTED='#aaa393';GOLD='#d6ad52';BORDER='#363126'
 SOURCE=Path(__file__).resolve().parent/'assets'/'dualsense-controls.svg'
@@ -37,6 +38,21 @@ def icon_key(value):
 
 
 def glyph(master,value,size=28):
+    size=max(1,px(master,size))
+    extra={_ui_tr('왼쪽 Fn'):'FN',_ui_tr('오른쪽 Fn'):'FN',
+           _ui_tr('왼쪽 패들'):'LB',_ui_tr('오른쪽 패들'):'RB',_ui_tr('PS 버튼'):'PS',_ui_tr('마이크 버튼'):'Mute'}
+    filename=extra.get(readable(value))
+    if filename:
+        root=master._root()
+        if not hasattr(root,'_extra_controller_glyph_cache'):root._extra_controller_glyph_cache={}
+        cache=root._extra_controller_glyph_cache;key=(filename,size)
+        if key not in cache:
+            try:
+                root.tk.call('lappend','auto_path',str(SOURCE.parent.parent/'vendor'/'tksvg0.16'))
+                root.tk.call('package','require','tksvg','0.16')
+                cache[key]=tk.PhotoImage(master=root,data=(SOURCE.parent/'edge'/(filename+'.svg')).read_text(encoding='utf-8'),format=('svg','-scaletoheight',size))
+            except (OSError,tk.TclError):cache[key]=None
+        return cache[key]
     key=icon_key(value)
     if key is None:return None
     root=master._root()
@@ -77,6 +93,11 @@ class GlyphStrip(tk.Frame):
         super().__init__(parent,bg=background)
         self.background=background;self.limit=limit;self.signature=None
         self.set_values(values)
+        watch_scale(self,self._scale_glyphs)
+
+    def _scale_glyphs(self):
+        values=self.signature;self.signature=None
+        self.set_values(values or ())
 
     def set_values(self,values):
         values=tuple(values)
@@ -101,7 +122,7 @@ class ControllerChoice(tk.Frame):
         super().__init__(parent,bg=CARD)
         self.variable=textvariable;self.values=tuple(values);self.enabled=state!='disabled'
         self.compact=compact;self.multiple=multiple;self.selected=selected;self.expanded=False;self.tiles=[];self.columns=0;self.active=0
-        self.columnconfigure(0,weight=1,minsize=340 if compact else 0)
+        self.columnconfigure(0,weight=1,minsize=px(self,340) if compact else 0)
         self.heading=tk.Frame(self,bg='#111111',highlightbackground=BORDER,highlightcolor=BORDER,highlightthickness=1)
         self.heading.grid(row=0,column=0,sticky='ew');self.heading.columnconfigure(1,weight=1)
         self.preview=tk.Label(self.heading,bg='#111111',width=32,height=32)
@@ -125,6 +146,16 @@ class ControllerChoice(tk.Frame):
         self.panel.bind('<Configure>',self.reflow)
         self.bind('<Configure>',self.reflow,add='+')
         widget_trace(self,self.variable,lambda *_:self.refresh())
+        self.refresh()
+        watch_scale(self,self._scale_choice)
+        self._scale_choice()
+
+    def _scale_choice(self):
+        self.columnconfigure(0,minsize=px(self,340) if self.compact else 0)
+        self.button.configure(padx=px(self,8),pady=px(self,8))
+        self.arrow.configure(padx=px(self,8))
+        self.panel.configure(padx=px(self,4),pady=px(self,6))
+        if self.expanded:self.build_tiles()
         self.refresh()
 
     def configure(self,cnf=None,**kw):
@@ -156,7 +187,7 @@ class ControllerChoice(tk.Frame):
     def refresh(self):
         value=self.get();self.display.set(readable(value))
         image=glyph(self,value)
-        self.preview.configure(image=image if image else '',width=32 if image else 0,height=32 if image else 0)
+        self.preview.configure(image=image if image else '',width=px(self,32) if image else 0,height=px(self,32) if image else 0)
         self.preview.image=image
         self.preview.grid() if image else self.preview.grid_remove()
         self.button.configure(state='normal' if self.enabled else 'disabled')
@@ -178,7 +209,7 @@ class ControllerChoice(tk.Frame):
         for index,value in enumerate(self.values):
             image=glyph(self,value)
             button=tk.Button(self.panel,text=readable(value),image=image if image else '',compound='left',
-                font=(_ui_tr('맑은 고딕'),10),anchor='w',justify='left',padx=9,pady=3 if self.compact else 7,width=1,wraplength=120,bg='#20201e',fg=FG,
+                font=(_ui_tr('맑은 고딕'),10),anchor='w',justify='left',padx=px(self,9),pady=px(self,3 if self.compact else 7),width=1,wraplength=px(self,120),bg='#20201e',fg=FG,
                 activebackground='#302819',activeforeground=GOLD,relief='flat',bd=0,
                 highlightthickness=1,highlightbackground=BORDER,highlightcolor=GOLD,takefocus=0,
                 command=lambda index=index:self.choose(index))
@@ -187,15 +218,15 @@ class ControllerChoice(tk.Frame):
 
     def reflow(self,event=None):
         if self.winfo_width()>1:
-            self.button.configure(wraplength=max(80,self.winfo_width()-(48 if self.preview.image else 12)-28))
+            self.button.configure(wraplength=max(px(self,80),self.winfo_width()-px(self,48 if self.preview.image else 12)-px(self,28)))
         if not self.expanded:return
         width=max(self.winfo_width(),self.panel.winfo_width())
-        columns=3 if width>=620 else 2 if width>=(340 if self.compact else 370) else 1
+        columns=3 if width>=px(self,620) else 2 if width>=px(self,340 if self.compact else 370) else 1
         # Text wraps within the actual tile width, including room for icons.
         # Recalculate on every width change even when column count is unchanged.
-        tile_width=max(1,(width-8)//columns-6)
+        tile_width=max(1,(width-px(self,8))//columns-px(self,6))
         for button in self.tiles:
-            text_width=max(40,tile_width-24-(34 if button.image else 0))
+            text_width=max(px(self,40),tile_width-px(self,24)-px(self,34 if button.image else 0))
             if str(button.cget('wraplength'))!=str(text_width):button.configure(wraplength=text_width)
         if columns==self.columns:return
         # Empty columns must leave the uniform group. Tk gives even zero-weight

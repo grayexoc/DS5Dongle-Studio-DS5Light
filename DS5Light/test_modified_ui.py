@@ -125,7 +125,7 @@ class ModifiedUITests(unittest.TestCase):
     def test_footer_height_is_reserved_for_all_statuses(self):
         self.root.update_idletasks()
         height=self.ui.footer.winfo_height()
-        self.assertEqual(height,88)
+        self.assertGreaterEqual(height,self.ui.footer.content.winfo_reqheight())
         for status in ('',ui.tr('정지'),'Game · Running','Long backend status '*30):
             self.ui.status.set(status); self.root.update_idletasks()
             self.assertEqual(self.ui.footer.winfo_height(),height)

@@ -82,16 +82,72 @@ def rgb_palette(parent,initial):
     return result[0]
 
 class LightbarUI:
+    LIGHTING_FIELDS=('disable_pico_led','lightbar_off','lightbar_fixed','lightbar_rgb','player_led_mode','player_led_bright')
+
+    def render_lighting(self):
+        from studio_fields import FIELDS
+        box=self.card(ui_text('조명','Lighting'))
+        self.field_row(box,1,FIELDS['disable_pico_led'])
+        title,controls,_=self.field_views['disable_pico_led']
+        for child in title.winfo_children():
+            if isinstance(child,tk.Label):child.configure(text='PICO LED')
+        pico=controls[0];pico._lighting_inverse=True;raw=self.vars['disable_pico_led']
+        pico.variable=tk.BooleanVar(master=pico,value=not bool(self.doc.values.get('disable_pico_led',1)))
+        pico.command=lambda:raw.set(not pico.variable.get())
+        tk.Label(box,text=ui_text('듀얼센스','DualSense'),bg=BG,fg=GOLD,font=(_ui_tr('맑은 고딕'),10,'bold')).grid(row=2,column=0,columnspan=2,sticky='w',pady=(12,4))
+        children=tk.Frame(box,bg=BG);children.grid(row=3,column=0,columnspan=2,sticky='ew',padx=(18,0));children.columnconfigure(1,weight=1)
+        self.field_row(children,0,FIELDS['lightbar_fixed'])
+        title,controls,_=self.field_views['lightbar_fixed']
+        for child in title.winfo_children():
+            if isinstance(child,tk.Label):child.configure(text=ui_text('라이트바','Lightbar'))
+        basic=controls[0];basic._lighting_default=True;basic.text=ui_text('기본','Default');basic.configure(width=basic.font.measure(basic.text)+30)
+        basic.variable=tk.BooleanVar(master=basic)
+        basic.command=lambda:self.set_lightbar_mode('default')
+        for key,caption in [('lightbar_off',ui_text('끄기','Off')),('lightbar_rgb',None)]:
+            host=tk.Frame(basic.master,bg=BG);host.pack(side='left',padx=(5,0))
+            self.field_row(host,0,FIELDS[key]);self.field_views[key][0].grid_remove()
+            control=self.field_views[key][1][0]
+            if caption:
+                control.text=caption;control.configure(width=control.font.measure(caption)+30)
+                control.command=lambda:self.set_lightbar_mode('off' if self.vars['lightbar_off'].get() else 'default')
+                control.draw()
+        self.field_row(children,1,FIELDS['player_led_mode'])
+        self.field_row(children,2,FIELDS['player_led_bright'])
+        self.refresh_lighting()
+
+    def refresh_lighting(self):
+        views=getattr(self,'field_views',{})
+        if 'disable_pico_led' in views:
+            control=views['disable_pico_led'][1][0]
+            if getattr(control,'_lighting_inverse',False):
+                control.variable.set(not bool(self.doc.values.get('disable_pico_led',1)))
+                control.text='ON' if control.variable.get() else 'OFF'
+                control.configure(width=control.font.measure(control.text)+30);control.draw()
+        basic=views.get('lightbar_fixed')
+        if basic and getattr(basic[1][0],'_lighting_default',False):
+            control=basic[1][0]
+            control.variable.set(not self.doc.values.get('lightbar_fixed',0) and not self.doc.values.get('lightbar_off',0))
+            control.draw()
+
+    def set_lightbar_mode(self,mode):
+        if self.busy or self.transfer_locked or 'lightbar_off' not in self.doc.values:return
+        if 'lightbar_fixed' in self.doc.values:self.changed('lightbar_fixed',0)
+        self.changed('lightbar_off',int(mode=='off'))
+        self.refresh_read_values()
+
     def lightbar_colour_row(self,parent,row,field):
         key=field[1];valid=key in self.doc.values and self.enabled_for(key)
         title=self.option_title(parent,key,foreground=FG if valid else MUTED)
         title.grid(row=row,column=0,sticky='w',padx=(0,12),pady=8)
         variable=tk.StringVar(value=str(self.doc.values[key]) if key in self.doc.values else '')
         self.vars[key]=variable
-        button=tk.Button(parent,command=self.choose_lightbar_colour,relief='flat',bd=0,
-                         highlightthickness=1,highlightbackground='#68645b',padx=12,pady=8,
+        selection=tk.Frame(parent,bg=BG)
+        selection.grid(row=row,column=1,sticky='e',pady=6)
+        tk.Label(selection,text=ui_text('선택:','Select:'),bg=BG,fg=FG,font=(_ui_tr('맑은 고딕'),10)).pack(side='left',padx=(0,8))
+        button=tk.Button(selection,command=self.choose_lightbar_colour,relief='flat',bd=0,
+                         highlightthickness=1,highlightbackground='#68645b',padx=12,pady=3,
                          font=(_ui_tr('맑은 고딕'),10),state='normal' if valid and not self.busy else 'disabled')
-        button.grid(row=row,column=1,sticky='e',pady=6)
+        button.pack(side='left')
         def paint(*_):
             supported=getattr(self,'lightbar_supported',all(k in self.doc.values for k in ('lightbar_fixed','lightbar_rgb')))
             signature=(self.enabled_for(key),variable.get(),supported)
@@ -99,13 +155,14 @@ class LightbarUI:
             button._colour_signature=signature
             if not signature[0]:
                 supported=getattr(self,'lightbar_supported',all(k in self.doc.values for k in ('lightbar_fixed','lightbar_rgb')))
-                text=ui_text(_ui_tr('색상 고정을 켜세요'),'Enable fixed color') if supported else ui_text(_ui_tr('미지원 · 펌웨어 확인 필요'),'Unsupported · check firmware')
+                try:text=f'#{int(variable.get()):06X}' if supported else '—'
+                except ValueError:text='—'
                 button.configure(text=text,bg='#242321',fg=MUTED,disabledforeground=MUTED);return
             try:rgb=int(variable.get())
             except ValueError:
                 button.configure(text=ui_text(_ui_tr('미지원 · 펌웨어 확인 필요'),'Unsupported · check firmware'),bg='#242321',fg=MUTED);return
             colour=f'#{rgb:06X}';brightness=((rgb>>16)*299+((rgb>>8)&255)*587+(rgb&255)*114)/1000
-            button.configure(text=colour+_ui_tr('  색상 선택'),bg=colour,activebackground=colour,
+            button.configure(text=colour,bg=colour,activebackground=colour,
                              fg='#111111' if brightness>140 else '#ffffff')
         button._paint_colour=paint
         widget_trace(button,variable,paint);paint()
@@ -117,5 +174,7 @@ class LightbarUI:
         if colour is None:return
         if self.path!=path or self.profile_stamp!=stamp or 'lightbar_rgb' not in self.doc.baseline:
             self.progress.configure(text=_ui_tr('프로필이 바뀌었습니다. 새로 고침 후 색상을 선택하세요.'));return
+        self.changed('lightbar_fixed',1)
+        self.changed('lightbar_off',0)
         self.changed('lightbar_rgb',colour)
         self.refresh_read_values()

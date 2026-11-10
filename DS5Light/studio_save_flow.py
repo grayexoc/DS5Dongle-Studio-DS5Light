@@ -24,7 +24,7 @@ class SaveFlow:
         decision=profile_switch(self.parent,shared_pending)
         if decision=='discard':
             if self.doc.macros_pending_flash:
-                messagebox.showinfo(_ui_tr('공유 매크로'),_ui_tr('이미 장치에 임시 적용된 공유 매크로는 프로필 전환으로 되돌릴 수 없습니다. 공유 매핑·매크로를 먼저 저장하거나 새로 고침으로 확인하세요.'),parent=self.parent)
+                messagebox.showinfo(_ui_tr('공유 매크로'),_ui_tr('이미 장치에 임시 적용된 공유 매크로는 프로필 전환으로 되돌릴 수 없습니다. Pico 매핑·매크로를 먼저 저장하거나 새로 고침으로 확인하세요.'),parent=self.parent)
                 return
             self.doc.revert();self.invalid.clear();callback()
         elif decision=='save':
@@ -52,10 +52,13 @@ class SaveFlow:
             for index in changes:
                 if actual.get(str(index))!=before.get(str(index)):
                     raise RuntimeError(_ui_tr('공유 매크로가 외부에서 변경되었습니다. 새로 고침으로 확인하세요.'))
+            from studio_shift import extended
+            if any(extended(row) for row in changes.values()):
+                client.require_macro_features(list(changes.values()))
             for index,record in changes.items():client.write_macro(index,record)
             verified=client.read_macros()
             if any(verified.get(str(i))!=r for i,r in changes.items()):raise RuntimeError(_ui_tr('공유 매크로 적용값 불일치 · 새로 고침으로 확인하세요.'))
-            self.results.put(('progress',_ui_tr('공유 매핑·매크로 저장 중…'),None))
+            self.results.put(('progress',_ui_tr('Pico 매핑·매크로 저장 중…'),None))
             client.commit_macros()  # Acknowledged global table save; never retry.
             self.results.put(('progress',dict(reconnecting=True),None))
             reset_uncertain=False
@@ -100,5 +103,5 @@ class SaveFlow:
             self.resume=False
             self.progress.configure(text=_ui_tr('공유 매크로 저장 확인 · 프로필이 변경되어 새로 고침 필요'),kind='warning')
             return False
-        self.progress.configure(text=_ui_tr('공유 매핑·매크로 저장 확인 · 모든 프로필이 공유'),kind='info')
+        self.progress.configure(text=_ui_tr('Pico 매핑·매크로 저장 확인 · 모든 프로필이 공유'),kind='info')
         return True

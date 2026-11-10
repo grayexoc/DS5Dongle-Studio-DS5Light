@@ -35,7 +35,7 @@ class PresentationTests(unittest.TestCase):
         self.assertEqual(reference_point('audio_buffer_length'),(48,'추천'))
         self.assertIn('끊기면 64',help_text('audio_buffer_length'))
         self.assertEqual(LABELS['gyro_output'],'자이로 작동 기준')
-        self.assertEqual(LABELS['haptics_gain'],'햅틱 파형 증폭')
+        self.assertEqual(LABELS['haptics_gain'],'네이티브 햅틱 세기')
         self.assertEqual(TITLES['Device & Connection'],'장치')
     def test_only_question_icons_have_option_tips(self):
         e=self.editor()

@@ -38,7 +38,8 @@ class ReleaseMetadataTests(unittest.TestCase):
 
     def test_build_packages_the_linked_setup_documents(self):
         build = (ROOT / 'build.ps1').read_text(encoding='utf-8-sig')
-        for name in ('README.md', 'PRODUCT_KO.md', 'SETUP.md', 'SETUP_KO.md', 'RELEASE_NOTES.md'):
+        for name in ('README.md', 'PRODUCT_KO.md', 'SETUP.md', 'SETUP_KO.md', 'RELEASE_NOTES.md',
+                     'MAPPING_GUIDE_KO.md', 'DPI_LAYOUT_KO.md'):
             self.assertIn(name, build)
             self.assertTrue((ROOT / name).is_file())
 

@@ -144,7 +144,7 @@ class UITests(unittest.TestCase):
         ui.lightbar_supported=False;ui.refresh_read_values()
         self.assertFalse(ui.field_views['lightbar_fixed'][1][0].enabled)
         self.assertEqual(str(ui.field_views['lightbar_rgb'][1][0].cget('state')),'disabled')
-        self.assertIn('미지원',ui.field_views['lightbar_rgb'][1][0].cget('text'))
+        self.assertEqual('—',ui.field_views['lightbar_rgb'][1][0].cget('text'))
         self.assertEqual(ui.doc.values,before)
     def test_actual_rgb_palette_confirm_is_local(self):
         from studio_lightbar import rgb_palette
