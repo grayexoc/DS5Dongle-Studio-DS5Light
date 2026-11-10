@@ -9,6 +9,36 @@
 #include "bsp/board_api.h"
 #include "config.h"
 #include "state_mgr.h"
+#include "usb.h"
+#include "wake.h"
+#include "pico/time.h"
+
+namespace {
+bool reconnect_pending = false;
+uint32_t reconnect_at_ms = 0;
+}
+
+void usb_schedule_reconnect() {
+    wake_note_usb_reconnect();
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    if (usb_xinput_active() != (get_config().usb_gamepad_mode == 1)) state_rumble_reset();
+#endif
+    tud_disconnect();
+    reconnect_at_ms = to_ms_since_boot(get_absolute_time()) + 250;
+    reconnect_pending = true;
+}
+
+void usb_cancel_reconnect() { reconnect_pending = false; }
+bool usb_reconnect_pending() { return reconnect_pending; }
+
+void usb_reconnect_task() {
+    if (reconnect_pending &&
+        static_cast<int32_t>(to_ms_since_boot(get_absolute_time()) - reconnect_at_ms) >= 0) {
+        reconnect_pending = false;
+        usb_select_host_mode();
+        tud_connect();
+    }
+}
 
 uint8_t mute[2]; // 0: SPEAKER(0x02) 1: MIC(0x05)
 float volume[2] = {-100.0f,0.0f}; // 0: SPEAKER(0x02) 1: MIC(0x05)
@@ -71,8 +101,13 @@ static bool audio10_set_req_entity(tusb_control_request_t const *p_request, uint
                         TU_VERIFY(p_request->wLength == 2);
 
                         volume[index] = static_cast<float>(*reinterpret_cast<int16_t const *>(pBuff)) / 256;
+                        if (index == 1) volume[index] = std::clamp(volume[index], 0.0f, 48.0f);
                         if (entityID == UAC1_ENTITY_SPK_FEATURE_UNIT) {
-                            set_volume(100 + volume[index]); // volume[index]: [-100,0]
+                            const auto level = static_cast<uint8_t>(std::clamp(100.0f + volume[index], 0.0f, 100.0f));
+                            auto &c = get_config();
+                            c.speaker_volume = level;
+                            if (c.sync_spk_headset_volume) c.headset_volume = level;
+                            set_volume(c.speaker_volume, c.headset_volume);
                         }
 
                         TU_LOG2("    Set Volume: %d dB of entity: %u\r\n", volume[index], entityID);
@@ -112,7 +147,7 @@ static bool audio10_get_req_entity(uint8_t rhport, tusb_control_request_t const 
                     case AUDIO10_CS_REQ_GET_CUR:
                         TU_LOG2("    Get Volume of entity: %u\r\n", entityID); {
                             if (entityID == UAC1_ENTITY_SPK_FEATURE_UNIT) {
-                                volume[index] = -std::min(static_cast<int>(get_config().speaker_volume),100);
+                                volume[index] = std::min(static_cast<int>(get_config().speaker_volume),100) - 100;
                             }
                             int16_t vol = volume[index] * 256; // convert to 1/256 dB units
                             return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &vol, sizeof(vol));

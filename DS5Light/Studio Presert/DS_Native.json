@@ -1,0 +1,41 @@
+{
+  "name": "DS Native",
+  "version": 2,
+  "cfgVersion": 19,
+  "fields": {
+    "auto_haptics_enable": 0,
+    "auto_haptics_gain": 100,
+    "auto_haptics_smooth": 40,
+    "auto_haptics_gate": 20,
+    "mix_native_level": 100,
+    "mix_native_filter": 1,
+    "ah_dsp_source": 0,
+    "auto_haptics_lowpass_hz": 60,
+    "ah_xover_hz": 0,
+    "ah_low_gain": 100,
+    "ah_high_gain": 100,
+    "auto_haptics_slope": 12,
+    "auto_mute_replace": 1,
+    "auto_mute_mix": 1,
+    "rumble_haptic_strength": 50
+  },
+  "settings": {
+    "auto_haptics_enable": 0,
+    "auto_haptics_gain": 100,
+    "auto_haptics_smooth": 40,
+    "auto_haptics_gate": 20,
+    "mix_native_level": 100,
+    "mix_native_filter": 1,
+    "ah_dsp_source": 0,
+    "auto_haptics_lowpass_hz": 60,
+    "ah_xover_hz": 0,
+    "ah_low_gain": 100,
+    "ah_high_gain": 100,
+    "auto_haptics_slope": 12,
+    "auto_mute_replace": 1,
+    "auto_mute_mix": 1,
+    "rumble_haptic_strength": 50
+  },
+  "effects": {},
+  "macros": {}
+}

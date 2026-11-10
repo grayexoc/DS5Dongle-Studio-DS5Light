@@ -1,0 +1,9 @@
+# Exception audit fixes (source only, after exp.23)
+
+1. Player LED ownership return now forces the cached host pattern even if the host never granted player LED control. Return remains pending until a matching successful L2CAP submission, not a 300 ms window. Forced periodic output also observes mode transitions. State initialization clears pending/previous-mode state. The host fade flag may require a subsequent normal report when host LED authority exists. This is controller submission acknowledgment, not physical LED confirmation.
+2. Input length and cached motor validity are separate. Short reports preserve normalized motor fields through application and following reports; original input length still bounds all non-motor writes. Internal state_update_apply requires a full array by reference, so copying the normalized motor fields cannot overread an external short buffer. Synth uses the full normalized cache with the original field-length bound. Reconnect clears host cache validity to avoid replaying prior-session intent.
+3. Save command 0x02 now publishes processing/completion/failure on 0x84 and echoes an optional request tag. See config-save-ack-protocol.md. Existing behavior otherwise retained; DS5Light source not modified. Old DS5Light does not yet consume this acknowledgment.
+
+Validation: all seven regression scripts passed, including ARM syntax for state_mgr/bt/main/config/cmd paths. Tests cover default-host gauge release, forced transition, >2s dropped restoration retry, wrong-pattern acknowledgment, correct completion; 1/2/3-byte control followed by full control in DualSense/XInput with improved motor flags; CrimsonPulse neutral report regression remains; actual save-command pending/success/failure/tag/legacy payload logic.
+
+No UF2 build or flash. Real USB application consumption, physical LED return and persistent settings after power cycle remain unverified.

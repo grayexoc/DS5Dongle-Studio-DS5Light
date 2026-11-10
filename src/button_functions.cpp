@@ -7,6 +7,8 @@
 #include <cstdio>
 
 #include "bt.h"
+#include "audio.h"
+#include "manual_power.h"
 #include "pico/time.h"
 #include "pico/flash.h"
 #include "hardware/gpio.h"
@@ -70,13 +72,9 @@ static void button_dispatch(int clicks) {
     if (clicks <= 1) {
         bt_bootsel_click_action(); // single click -> pair / switch controller
     } else if (clicks == 2) {
-        // double click -> normal reboot. A Cortex-M33 SYSRESETREQ does a warm
-        // reset that re-runs the flash app; a watchdog reset instead drops the
-        // RP2350 bootrom into BOOTSEL, which is why watchdog_reboot/enable bricked.
+        // Share the explicit normal-boot path with dormant resume.
         printf("[BTN] BOOTSEL double click - reboot\n");
-        *((volatile uint32_t *) 0xe000ed0c) = 0x05fa0004; // SCB AIRCR: VECTKEY | SYSRESETREQ
-        __dsb();
-        while (true) { tight_loop_contents(); } // wait for the reset
+        manual_power_reboot();
     } else {
         // triple click -> reboot into BOOTSEL (USB mass storage) for reflashing.
         printf("[BTN] BOOTSEL triple click - reboot to BOOTSEL\n");
@@ -97,6 +95,12 @@ void button_check() {
     if (now - button_last_check_ms < 100) return;
     button_last_check_ms = now;
 
+#ifndef BOOTSEL_POLL_DURING_AUDIO
+#define BOOTSEL_POLL_DURING_AUDIO 0
+#endif
+    // OLED keys stay available during playback. Avoid pausing the audio core
+    // for QSPI reads unless a previously started BOOTSEL gesture is in flight.
+    if (!BOOTSEL_POLL_DURING_AUDIO && button_fsm == 0 && audio_processing_active()) return;
     bt_blacklist_persist_if_dirty();
 
     bool pressed = button_read_bootsel();

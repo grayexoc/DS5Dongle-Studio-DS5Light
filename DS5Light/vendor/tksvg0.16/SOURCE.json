@@ -1,0 +1,7 @@
+{
+  "project": "tksvg",
+  "version": "0.16",
+  "source": "https://github.com/tcltk-depot/tksvg/tree/0.16",
+  "archive": "https://github.com/tcltk-depot/tksvg/releases/download/0.16/tksvg0.16_win64.zip",
+  "sha256": "477e919d20068a11371f9b8ae1d46b70b8eddc9237142bf8616836197f383132"
+}

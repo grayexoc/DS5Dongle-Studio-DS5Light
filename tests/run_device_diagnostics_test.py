@@ -1,0 +1,87 @@
+"""Exercise the actual command handlers and counter encoder without hardware."""
+from pathlib import Path
+import os
+import subprocess
+
+root = Path(__file__).resolve().parents[1]
+base = root.parent / 'DS5Dongle-Studio-build'
+out = base / 'reports/device-diagnostics-tests'
+out.mkdir(parents=True, exist_ok=True)
+source = (root / 'src/cmd.cpp').read_text(encoding='utf-8')
+commands = source[source.index('        case 0x1e: {\n'):source.index('        case 0x1d: {\n')]
+bt = (root / 'src/bt.cpp').read_text(encoding='utf-8')
+start = bt.index('void bt_diagnostic_snapshot(')
+counter = bt[start:bt.index('\n}', start) + 2]
+stats = bt[bt.index('struct AudioTransportStats {'):bt.index('constexpr uint32_t kMixedAudioAgeMs')]
+stats = stats[:stats.index('void bt_diagnostic_snapshot(')]
+code = r'''
+#include <cassert>
+#include <cstdint>
+#include <cstring>
+#include <map>
+#include <vector>
+#include <cstdio>
+std::map<uint8_t,std::vector<uint8_t>> feature_data;
+bool ready=true, processing=false;
+uint8_t auto_mode=0, test_kind=255;
+unsigned starts=0, activity=0;
+struct Config {uint8_t auto_haptics_enable=0;} config;
+Config &get_config(){config.auto_haptics_enable=auto_mode;return config;}
+enum class ManualPowerState {Idle, Stopping};
+ManualPowerState power=ManualPowerState::Idle;
+ManualPowerState manual_power_state(){return power;}
+void manual_power_note_activity(unsigned){++activity;}
+void state_output_test(uint8_t kind){test_kind=kind;++starts;}
+bool bt_is_connected(){return true;}
+bool bt_is_ready(){return ready;}
+bool audio_processing_active(){return processing;}
+bool audio_haptics_stream_active(){return false;}
+bool bt_signal_valid(){return true;}
+bool usb_xinput_active(){return true;}
+void bt_get_signal_strength(int8_t *p){*p=-42;}
+volatile uint16_t g_diag_ch01_peak=100,g_diag_ch23_peak=200;
+volatile uint8_t g_diag_actual_ch=4;
+uint32_t get_absolute_time(){return 1234;}
+uint32_t to_ms_since_boot(uint32_t n){return n;}
+void state_diagnostic_snapshot(uint8_t *p){p[0]=3;p[1]=3;p[9]=1;p[17]=1;}
+unsigned send_fifo=4;bool pending_send_valid=true;
+unsigned queue_get_level(unsigned *p){return *p;}
+'''+stats+counter+r'''
+void command(uint8_t id,const uint8_t *buffer,uint16_t bufsize){switch(id){
+'''+commands+r'''
+}}
+int main(){
+ uint8_t payload[5]={0,0x12,0x34,0x56,0x78};
+ command(0x1e,payload,5);auto r=feature_data[0x84];
+ assert(r.size()==63&&r[2]==0&&r[3]==1&&r[4]==0&&!memcmp(r.data()+5,payload+1,4));
+ assert(r[9]==19&&r[10]==1&&r[12]==4&&r[13]==100&&r[15]==200&&r[17]==uint8_t(-42));
+ assert(r[18]==3&&r[19]==3&&r[27]==1&&r[35]==1&&r[43]==uint8_t(1234));
+ assert(starts==0&&activity==0);
+ g_audio_transport_stats.sent=0xffffffff;g_audio_transport_stats.retries=9;
+ payload[0]=1;command(0x1e,payload,5);r=feature_data[0x84];
+ assert(r[9]==255&&r[12]==255&&r[41]==9&&r[45]==5);
+ for(unsigned n=0;n<5;++n){command(0x1e,payload,n);assert(feature_data[0x84][2]==1);}
+ payload[0]=2;command(0x1e,payload,5);assert(feature_data[0x84][2]==1);
+ for(unsigned kind=1;kind<=6;++kind){
+  payload[0]=kind;command(0x1f,payload,5);
+  assert(feature_data[0x84][2]==0&&test_kind==kind);
+ }
+ unsigned before=starts;payload[0]=7;command(0x1f,payload,5);assert(starts==before);
+ payload[0]=1;processing=true;command(0x1f,payload,5);assert(starts==before);
+ processing=false;auto_mode=1;command(0x1f,payload,5);assert(starts==before);
+ auto_mode=0;ready=false;command(0x1f,payload,5);assert(starts==before);
+ ready=true;power=ManualPowerState::Stopping;command(0x1f,payload,5);assert(starts==before);
+ payload[0]=0;processing=true;command(0x1f,payload,5);
+ assert(feature_data[0x84][2]==0&&test_kind==0&&starts==before+1);
+ puts("PASS: real diagnostic/test commands: tags, pages, wire offsets, malformed payload, no read side effects, test gates and unconditional STOP");
+}
+'''
+(out / 'commands.cpp').write_text(code, encoding='utf-8')
+bin_dir = base / 'source/toolchain/mingw64/mingw64/bin'
+env = dict(os.environ)
+env['PATH'] = str(bin_dir) + os.pathsep + env.get('PATH', '')
+subprocess.run([str(bin_dir / 'g++.exe'), '-std=c++17', '-Wall', '-Wextra',
+                str(out / 'commands.cpp'), '-o', str(out / 'commands.exe')], env=env, check=True)
+result = subprocess.run([str(out / 'commands.exe')], env=env, check=True, capture_output=True, text=True)
+(out / 'result.txt').write_text(result.stdout + result.stderr, encoding='utf-8')
+print(result.stdout)

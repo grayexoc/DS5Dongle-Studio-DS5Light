@@ -7,6 +7,8 @@
 //
 
 #include "state_mgr.h"
+#include "usb.h"
+#include "audio.h"
 #include "wake.h"
 
 #include <cstddef>
@@ -17,6 +19,74 @@
 #include "config.h"
 #include "battery_notify.h"
 #include "utils.h"
+#include "lightbar_fixed.h"
+#include "player_led_sent.h"
+#include "rumble_shape.h"
+#include "rumble_delivery.h"
+#include "macro.h"
+#include "output_diagnostics.h"
+
+static LightbarFixed lightbar_fixed_policy;
+static PlayerLedSent player_led_sent;
+static RumbleShape rumble_shape;
+static RumbleSent rumble_sent;
+static bool player_led_restore_pending = false;
+static uint8_t player_led_previous_mode = 0;
+static bool rumble_reset_pending = false;
+static bool rumble_output_pending = false;
+static bool suspend_release_pending = false;
+SetStateData state{};
+static OutputDiagnostics output_diagnostics;
+static OutputTest output_test;
+
+void state_diagnostic_snapshot(uint8_t *data) {
+    data[0] = output_diagnostics.valid;
+    memcpy(data + 1, output_diagnostics.host, 8);
+    OutputDiagnostics::select(data + 9, reinterpret_cast<const uint8_t *>(&state), sizeof(state));
+    memcpy(data + 17, output_diagnostics.sent, 8);
+}
+
+bool state_rumble_wants_report() {
+    uint8_t current[sizeof(SetStateData)];
+    state_set(current, sizeof(current));
+    return rumble_output_pending || rumble_sent.pending(current);
+}
+
+bool lightbar_fixed_wants_report() {
+    const auto &c = get_config();
+    return lightbar_fixed_policy.pending(c.lightbar_off, c.lightbar_fixed, c.lightbar_r, c.lightbar_g, c.lightbar_b);
+}
+
+bool state_report_is_lightbar_restore(const uint8_t *data) {
+    const auto &c = get_config();
+    return !c.lightbar_off && !c.lightbar_fixed && lightbar_fixed_policy.is_restore_report(data);
+}
+
+void state_refresh_rumble(uint8_t *data) {
+    const auto *current = reinterpret_cast<const uint8_t *>(&state);
+    refresh_rumble_fields(data, current);
+    if (get_config().auto_haptics_enable && audio_haptics_stream_active()) {
+        data[0] &= ~3u;
+        data[38] &= ~4u;
+    }
+}
+
+void state_report_sent(const uint8_t *data, bool lightbar_restore) {
+    output_diagnostics.accepted(data);
+    output_test.accepted(data);
+    player_led_sent.accepted(data);
+    rumble_sent.accepted(data);
+    const auto &c = get_config();
+    lightbar_fixed_policy.accepted(data, c.lightbar_off, c.lightbar_fixed, c.lightbar_r, c.lightbar_g, c.lightbar_b, lightbar_restore);
+    const auto *host = reinterpret_cast<const uint8_t *>(&state);
+    const uint8_t player_mode = c.player_led_bright == 3 ? 1 : c.player_led_mode;
+    if (player_led_restore_pending && player_mode == 0 && (data[1] & 0x10) &&
+        (data[43] & 0x1f) == (host[43] & 0x1f)) player_led_restore_pending = false;
+    uint8_t current[sizeof(SetStateData)]{};
+    state_refresh_rumble(current);
+    if ((data[0] & 3) == (current[0] & 3) && (data[38] & 4) == (current[38] & 4) &&
+        data[2] == current[2] && data[3] == current[3]) rumble_output_pending = false;
+}
 
 namespace {
     constexpr size_t kAudioControlOffset = offsetof(SetStateData, MuteLightMode) - sizeof(uint8_t);
@@ -27,19 +97,19 @@ namespace {
     constexpr size_t kPlayerIndicatorsOffset = offsetof(SetStateData, LedRed) - sizeof(uint8_t);
 }
 
+// Keep the haptic actuator awake until the host explicitly requests power saving.
 static constexpr uint8_t state_init_data[63] = {
-    0xfd, 0xf7, 0x0, 0x0,
+    0xfd, 0xe2, 0x0, 0x0,
     0x0, 0x0, // Headphones, Speaker
-    0xff, 0x9, 0x0, 0x0F, 0x0, 0x0, 0x0, 0x0,
+    0xff, 0x9, 0x0, 0x0B, 0x0, 0x0, 0x0, 0x0,
     0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
     0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
     0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xa,
-    0x7, 0x0, 0x0, 0x2, 0x1,
-    0x00,
-    0xff, 0xd7, 0x00 // RGB LED: R, G, B (Nijika Color!)✨
+    0x4, 0x0, 0x0, 0x0, 0x0,
+    0x00, // No player pattern until the host or user sets one.
+    0x00, 0x00, 0x00
 };
 
-SetStateData state{};
 // Live synthesis diagnostics, readable via config field 0x36:
 //   bit0 game-owns-L2, bit1 game-owns-R2, bit2 synth-owns-L2, bit3 synth-owns-R2, bit4 at-engaged
 volatile uint8_t g_diag_synth = 0;
@@ -56,7 +126,24 @@ static bool synth_owned_l2 = false, synth_owned_r2 = false, at_engaged = false, 
 // the result whenever it actually changed.
 static uint8_t  g_host_cache[sizeof(SetStateData)];
 static uint8_t  g_host_cache_size = 0;
+static bool g_host_motor_valid = false;
 static uint32_t g_last_host_ms = 0;
+static uint32_t g_last_rumble_ms = 0;
+static bool game_ever_r2 = false, game_ever_l2 = false;
+
+void state_output_test(uint8_t kind) {
+    if (kind > 6) return;
+    if (!kind) {
+        if (output_test.pending()) output_test.start(0, to_ms_since_boot(get_absolute_time()));
+        return;
+    }
+    state_rumble_reset();
+    // Never resurrect a departed game's effects when the test override expires.
+    discard_test_trigger_intent(reinterpret_cast<uint8_t *>(&state));
+    if (g_host_cache_size) discard_test_trigger_intent(g_host_cache);
+    game_ever_r2 = game_ever_l2 = false;
+    output_test.start(kind, to_ms_since_boot(get_absolute_time()));
+}
 // Effect-capture history (monitor): last N distinct trigger effects each trigger
 // received from the game, newest at [0]. Read by the portal effect monitor.
 static constexpr int HIST_DEPTH = 6;
@@ -107,7 +194,7 @@ bool get_effect_history(uint8_t trig, uint8_t slot, uint8_t out[11]) {
     return true;
 }
 
-static bool state_update_apply(const uint8_t *data, uint8_t size);
+static bool state_update_apply(const uint8_t (&data)[sizeof(SetStateData)], uint8_t size);
 
 // Adaptive synthesis cadence. The 8 ms tick exists so a stage sequence can see
 // the trigger cross a boundary mid-pull - but a trigger sitting at rest cannot
@@ -120,6 +207,8 @@ static bool state_update_apply(const uint8_t *data, uint8_t size);
 // due. Evaluating it only at 50 ms would let a fast pull travel ~128 counts
 // unseen - exactly the stage-skipping this cadence was raised to fix.
 uint32_t state_synth_interval_ms() {
+    if (output_test.pending()) return 8;
+    if (rumble_reset_pending || rumble_shape.active()) return 5;
     extern volatile uint8_t g_r2_pos, g_l2_pos;
     const Config_body &c = get_config();
     if (!c.ce_r2_enable && !c.ce_l2_enable) return 50;   // no custom effect: as before
@@ -150,8 +239,12 @@ bool state_synth_tick() {
         if (now - g_last_host_ms < quiet_ms) return false;  // host actively driving
     }
     alignas(4) static uint8_t copy[sizeof(SetStateData)];
-    memcpy(copy, g_host_cache, g_host_cache_size);
-    if (now - g_last_host_ms >= 300) {
+    memcpy(copy, g_host_cache, sizeof(copy));
+    // Synthetic ticks must not replay one-shot host volume/audio settings.
+    copy[0] &= ~0xf0u;
+    copy[1] &= ~0x82u;
+    // XInput rumble is held until the host sends a replacement or stop.
+    if (!usb_xinput_active() && now - g_last_rumble_ms >= 300) {
         // Stale rumble must not keep synthesizing (old watchdog semantics): zero
         // the cached rumble so r2t and the rumble-fed kick decay naturally, while
         // AT gating keeps re-evaluating from LIVE trigger positions.
@@ -165,6 +258,18 @@ bool state_synth_tick() {
 }
 
 void state_init() {
+    suspend_release_pending = false;
+    output_diagnostics.reset();
+    output_test.reset();
+    game_ever_r2 = game_ever_l2 = false;
+    g_host_cache_size = 0;
+    g_host_motor_valid = false;
+    player_led_restore_pending = false;
+    player_led_previous_mode = 0;
+    rumble_sent.reset();
+    state_rumble_reset();
+    lightbar_fixed_policy.reset(); // Reconnect must reapply even the same colour.
+    player_led_sent.reset();
     memcpy(&state, state_init_data, sizeof(state));
     state.VolumeSpeaker = get_config().speaker_volume;
     state.VolumeHeadphones = get_config().headset_volume;
@@ -172,11 +277,9 @@ void state_init() {
     set_gain(get_config().speaker_gain);
 }
 
-// Player-LED hand-back tail; see state_set(). Exposed so the main loop keeps
-// composing reports for its duration - on an idle desktop nothing else would,
-// and a hand-back that is never sent hands nothing back.
-static uint64_t player_led_tail_until_us = 0;
-bool player_led_wants_report(void) {
+// Return LED ownership only after successful submission of the host pattern.
+
+static void player_led_update_mode() {
     // The transition is detected HERE, in the function that decides whether a
     // report is composed at all - not inside state_set(). Detecting it in
     // state_set() was circular: state_set() only runs when a report is being
@@ -185,32 +288,44 @@ bool player_led_wants_report(void) {
     // so no report was composed, the change was never noticed, the tail never
     // started, and the LEDs stayed frozen until something else - DS4Windows
     // switching profile - happened to write to them.
-    static uint8_t s_prev_mode = 0;
-    const uint8_t mode = get_config().player_led_mode;
-    if (s_prev_mode != 0 && mode == 0) player_led_tail_until_us = time_us_64() + 300000;
-    s_prev_mode = mode;
-    // A dimmed Passthrough also needs reports composed: on an idle desktop no
-    // game is sending any, so a brightness change would otherwise never reach
-    // the controller until something else happened to write to it.
-    return mode != 0 || get_config().player_led_bright != 0 ||
-           time_us_64() < player_led_tail_until_us;
+
+    const uint8_t mode = get_config().player_led_bright == 3 ? 1 : get_config().player_led_mode;
+    if (player_led_previous_mode != 0 && mode == 0) player_led_restore_pending = true;
+    if (mode != 0) player_led_restore_pending = false;
+    player_led_previous_mode = mode;
+}
+
+bool player_led_wants_report(void) {
+    player_led_update_mode();
+    // Also check the default mode so failed game and fallback LED writes retry.
+    // Use the same composition/debounce/blink logic as real output. Only LED
+    // fields participate in this comparison; never suppress audio or triggers.
+    uint8_t candidate[sizeof(SetStateData)];
+    state_set(candidate, sizeof(candidate));
+    return player_led_restore_pending || player_led_sent.pending(candidate);
+}
+
+bool state_prepare_report(uint8_t *data, bool force) {
+    player_led_update_mode();
+    state_set(data, sizeof(SetStateData));
+    return force || output_test.release || player_led_restore_pending || player_led_sent.pending(data) || lightbar_fixed_wants_report() ||
+           rumble_output_pending || rumble_sent.pending(data);
 }
 
 void __not_in_flash_func(state_set)(uint8_t *data, const uint8_t size) {
-    if (size > 63) {
-        printf("[StateMgr] Warning: State Set over 63 bytes\n");
+    // This function also writes fixed offsets below. Partial destinations are
+    // not supported; reject them before any copy or fixed-offset write.
+    if (data == nullptr || size != sizeof(SetStateData)) return;
+    memcpy(data, &state, sizeof(SetStateData));
+    // A mapped mute button is no longer a microphone-status indicator.
+    if (macro_uses_mute_button()) {
+        data[1] |= 1u;
+        data[8] = 0;
     }
-    memcpy(data, &state, size);
-    // Force the RGB lightbar off in Replace mode (when the toggle is enabled).
-    // Replace = pure audio-derived haptics, typically used in emulated/non-native
-    // scenarios where the game never sends DualSense lightbar commands, so it
-    // sits at a default glow (blue in DS4Windows). In native (auto-haptics Off)
-    // or Mix, the lightbar is left as-is so games can control it (passthrough).
-    // Mode-agnostic on purpose. This began life gated on Replace, because that
-    // is what it was added for, but which haptics mode is running has nothing to
-    // do with whether someone wants the light on. Mode is per-profile, so
-    // "dark in this game, lit in that one" is already expressible with two
-    // profiles - the setting does not need to know about modes to achieve it.
+    state_refresh_rumble(data);
+    const auto &c = get_config();
+    const uint8_t player_mode = c.player_led_bright == 3 ? 1 : c.player_led_mode;
+    // RGB ownership is applied last, independently of the haptics mode.
     // --- Player LEDs --------------------------------------------------------
     // The five white LEDs under the touchpad (byte 43 bits 0-4), taken over by
     // setting AllowPlayerIndicators. Brightness is its own field and its own
@@ -254,13 +369,11 @@ void __not_in_flash_func(state_set)(uint8_t *data, const uint8_t size) {
     // only going through Off (which writes all-dark) cleared it. Same trap as the
     // lightbar colour that stuck after a battery notification.
     //
-    // So on the way OUT of a takeover mode, keep writing for a short tail with
-    // the pattern from the state struct - whatever the game last asked for, or
-    // nothing if it never asked - which actively puts the LEDs back.
+    // On leaving a takeover mode, restore the cached host pattern (zero if absent)
+    // until successful submission, including when the host never allowed LED writes.
     {
-        // Armed by player_led_wants_report(); this only applies it.
-        const uint8_t mode = get_config().player_led_mode;
-        if (mode == 0 && time_us_64() < player_led_tail_until_us && size > 43) {
+        // Keep restoring until the matching report is successfully submitted.
+        if (player_mode == 0 && player_led_restore_pending) {
             data[1]  |= 0x10;                                  // AllowPlayerIndicators
             data[43]  = (uint8_t) ((data[43] & 0x1F) | 0x20);  // the game's own pattern, instant
         }
@@ -273,12 +386,14 @@ void __not_in_flash_func(state_set)(uint8_t *data, const uint8_t size) {
     // field is touched here, under its own allow-flag, so the game's player
     // number is still shown exactly as it asked. "Bright" means hands off
     // entirely: that is the controller's default, so nothing needs enforcing.
-    if (get_config().player_led_mode == 0 && get_config().player_led_bright != 0 && size > 42) {
+    if (player_mode == 0 && c.player_led_bright != 0) {
         data[38] |= 0x01;                            // AllowLightBrightnessChange
         data[42]  = get_config().player_led_bright;  // 1 mid, 2 dim
     }
+    if (player_mode == 0 && c.player_led_bright == 0)
+        player_led_sent.restore_brightness(data);
 
-    if (get_config().player_led_mode != 0 && size > 43) {
+    if (player_mode != 0) {
         extern volatile uint8_t  g_batt_raw, g_diag_pled_raw;
         extern volatile uint16_t g_diag_pled_runs;
         const uint8_t raw = g_batt_raw;
@@ -290,7 +405,7 @@ void __not_in_flash_func(state_set)(uint8_t *data, const uint8_t size) {
         const uint64_t now = time_us_64();
         uint8_t bits = 0;
 
-        if (get_config().player_led_mode == 2 && level <= 10) {
+        if (player_mode == 2 && level <= 10) {
             // TIME-debounced, not level-hysteresis. The earlier version only
             // followed the reading once it had moved two steps away, which on a
             // ten-step scale that moves one step at a time made the thresholds
@@ -339,50 +454,81 @@ void __not_in_flash_func(state_set)(uint8_t *data, const uint8_t size) {
         // Brightness has its OWN allow-flag at byte 38 bit 0. An earlier build
         // also set byte 1 bit 0 believing it was this flag - it is AllowMuteLight,
         // so it was quietly taking control of the mute LED as well.
-        data[38] |= 0x01;                   // AllowLightBrightnessChange
-        data[42] = get_config().player_led_bright;   // 0 bright, 1 mid, 2 dim
+        if (c.player_led_bright != 3) {
+            data[38] |= 0x01;                   // AllowLightBrightnessChange
+            data[42] = c.player_led_bright;
+        }
         extern volatile uint8_t g_diag_pled_bits, g_diag_pled_state;
         g_diag_pled_bits  = bits;
         g_diag_pled_state = (uint8_t) (charging ? 2 : (level <= 2 ? 1 : 0));
     }
 
-    if (get_config().lightbar_off && size > 46) {
-        data[1] |= 0x04;   // AllowLedColor
-        data[44] = 0x00;   // LedRed
-        data[45] = 0x00;   // LedGreen
-        data[46] = 0x00;   // LedBlue
-    }
-    // Battery notification. Last, so it wins over the lightbar_off override for
-    // the few seconds it runs - the whole point is that it is seen.
-    //
-    // It restores itself: while a blink is running these bytes are overwritten
-    // on every outgoing report, and the moment it ends they are simply left
-    // alone again, so whatever the game was driving flows straight back. There
-    // is no saved colour to put back and nothing to get out of step.
-    // Applied LAST, so it wins over the lightbar_off override above and over
-    // whatever the game asked for - for the few seconds it runs, being seen is
-    // the entire point. During the restore tail this returns false and the
-    // report carries the real colour again, which is what puts the lightbar
-    // back.
+    // Battery notification owns the colour only in passthrough mode.
     uint8_t bn_r = 0, bn_g = 0, bn_b = 0;
-    if (size > 46 && battery_notify_override(bn_r, bn_g, bn_b)) {
+    const bool battery_color_active = !get_config().lightbar_fixed && !get_config().lightbar_off &&
+        size > 46 && battery_notify_override(bn_r, bn_g, bn_b);
+    if (battery_color_active) {
         data[1] |= 0x04;                  // AllowLedColor
         data[44] = bn_r;
         data[45] = bn_g;
         data[46] = bn_b;
     }
+    // Final authority: OFF > fixed colour > game/battery notification.
+    // This rewrites existing reports; it never creates a periodic BT sender.
+    lightbar_fixed_policy.apply(data, c.lightbar_off, c.lightbar_fixed, c.lightbar_r, c.lightbar_g, c.lightbar_b, battery_color_active);
+    if (output_test.pending()) output_test.apply(data, to_ms_since_boot(get_absolute_time()));
+}
+
+static void state_host_led_update(const uint8_t *data, uint8_t size) {
+    lightbar_fixed_policy.host_update(data, size);
+    // Only host input can reset cached LEDs; synthesized ticks reuse old packets.
+    auto *led_state = reinterpret_cast<uint8_t *>(&state);
+    if (size > 41 && (data[38] & 2) && data[41] == 2) {
+        led_state[1] &= ~4u;
+        led_state[44] = led_state[45] = led_state[46] = 0;
+    }
+    if (size > 1 && (data[1] & 8)) {
+        // Release is not a request for black RGB; retain the game's last colour.
+        led_state[1] &= ~0x10u;
+        led_state[43] = 0;
+        player_led_sent.release_pattern();
+    }
 }
 
 bool state_update(const uint8_t *data, const uint8_t size) {
-    if (size <= sizeof(SetStateData)) {
-        memcpy(g_host_cache, data, size);
-        g_host_cache_size = size;
-        g_last_host_ms = to_ms_since_boot(get_absolute_time());
+    if (data == nullptr || size == 0 || size > sizeof(SetStateData)) return false;
+    output_diagnostics.received(data, size);
+    state_host_led_update(data, size);
+    if (output_test.kind) output_test.start(0, to_ms_since_boot(get_absolute_time()));
+    uint8_t normalized[sizeof(SetStateData)]{};
+    memcpy(normalized, data, size);
+    const bool restore_native = size >= 4 && (data[0] & 3) == 1 &&
+        !(size > 38 && (data[38] & 4));
+    if (restore_native) normalized[2] = normalized[3] = 0;
+    const bool motor_command = size >= 4 && ((data[0] & 3) ||
+        (size > 38 && (data[38] & 4)) || data[2] || data[3]);
+    const bool other_control = (data[0] & 0xfcu) || (size > 1 && data[1]) ||
+        (size > 38 && (data[38] & ~4u));
+    const bool unqualified_native_report = size >= 4 && !motor_command && !other_control &&
+        !usb_xinput_active() && get_config().auto_haptics_enable == 0;
+    if (motor_command) {
+        g_last_rumble_ms = to_ms_since_boot(get_absolute_time());
+    } else if (g_host_motor_valid && !unqualified_native_report) {
+        // Preserve rumble for real LED/volume/trigger writes, not a neutral native report.
+        refresh_rumble_fields(normalized, g_host_cache);
     }
-    return state_update_apply(data, size);
+    if (!usb_xinput_active() && !motor_command &&
+        to_ms_since_boot(get_absolute_time()) - g_last_rumble_ms >= 300) {
+        normalized[2] = normalized[3] = 0;
+    }
+    memcpy(g_host_cache, normalized, sizeof(g_host_cache));
+    g_host_cache_size = size;
+    g_host_motor_valid = g_host_motor_valid || size >= 4;
+    g_last_host_ms = to_ms_since_boot(get_absolute_time());
+    return state_update_apply(normalized, size);
 }
 
-static bool state_update_apply(const uint8_t *data, const uint8_t size) {
+static bool state_update_apply(const uint8_t (&data)[sizeof(SetStateData)], const uint8_t size) {
     if (size > sizeof(SetStateData)) {
         printf(
             "[StateMgr] Error: SetStateData max %u bytes, request %u\n",
@@ -401,6 +547,8 @@ static bool state_update_apply(const uint8_t *data, const uint8_t size) {
 
     SetStateData update{};
     memcpy(&update, data, size);
+    // Internal callers pass a full normalized buffer; size bounds non-motor fields.
+    refresh_rumble_fields(reinterpret_cast<uint8_t *>(&update), data);
 
     auto *state_bytes = reinterpret_cast<uint8_t *>(&state);
     const auto copy_if_allowed = [&](const bool allowed, const size_t offset, const size_t length) {
@@ -427,24 +575,14 @@ static bool state_update_apply(const uint8_t *data, const uint8_t size) {
     // the game nor synthesis wants the triggers, byte 0 returns to a clean state.
     state.AllowRightTriggerFFB = update.AllowRightTriggerFFB;
     state.AllowLeftTriggerFFB = update.AllowLeftTriggerFFB;
-    // When auto-haptics is enabled (Mix/Replace), we drive the haptic ACTUATORS
-    // from audio. Forcing UseRumbleNotHaptics=true (e.g. because DS4Windows sends
-    // rumble) switches the controller to rumble MOTORS and silences the actuator
-    // path our auto-haptics needs. So only force rumble mode when auto-haptics
-    // is OFF (pure native rumble->DualSense conversion).
-    const bool auto_haptics_on = get_config().auto_haptics_enable > 0;
-    // When auto-haptics is on, capture the incoming rumble-emulation motor values
-    // so the audio path can blend them into the actuator signal (rather than using
-    // the controller's separate rumble-motor mode, which conflicts with actuator
-    // haptics). Lets us MIX converted rumble + audio-derived haptics, both through
-    // the actuators, with independent strength control.
+    // PCM haptics and controller-emulated rumble share the same actuators;
+    // active Mix/Replace must keep the PCM path selected.
+    const bool auto_haptics_on = get_config().auto_haptics_enable > 0 && audio_haptics_stream_active();
+    // Keep raw motor values for Mix synthesis, independently of device mode.
     extern volatile uint8_t g_rumble_l, g_rumble_r;
     g_rumble_l = update.RumbleEmulationLeft;
     g_rumble_r = update.RumbleEmulationRight;
-    if (!auto_haptics_on && (update.RumbleEmulationLeft > 0 || update.RumbleEmulationRight > 0)) {
-        // why doesn't ninja gaiden 4 enable UseRumbleNotHaptics
-        state.UseRumbleNotHaptics = true;
-    }
+    // Nonzero motor bytes do not authorize rumble mode: native games send them too.
     if (auto_haptics_on) {
         // Force actuator (haptic) mode so derived haptics play even while a game
         // is sending rumble through DS4Windows.
@@ -457,6 +595,35 @@ static bool state_update_apply(const uint8_t *data, const uint8_t size) {
         state.EnableImprovedRumbleEmulation) {
         state.RumbleEmulationLeft = update.RumbleEmulationLeft;
         state.RumbleEmulationRight = update.RumbleEmulationRight;
+    }
+    // Shape only controller-emulated rumble. PCM/native haptics and the raw
+    // rumble used by Mix/r2t keep their original values.
+    if (!auto_haptics_on && size >= 4 &&
+        (state.UseRumbleNotHaptics || state.EnableImprovedRumbleEmulation)) {
+        uint8_t left = update.RumbleEmulationLeft, right = update.RumbleEmulationRight;
+        const auto &c = get_config();
+        rumble_shape.apply(left, right, to_ms_since_boot(get_absolute_time()), c.rumble_gain, c.rumble_release);
+        state.RumbleEmulationLeft = left;
+        state.RumbleEmulationRight = right;
+        if ((c.rumble_gain != 100 || c.rumble_release != 0) &&
+            (left != old_state.RumbleEmulationLeft || right != old_state.RumbleEmulationRight))
+            rumble_output_pending = true;
+    } else {
+        rumble_shape.reset(); // explicit native-haptics mode wins immediately
+        rumble_output_pending = false;
+    }
+
+    // Release silent emulated rumble so native PCM can resume after STOP/watchdog.
+    if (!usb_xinput_active() && get_config().auto_haptics_enable == 0 && size >= 4 &&
+        (state.UseRumbleNotHaptics || state.EnableImprovedRumbleEmulation) &&
+        !state.RumbleEmulationLeft && !state.RumbleEmulationRight) {
+        state.EnableRumbleEmulation = true; // Native restore selector 01.
+        state.UseRumbleNotHaptics = false;
+        state.EnableImprovedRumbleEmulation = false;
+        rumble_shape.reset();
+        if (old_state.UseRumbleNotHaptics || old_state.EnableImprovedRumbleEmulation ||
+            !old_state.EnableRumbleEmulation || old_state.RumbleEmulationLeft || old_state.RumbleEmulationRight)
+            rumble_output_pending = true;
     }
 
     if (!get_config().lock_volume && update.AllowHeadphoneVolume) {
@@ -478,6 +645,8 @@ static bool state_update_apply(const uint8_t *data, const uint8_t size) {
         sizeof(uint8_t)
     );
 
+    if (update.AllowMuteLight && size > offsetof(SetStateData, MuteLightMode))
+        state.AllowMuteLight = 1;
     copy_if_allowed(
         update.AllowMuteLight,
         offsetof(SetStateData, MuteLightMode),
@@ -514,11 +683,14 @@ static bool state_update_apply(const uint8_t *data, const uint8_t size) {
     // yield for a few seconds after.
     {
         const auto &cfg = get_config();
+        // Packed storage is not guaranteed to align uint16_t arrays.
+        uint16_t r2_dt[5], l2_dt[5];
+        memcpy(r2_dt, cfg.ce_r2_dt, sizeof(r2_dt));
+        memcpy(l2_dt, cfg.ce_l2_dt, sizeof(l2_dt));
 
         bool at_kick_diag = false; // KICK burst active this cycle (diag bit 32)
         // -- game-ownership recency latch --
         static uint32_t last_game_r2_ms = 0, last_game_l2_ms = 0;
-        static bool game_ever_r2 = false, game_ever_l2 = false;
         const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
         // A game "actively drives" a trigger only if the Allow bit comes WITH a real
         // effect payload. Input layers (Steam Input, DS4Windows-style wrappers, some
@@ -785,7 +957,7 @@ static bool state_update_apply(const uint8_t *data, const uint8_t size) {
                     // full release, finger off = click-free; the game re-arms on release).
                     ce_active_r2 = true;
                     const uint8_t rearm_pos = zpos(cfg.ce_r2_thresh);
-                    const uint8_t *seq = run_sequencer(cfg.ce_r2_states, cfg.ce_r2_dt,
+                    const uint8_t *seq = run_sequencer(cfg.ce_r2_states, r2_dt,
                                                        cfg.ce_r2_state_count, g_r2_pos,
                                                        rearm_pos, ce_seq_stage_r2,
                                                        ce_rearm_pulse_r2);
@@ -814,7 +986,7 @@ static bool state_update_apply(const uint8_t *data, const uint8_t size) {
                     if (now_ms < ce_oneshot_r2_until) ce_active_r2 = true;
                 }
                 if (ce_active_r2)
-                    ce_write_r2 = pick_state(cfg.ce_r2_states, cfg.ce_r2_dt,
+                    ce_write_r2 = pick_state(cfg.ce_r2_states, r2_dt,
                                              cfg.ce_r2_state_count, cfg.ce_r2_rate,
                                              ce_phase_r2, ce_tl_idx_r2, ce_tl_next_r2);
                 if (ce_seq_r2) ce_write_r2 = ce_seq_r2;   // sequencer overrides the picker
@@ -829,7 +1001,7 @@ static bool state_update_apply(const uint8_t *data, const uint8_t size) {
                 if (cfg.ce_l2_condition == 0) {              // while held / always-armed
                     ce_active_l2 = true;                     // (see R2 note; thresh = re-arm zone)
                     const uint8_t rearm_pos = zpos(cfg.ce_l2_thresh);
-                    const uint8_t *seq = run_sequencer(cfg.ce_l2_states, cfg.ce_l2_dt,
+                    const uint8_t *seq = run_sequencer(cfg.ce_l2_states, l2_dt,
                                                        cfg.ce_l2_state_count, g_l2_pos,
                                                        rearm_pos, ce_seq_stage_l2,
                                                        ce_rearm_pulse_l2);
@@ -853,7 +1025,7 @@ static bool state_update_apply(const uint8_t *data, const uint8_t size) {
                     if (now_ms < ce_oneshot_l2_until) ce_active_l2 = true;
                 }
                 if (ce_active_l2)
-                    ce_write_l2 = pick_state(cfg.ce_l2_states, cfg.ce_l2_dt,
+                    ce_write_l2 = pick_state(cfg.ce_l2_states, l2_dt,
                                              cfg.ce_l2_state_count, cfg.ce_l2_rate,
                                              ce_phase_l2, ce_tl_idx_l2, ce_tl_next_l2);
                 if (ce_seq_l2) ce_write_l2 = ce_seq_l2;
@@ -1217,11 +1389,12 @@ static bool state_update_apply(const uint8_t *data, const uint8_t size) {
         sizeof(uint8_t)
     );
 
-    copy_if_allowed(
-        update.AllowColorLightFadeAnimation,
-        offsetof(SetStateData, LightFadeAnimation),
-        sizeof(update.LightFadeAnimation)
-    );
+    if (update.AllowLightBrightnessChange && size > offsetof(SetStateData, LightBrightness))
+        state.AllowLightBrightnessChange = 1;
+    if (update.AllowPlayerIndicators && size > kPlayerIndicatorsOffset)
+        state.AllowPlayerIndicators = 1;
+    if (update.AllowLedColor && size >= offsetof(SetStateData, LedRed) + 3)
+        state.AllowLedColor = 1;
     copy_if_allowed(
         update.AllowLightBrightnessChange,
         offsetof(SetStateData, LightBrightness),
@@ -1238,7 +1411,12 @@ static bool state_update_apply(const uint8_t *data, const uint8_t size) {
         sizeof(update.LedRed) * 3
     );
 
+    const auto *before = reinterpret_cast<const uint8_t *>(&old_state);
+    const auto *after = reinterpret_cast<const uint8_t *>(&state);
+    if ((before[0] & 3) != (after[0] & 3) || (before[38] & 4) != (after[38] & 4) ||
+        before[2] != after[2] || before[3] != after[3]) rumble_output_pending = true;
     bool changed = false;
+    rumble_reset_pending = false;
     if (g_ce_force_send) {
         changed = true;                 // re-arm: send identical bytes fresh
         g_ce_force_send = false;
@@ -1282,6 +1460,8 @@ void set_gain(const uint8_t value) {
 // themselves when the trigger is let go, which is why this only bit with a
 // custom effect engaged. Send ONE explicit Off for both triggers.
 bool state_release_for_suspend() {
+    suspend_release_pending = true;
+    state_rumble_reset();
     for (int i = 0; i < 11; ++i) {
         state.RightTriggerFFB[i] = 0;
         state.LeftTriggerFFB[i] = 0;
@@ -1292,4 +1472,31 @@ bool state_release_for_suspend() {
     state.AllowLeftTriggerFFB  = 1;
     g_ce_force_send = true;               // bypass change-suppression for this one send
     return true;
+}
+
+bool state_suspend_release_pending() { return suspend_release_pending; }
+void state_cancel_suspend_release() { suspend_release_pending = false; }
+
+void state_suspend_release_sent(const uint8_t *data) {
+    if (suspend_release_pending && (data[0] & 0x0c) == 0x0c &&
+        !data[2] && !data[3] && data[10] == 5 && data[21] == 5)
+        suspend_release_pending = false;
+}
+
+void state_rumble_reset() {
+    if (output_test.pending()) output_test.start(0, to_ms_since_boot(get_absolute_time()));
+    extern volatile uint8_t g_rumble_l, g_rumble_r;
+    g_rumble_l = g_rumble_r = 0;
+    if (rumble_shape.active() || state.RumbleEmulationLeft || state.RumbleEmulationRight) {
+        rumble_reset_pending = true;
+        g_ce_force_send = true;
+        g_last_host_ms = 0;
+        rumble_output_pending = true;
+    }
+    rumble_shape.reset();
+    state.RumbleEmulationLeft = state.RumbleEmulationRight = 0;
+    // A later synth tick must not replay a previous profile/link's rumble.
+    if (g_host_cache_size >= 4) {
+        g_host_cache[2] = g_host_cache[3] = 0;
+    }
 }

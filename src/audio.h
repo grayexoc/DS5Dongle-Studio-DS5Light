@@ -9,6 +9,10 @@
 
 void audio_init();
 void audio_loop();
+void audio_reset_stream();
+bool audio_prepare_sleep();
+bool audio_processing_active();
+bool audio_haptics_stream_active();
 void core1_entry();
 void set_headset(bool state);
 void set_mic_active(bool active);

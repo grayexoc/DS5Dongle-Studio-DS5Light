@@ -1,0 +1,177 @@
+"""English presentation strings; Korean keys are not audio settings."""
+EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method', '5.1채널 (홈시어터)': '5.1 channels (Home theater)', '2채널 (스테레오)': '2 channels (Stereo)', '초과분 자르기': 'Hard clipping', '부드러운 제한': 'Soft limiting', 'PC 기본 설정 오류': 'Invalid default PC settings', '게임 설정': 'Game settings', '슬롯 선택 후 불러오기 · 저장은 선택한 슬롯을 교체합니다.': 'Select a slot to load. Saving replaces that slot.', '정지 · 기존 BAT를 종료한 후 시작하세요': 'Stopped · Close the original BAT bridge before starting.', '오디오햅틱': 'Audio haptics', '게임 소리는 그대로, 동글로 보내는 복사본만 처리': 'Only the copy sent to the dongle is processed.', '정지': 'Stopped', '소리 받을 곳': 'Audio source', '장치 전체': 'Whole device', '선택한 게임만': 'Selected game only', '새로 고침': 'Refresh', '게임별 프리셋': 'Game presets', '불러오기': 'Load', '저장': 'Save', '01   사용할 채널': '01   Input channels', '전면 L / R     항상 사용 · 기본 100%': 'Front L / R · Always included at 100%', '후방 L / R': 'Rear L / R', '센터 · 대사도 포함': 'Center · Includes dialogue', 'LFE 저음': 'LFE bass', '채널 합산 시 큰 소리가 겹칠 때': 'When summed channels exceed the limit', '02   PC 억제 필터': '02   PC suppression filter', 'BGM·대사 오진동을 줄이기 위한 추가 처리': 'Extra processing to reduce music/dialogue haptics', '디테일': 'Detail', '균형': 'Balanced', '억제': 'Suppression', '억제 세기': 'Suppression strength', '효과 보존 우선': 'Preserve effects', '억제 우선': 'More suppression', '세부 필터 설정 ▸': 'Advanced filters ▸', '세부 필터 설정 ▾': 'Advanced filters ▾', '배경 대역 억제': 'Background suppression', '변화량 보호': 'Transient protection', '연결 설정 · 도움말': 'Connection & help', '▶  시작': '▶  Start', '프리셋 파일 오류': 'Preset file error', '6ch 입력 · 센터 포함': '6ch input · Center included', '6ch 입력 · 센터 제외': '6ch input · Center excluded', '2ch 입력 · 좌우 스테레오': '2ch input · Stereo L/R', 'ch 입력 · 채널 추가 미지원': 'ch input · Extra channels unavailable', '입력 채널 · 시작 후 확인': 'Input channels · Detected after starting', ' 준비 · 실제 형식은 시작 후 확인': ' ready · Format detected after starting', '2채널 선택 · 전면 L/R만 사용': 'Stereo selected · Front L/R only', '5.1채널 선택 · 후방/센터/LFE 추가 가능': '5.1 selected · Rear/center/LFE available', '5.1채널 선택 · 6ch 입력 연결 대기': '5.1 selected · Waiting for 6ch input', '입력 L / R     항상 사용': 'Input L / R · Always included', '켜짐': 'On', '꺼짐': 'Off', '선택 게임': 'Selected game', ' → 채널 선택 → PC 필터 ': ' → Channels → PC filter ', '퓨어 미지원 · 추가 오디오 출력 무음': 'Pure unavailable · Added audio muted', '일반 모드': 'Normal mode', '퓨어 · 무음': 'Pure · Muted', ' · 캡처 ': ' · Capture ', '대기': 'Waiting', 'ch   ·   출력: ': 'ch · Output: ', '자동 선택': 'Automatic', '실행 중': 'Running', '게임 목록 조회 실패: ': 'Cannot list games: ', '빈 슬롯': 'Empty slot', '프리셋 저장': 'Save preset', '번 저장됨 · ': ' saved · ', '프리셋 저장 실패': 'Cannot save preset', '빈 슬롯입니다. 설정을 맞춘 뒤 저장을 누르세요.': 'Empty slot. Adjust your settings, then select Save.', '불러옴 · ': 'Loaded · ', ' · 시작을 눌러 적용': ' · Select Start to apply', '저장한 장치가 없습니다. 연결 설정에서 직접 선택하세요.': 'Saved device unavailable. Select a device in Connection & help.', '연결 설정': 'Connection settings', '입력 · 장치 전체에서 사용': 'Input · Used for whole-device capture', '출력 · DualSense': 'Output · DualSense', '처리할 채널 · 메인 화면과 동일': 'Input channels · Same as the main window', '퓨어 모드: 현재 미지원. 기존 퓨어 프리셋은 무음으로 유지됩니다.': 'Pure mode is unavailable. Existing Pure presets keep added audio muted.', '닫기': 'Close', '장치 선택': 'Select devices', '연결 설정에서 입출력 장치를 선택하세요.': 'Select input and output devices in Connection & help.', '게임 선택': 'Select a game', '게임을 실행하고 새로 고침 후 실제 게임 exe를 선택하세요.': 'Start your game, refresh the list, then select its actual executable.', '연결 중…': 'Connecting…', '시작 실패': 'Cannot start', '정지 대기 중 · 드라이버 응답을 기다립니다.': 'Stopping · Waiting for the driver to respond.', 'UI 시험': 'UI test', '시작 후 확인': 'Detected after starting', '실행 실패': 'Cannot launch', '\n기존 파일을 보존하기 위해 저장이 차단됩니다.': '\nSaving is blocked to preserve the existing file.', '\n장치 전체는 실제 캡처 형식에 맞춰 선택이 제한됩니다.': '\nWhole-device capture follows the actual device format.', ' · 미실행 또는 같은 이름이 여러 개입니다. 실행 후 새로 고침/직접 선택하세요.': ' · Not running, or multiple instances found. Refresh and select manually.', '번 슬롯 이름\n저장하면 해당 슬롯의 설정을 교체합니다.': ' slot name\nSaving replaces the settings in this slot.', '대사에 진동이 생기면 센터를 꺼 보세요.\nBGM 저음의 진동이 거슬리면 LFE를 꺼 보세요.\n추가 채널도 PC 필터를 거칩니다.\n필터를 꺼도 채널 선택과 합산 제한은 유지됩니다.': 'Try disabling Center if dialogue causes vibration.\nTry disabling LFE if music bass causes unwanted vibration.\nAdded channels also pass through the PC filter.\nChannel selection and limiting stay active with the filter off.', '2채널은 추가 채널 합산이 없어 합산 제한을 사용하지 않습니다.\n5.1채널로 돌아오면 저장된 선택을 다시 사용합니다.': 'Stereo has no additional channels to sum, so this limiter is inactive.\nYour channel selections are retained for 5.1 input.', '실제 입력이 표준 6ch일 때만 사용할 수 있습니다.\n자동 장치는 시작 후 Windows 캡처 형식을 확인합니다.': 'Available for standard 6ch input only.\nAutomatic selection detects the Windows format after starting.', '끄면 PC 억제만 생략합니다.\n채널 선택과 Studio 처리는 유지됩니다.': 'Turning this off bypasses PC suppression only.\nChannel selection and Studio processing stay active.', 'PC 억제를 생략 중입니다.\n채널 선택·합산 제한·Studio 처리는 그대로입니다.': 'PC suppression is bypassed.\nChannel selection, limiting and Studio processing stay active.', '6ch는 전면 L/R을 기본으로 사용하며 센터·후방·LFE를 추가할 수 있습니다.\n2ch는 이미 섞인 좌우 소리라 후방·LFE를 따로 추가할 수 없습니다.\n장치 전체: 실제 6ch 캡처면 5.1채널만, 2ch면 2채널만 선택됩니다.\n자동 장치는 시작 후 캡처 형식을 확인합니다. 게임 설정과 다를 수 있습니다.\n선택 게임: 정지 중 캡처 요청 형식을 직접 선택합니다.\n\nPC 필터 끄기 ≠ 기존 BAT와 같은 입력\n기존 기준: 장치 전체 + 센터/후방/LFE 끔 + PC 필터 끔.\nStudio 필터와 귀로 듣는 원음은 이 화면에서 바꾸지 않습니다.': '6ch uses front L/R, with optional center, rear and LFE.\nStereo is already mixed; its other channels cannot be added separately.\nWhole device: the actual input format determines 5.1 or stereo.\nAutomatic detection runs after starting and may differ from game settings.\nSelected game: choose the requested capture format while stopped.\n\nFilter off does not necessarily match the original BAT input.\nOriginal baseline: Whole device + all extra channels off + PC filter off.\nThese settings do not change Studio filters or your listening audio.', '저장 실패': 'Cannot save', '프리셋 형식 오류': 'Invalid preset format', '프리셋 항목 오류': 'Invalid preset fields', '프리셋 문자열 오류: ': 'Invalid preset string: ', '슬롯 이름은 1~60자로 입력하세요': 'Enter a slot name of 1 to 60 characters', '캡처 범위/채널 오류': 'Invalid capture scope/channels', '필터 설정 형식 오류': 'Invalid filter settings', '합산 제한 방식 오류': 'Invalid limiter mode', '모드 오류': 'Invalid mode', '필터 스위치 오류': 'Invalid filter switch', '채널 스위치 오류': 'Invalid channel switch', '억제 세기 범위 오류': 'Suppression strength out of range', '지원하지 않는 프리셋 파일 형식': 'Unsupported preset file format', '기존 파일을 읽지 못해 덮어쓰기를 막았습니다: ': 'Existing file could not be read; overwrite blocked: ', '슬롯 번호 오류': 'Invalid slot number', '기존 브리지 조회 실패. 프로세스 조회 권한을 확인하세요.': 'Cannot check for the original bridge. Check process access permissions.', '기존 ds5audio.py 실행 중: 기존 창에서 먼저 종료하세요.': 'The original ds5audio.py bridge is running. Close it first.', '전처리기가 이미 실행 중입니다.': 'The preprocessor is already running.', '알 수 없는 모드': 'Unknown mode', '필터 오류: 무음 ': 'Filter error; output muted: ', '게임 전용에서 장치 전체 캡처로 전환하려는 경로를 차단했습니다': 'Blocked fallback from game-only to whole-device capture', '자기 출력 재캡처 차단': 'Output recapture blocked', '연결됨 · 기존 브리지 전송': 'Connected · Original bridge transport', ' · 무음 시험': ' · Silent test', '게임 전용 PID ': 'Game-only PID ', '선택한 장치 없음/중복: 다시 선택하세요': 'Device missing or ambiguous: select it again', '브리지 오류: ': 'Bridge error: ', '오류: ': 'Error: ', '프로그램 목록 조회 실패': 'Cannot list applications', '게임 캡처 채널은 2 또는 6': 'Game capture requires 2 or 6 channels', '게임 캡처 시작 실패: ': 'Cannot start game capture: ', '시간 초과': 'Timed out', '게임 종료 또는 캡처 프로세스 중단': 'Game exited or capture process stopped', '잘못된 게임 캡처 형식': 'Invalid game capture format', '잘못된 캡처 패킷': 'Invalid capture packet', '게임 전용 캡처 중단: ': 'Game-only capture stopped: ', '종료': 'Ended', '게임 캡처 버퍼 부족': 'Game capture buffer underrun'}
+
+EN.update({
+ 'Studio설정':'Studio settings',
+    '마이크 버튼': 'Microphone button',
+    '마이크 버튼 키보드매핑': 'Microphone button keyboard mapping',
+    '자동 채널': 'Auto channels',
+    '마이크 버튼 키보드매핑': 'Microphone button shortcut',
+    '단축키': 'Shortcut',
+    '사용': 'Enable',
+    '키 지정': 'Set keys',
+    '적용': 'Apply',
+    '취소': 'Cancel',
+    '단축키 설정 오류': 'Invalid shortcut',
+    '마이크 버튼 키보드매핑 설정 형식 오류': 'Invalid mute shortcut format',
+    '마이크 버튼 키보드매핑 설정 값 오류': 'Invalid mute shortcut value',
+    '마이크 버튼 키보드매핑 조합 오류': 'Invalid mute shortcut combination',
+    'Ctrl + Alt + Delete는 지원하지 않습니다.': 'Ctrl + Alt + Delete is not supported.',
+    '장치 여러 개': 'Multiple devices',
+    '연결 대기': 'Waiting for device',
+    '연결됨': 'Connected',
+    '입력 형식 확인 필요': 'Check input format',
+    'HID 접근 실패': 'HID access failed',
+    '입력 대기 초과': 'Input queue full',
+    '키보드 입력 중 · 생략': 'Input busy · skipped',
+    '입력 전달됨': 'Input sent',
+    '키 입력 실패': 'Key input failed',
+    '키 해제 실패': 'Key release failed',
+    '최근 실행': 'Recently started', 'CPU 사용률': 'CPU usage',
+    '마지막 옵션 자동 저장 및 복원': 'Remember last settings',
+    '앱을 열면 자동으로 연결 시작': 'Start audio bridge on launch',
+    '선택한 게임이 실행 중이지 않거나 여러 개면 자동 연결을 건너뜁니다.': 'If the selected game is not running or has multiple instances, auto-start is skipped.',
+    '진단 보기': 'Diagnostics', '오디오 진단': 'Audio diagnostics',
+    '연결 상태와 처리 지표': 'Connection and processing metrics',
+    '오디오 엔진이 정지 상태입니다.': 'The audio engine is stopped.',
+    '상태: ': 'Status: ', '처리 블록: ': 'Processed blocks: ', ' · 오류: ': ' · Errors: ',
+    'DSP 지연 p50/p95/p99/max: ': 'DSP latency p50/p95/p99/max: ',
+    '입력/출력 지연: ': 'Input/output latency: ', ' 초': ' s',
+    '게임 캡처 손실/오래된 패킷: ': 'Game capture drops/stale packets: ',
+    '입력 피크: ': 'Input peak: ', '설정 복구': 'Settings recovery',
+    '설정 저장 실패: ': 'Cannot save settings: ', '기본 설정 오류': 'Default settings error',
+    '\n안전한 기본값으로 실행합니다.': '\nRunning with safe defaults.',
+    '장치 목록 조회 실패: ': 'Cannot list audio devices: ',
+    '장치 목록을 갱신했습니다.': 'Audio devices refreshed.',
+    '개, 출력 ': ', outputs ',
+    '자동 시작을 건너뛰었습니다 · 프로세스 목록을 확인하세요.': 'Auto-start skipped · Check the process list.',
+    '자동 시작을 건너뛰었습니다 · 저장된 게임이 실행 중인지 확인하세요.': 'Auto-start skipped · Make sure the saved game is running.',
+})
+EN.update({
+    '정렬': 'Sort',
+    '오디오햅틱': 'Audio haptics',
+    '자동 시작을 건너뛰었습니다 · 퓨어 모드는 현재 지원하지 않습니다.': 'Auto-start skipped · Pure mode is currently unsupported.',
+    '오디오햅틱 브리지': 'Audio haptics bridge',
+    '게임 오디오': 'Game audio',
+    '장치 및 실행': 'Devices & launch',
+    '01   캡처 범위': '01   Capture source',
+    '실행 중인 프로세스': 'Running processes',
+    '↻ 새로 고침': '↻ Refresh',
+    '프로세스': 'Process',
+    'CPU 사용률': 'CPU usage',
+    '실행 시작': 'Started',
+    '게임 프리셋': 'Game preset',
+    '02   채널 구성': '02   Channel mix',
+    '전면 L / R': 'Front L / R',
+    '센터': 'Center',
+    'LFE · 저음': 'LFE · Bass',
+    '합산 제한': 'Limiter',
+    '03   햅틱 필터': '03   Haptic filter',
+    '필터 세기': 'Filter strength',
+    '효과 보존': 'Preserve detail',
+    '세부 설정 ▸': 'Advanced settings ▸',
+    '세부 설정 ▾': 'Advanced settings ▾',
+    '장치 설정': 'Device settings',
+    '입력 장치': 'Input device',
+    '출력 장치 · DualSense': 'Output device · DualSense',
+    '캡처 채널': 'Capture channels',
+    '실행 옵션': 'Launch options',
+    '마지막 옵션 저장 및 다음 실행 시 복원': 'Save and restore options on next launch',
+    '앱을 열면 자동으로 시작': 'Start automatically when the app opens',
+    '01   캡쳐 모드': '01   Capture mode',
+    '01   캡처 모드': '01   Capture mode',
+    '03   PC 억제 필터': '03   PC suppression filter',
+    '정지 중…': 'Stopping…',
+    '선택한 프로세스가 종료되었거나 변경되었습니다. 새로 고침 후 선택하세요.': 'The selected process exited or changed. Refresh and select it again.',
+    ' 종료 · 자동 정지': ' exited · Stopped automatically',
+    '대상 프로세스': 'Target process',
+    '입력 L / R': 'Input L / R',
+    '오디오 출력': 'Audio output',
+    '출력 중': 'Playing',
+    '세션 활성': 'Session active',
+    '확인 불가': 'Unavailable',
+    '진동 세기': 'Vibration level',
+    '햅틱 세기': 'Haptic intensity',
+    '충격 보존': 'Impact preservation',
+    '슬롯 목록': 'Slot list',
+    '자동 적용 중..': 'Auto-applying..',
+    '2채널 스테레오 적용중..': '2-channel stereo applied..',
+    ' · 프로세스 제외 목록에 포함되어 있습니다.': ' · Hidden by the process exclusion list.',
+    '드라이버 보고 입력/출력: ': 'Driver-reported input/output: ',
+    'PC 대기 p50/p95/max: ': 'PC queue p50/p95/max: ',
+    '캡처 → 출력 호출 p50/p95/max: ': 'Capture to output call p50/p95/max: ',
+    '출력 호출 대기 p50/p95/max: ': 'Output call wait p50/p95/max: ',
+    'PC 수신 버퍼: ': 'PC receive buffer: ',
+    '시작 시 폐기 프레임: ': 'Frames discarded at start: ',
+    '캡처 시각 오류: ': 'Capture timestamp errors: ',
+    'PC 내부 계측 · USB 이후 지연 미측정': 'PC timing only · latency after USB is not measured',
+    '이 게임에 자동 적용': 'Auto-apply to this game',
+    '저장 시 연결': 'Link when saved',
+    '저장 시 연결 해제': 'Unlink when saved',
+    '연결된 프리셋 없음': 'No linked preset',
+    '자동 불러옴 · ': 'Auto-loaded · ',
+    '전송 상태: ': 'Transport: ',
+    '최근 손실/오래된 패킷: ': 'Recent drops/stale packets: ',
+    '재연결: ': 'Reconnects: ',
+    '진동 세기: ': 'Vibration level: ',
+    '햅틱 세기: ': 'Haptic intensity: ',
+    '출력 제한 샘플: ': 'Limited samples: ',
+    '장치 연결 대기': 'Waiting for device',
+    '장치 연결 대기 중': 'Waiting for device connection',
+    '연결 중': 'Connecting',
+    '캡처 중단': 'Capture stopped',
+    '전송 대기': 'Waiting for data',
+    '전송 불안정': 'Unstable transport',
+    '정상': 'Normal',
+    '선택한 DualSense 출력 장치가 연결되어 있지 않습니다.': 'The selected DualSense output is disconnected.',
+    'DualSense 출력 장치가 여러 개입니다. 직접 선택하세요.': 'Multiple DualSense outputs found. Select one explicitly.',
+    '선택한 출력 장치의 재연결을 기다립니다.': 'Waiting for the selected output to reconnect.',
+    '출력 장치가 4채널 48kHz 형식을 지원하지 않습니다.': 'The output does not support 4-channel 48 kHz audio.',
+    '진동 세기 범위 오류': 'Invalid vibration level',
+    '게임 자동 연결 형식 오류': 'Invalid game preset links',
+})
+
+EN.update({'자동': 'Auto', '7.1채널 (서라운드)': '7.1 channels (Surround)', '배경 억제량': 'Background reduction', '충격 보존': 'Impact preservation', '마지막 설정 복원': 'Restore last settings', '실행 시 자동 시작': 'Start automatically', '캡처 형식 · ': 'Capture format · ', '시작 시 자동 확인': 'Detect on start', 'Studio 작업 완료 후 시작하세요.': 'Wait for Studio before starting.', 'Studio 프로필': 'Studio profiles', '현재 슬롯 · 미확인': 'Current slot · unknown', '동글': 'Dongle', '조회': 'Read', '저장 슬롯': 'Saved slot', '슬롯 적용 시 트리거·자이로 등 전체 설정이 변경됩니다.': 'Loading a slot changes all settings, including triggers and gyro.', '조회 버튼으로 동글의 저장 슬롯을 불러오세요.': 'Read the dongle to list saved slots.', '처리 중…': 'Working…', 'Studio 응답 확인 실패 · ': 'Studio response unavailable · ', '동글을 선택하세요.': 'Select a dongle.', '연결된 듀얼센스가 없습니다.': 'No DualSense connected.', '이름 없음': 'Unnamed', '빈 슬롯': 'Empty', '사용 불가': 'Unavailable', '현재 슬롯 · ': 'Current slot · ', '미저장 설정': 'Unsaved settings', ' · 수정됨': ' · edited', '저장 슬롯 조회 완료': 'Saved slots loaded', 'USB 설정 반영을 위해 동글 재연결 후 다시 조회하세요.': 'Reconnect the dongle to apply USB settings, then read again.', '슬롯 적용 완료': 'Slot loaded', ' · 유지 여부는 재연결 후 확인': ' · Verify persistence after reconnect'})
+
+EN.update({'프로필 슬롯': 'Profile slot', '프로필 선택': 'Select profile', '불러오는 중…': 'Loading…', '조회 실패': 'Read failed', '연결된 프로필 없음': 'No connected profiles', '연결 없음': 'Not connected', '재연결 필요': 'Reconnect required', '캡처 ': 'Capture ', '출력: ': 'Output: '})
+EN.update({'듀얼센스 연결됨':'DualSense connected',
+ '목록에서 캡쳐할 프로세스를 선택하세요.':'Select a process to capture from the list.',
+ '게임 실행 후 새로 고침을 눌러 주세요.':'Launch your game, then select Refresh.',
+ 'Studio 연결 확인 완료':'Studio connection verified'})
+
+EN.update({
+    '설정·진단': 'Settings & diagnostics',
+    '햅틱 세기': 'Haptic strength',
+    '장치 전체: 큐 길이 기반 추정 · 하드웨어 시각/손실 횟수 미계측': 'Whole device: queue-based estimate; hardware timestamps and loss counts unavailable',
+})
+EN.update({
+    '전역 캡쳐': 'Global capture',
+    '사용할 오디오 장치를 자동으로 선택합니다.': 'Automatically select the audio device to use.',
+})
+
+EN.update({'캡쳐 모드':'Capture mode','채널 구성':'Channel mix','PC 억제 필터':'PC suppression filter'})
+
+EN.update({'지정 프로세스': 'Selected process', '전역 오디오 캡쳐 작동중..': 'Global audio capture running..'})
+
+EN['현재 프로필:'] = 'Current profile:'
+
+# Common themed-dialog and preset-help text.
+EN.update({
+ '현재 DS5Light 설정을 이 PC의 게임 프리셋에 저장합니다.':'Save the current DS5Light settings as a game preset on this PC.',
+ 'DS5Light에서 오디오를 전송 중일 때만 적용됩니다.\n먼저 게임 소리에 원하는 햅틱 반응을 맞춘 뒤, 전체 진동이 강하거나 약할 때 조절하세요.\n100%가 기본 세기입니다.':'Applies only while DS5Light is transmitting audio.\nFirst tune the haptic response to game sounds, then use this to adjust the overall vibration level.\n100% is the default level.',
+ '높일수록 배경음의 지속적인 진동을 줄입니다. 너무 높이면 약한 효과음도 줄어들 수 있습니다.':'Higher values reduce sustained background vibration. Very high values may also weaken subtle effects.',
+ '높일수록 타격·충격의 순간적인 진동을 더 살립니다. 배경 대역 억제와 변화량 보호가 켜져 있을 때 적용됩니다.':'Higher values preserve more of brief hits and impacts. Background band reduction and transient protection must be on.',
+ '계속 이어지는 소리의 진동을 줄입니다. 배경음이 너무 많이 느껴질 때 켜세요.':'Reduces vibration from sustained sounds. Turn this on when background audio causes too much vibration.',
+ '배경음을 줄이는 동안, 타격처럼 갑자기 커지는 소리의 반응을 살립니다.':'Preserves responses to sudden sounds such as impacts while reducing background vibration.',
+ '프로필 이름':'Profile name',
+ '현재 적용된 값을 이 슬롯에 저장합니다.\n이름은 UTF-8 16바이트 이내로 입력하세요.':'Save the currently applied values to this slot.\nEnter a name of up to 16 UTF-8 bytes.',
+ '프로필 이름은 UTF-8 16바이트 이내로 입력하세요.':'Enter a profile name of up to 16 UTF-8 bytes.',
+ '이름에 사용할 수 없는 문자가 있습니다.':'The name contains an unsupported character.',
+})
+
+EN.update({'프로필을 수정하지 않고, 앱이 켜져 오디오를 전송하는 동안만 적용되는 간단 세기 조절입니다.\n먼저 원하는 햅틱 반응을 맞춘 뒤 세기를 보완하세요. 100%가 기본입니다.\nStudio설정의 오디오햅틱 세기와 중복 적용되므로 함께 높이면 과도한 증폭이나 포화가 생길 수 있습니다.': 'A simple adjustment that works only while the app is streaming audio; it does not modify the profile.\nSet the desired haptic response first, then adjust its strength. 100% is the default.\nThis combines with Studio audio haptic strength; raising both can cause excessive gain or clipping.'})
+
+EN.update({'오디오햅틱 세기':'Audio haptic strength'})
+
+from studio_english_strings import EN as STUDIO_EN
+EN.update(STUDIO_EN)

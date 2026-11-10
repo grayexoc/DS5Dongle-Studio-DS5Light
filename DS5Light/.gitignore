@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+build/
+dist*/
+reports/
+*.exe
+*.zip
+*.spec
+.env*
+.serena/
+.build-temp/
+logs/
+*.log
+preferences.json
+recommend-slots.json
+ds5dongle-slots.json
+!DS5Light.spec

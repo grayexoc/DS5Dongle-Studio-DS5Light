@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include "bt.h"
+#include "audio.h"
 #include <queue>
 #include <unordered_map>
 #include <vector>
@@ -20,8 +21,10 @@
 #include "battery_notify.h"
 #include "usb.h"
 #include "state_mgr.h"
+#include "rumble_delivery.h"
 #include "dse.h"
 #include "wake.h"
+#include "manual_power.h"
 #include "pico/util/queue.h"
 #if ENABLE_BATT_LED
 #include "battery_led.h"
@@ -75,13 +78,79 @@ static uint16_t hid_interrupt_cid;
 static bt_data_callback_t bt_data_callback = nullptr;
 static bool check_dse = false;
 static int8_t bt_rssi = 0;
+static bool bt_rssi_valid = false;
 unordered_map<uint8_t, vector<uint8_t> > feature_data;
 queue_t send_fifo;
+static bool link_encrypted = false;
+static bool hid_control_open = false;
+static bool hid_interrupt_open = false;
 
 struct send_element {
     uint8_t data[512];
     size_t len;
+    uint32_t enqueued_ms;
+    bool lightbar_restore;
+    bool native_audio;
 };
+// Keep the failed head separate so a retry never reorders control and audio.
+static const uint8_t *output_report_state(const uint8_t *data, size_t size) {
+    if (data[0] == 0x31 && size >= 66) return data + 3;
+    if (data[0] == 0x32 && size >= 67 && data[3] == 63) return data + 4;
+    if (data[0] == 0x36 && size >= 76 && data[12] == 63) return data + 13;
+    return nullptr;
+}
+static send_element pending_send{};
+static bool pending_send_valid = false;
+static uint8_t pending_send_retries = 0;
+static uint32_t pending_send_failed_ms = 0;
+
+// Core0-only diagnostics: count loss by cause, without hot-path logging.
+struct AudioTransportStats {
+    uint32_t sent = 0, overflow = 0, expired = 0, retry_expired = 0;
+    uint32_t retry_exhausted = 0, send_error = 0, max_age_ms = 0, recoveries = 0;
+    uint32_t retries = 0;
+};
+AudioTransportStats g_audio_transport_stats;
+void bt_diagnostic_snapshot(uint8_t *data) {
+    const auto &s = g_audio_transport_stats;
+    const uint32_t values[] = {s.sent, s.overflow, s.expired, s.retry_expired,
+        s.retry_exhausted, s.send_error, s.max_age_ms, s.recoveries, s.retries};
+    for (unsigned i = 0; i < 9; ++i)
+        for (unsigned j = 0; j < 4; ++j) data[i * 4 + j] = values[i] >> (j * 8);
+    const unsigned depth = queue_get_level(&send_fifo) + (pending_send_valid ? 1 : 0);
+    data[36] = depth; data[37] = depth >> 8;
+}
+constexpr uint32_t kMixedAudioAgeMs = 48;
+constexpr uint32_t kAudioRetryMs = 10, kNativeRetryMs = 20, kControlRetryMs = 40;
+constexpr uint32_t kNativeRecoveryMs = 120;
+constexpr unsigned kAudioQueueLimit = 8, kSendScanLimit = 11;
+
+static uint32_t native_progress_ms = 0;
+static uint8_t native_queued = 0;
+static bool native_audio_waiting() {
+    return native_queued || (pending_send_valid && pending_send.native_audio);
+}
+
+struct ControlSend { uint8_t data[MTU_CONTROL]; uint16_t len; uint8_t retries; };
+static queue_t control_fifo;
+
+static void bt_control_send_ready() {
+    static ControlSend item;
+    if (queue_try_remove(&control_fifo, &item)) {
+        const auto status = l2cap_send(hid_control_cid, item.data, item.len);
+        if (status == 0) {
+            if (item.len >= 2 && item.data[0] == 0x53) dse_on_profile_write(item.data[1]);
+        } else if (status == BTSTACK_ACL_BUFFERS_FULL && ++item.retries < 3) {
+            // Retain ordering by retrying this item before later commands.
+            queue_try_add(&control_fifo, &item);
+            const uint count = queue_get_level(&control_fifo);
+            for (uint i=1; i<count; ++i) {
+                ControlSend next; queue_try_remove(&control_fifo, &next); queue_try_add(&control_fifo, &next);
+            }
+        } else printf("[L2CAP] Control send failed: %u\n", status);
+    }
+    if (!queue_is_empty(&control_fifo)) l2cap_request_can_send_now_event(hid_control_cid);
+}
 
 absolute_time_t inactive_time = 0; // 手柄长时间静默
 
@@ -96,9 +165,7 @@ void bt_send_packet(uint8_t *data, uint16_t len) {
 }
 
 void bt_send_control(uint8_t *data, uint16_t len) {
-    if (hid_control_cid != 0) {
-        l2cap_send(hid_control_cid, data, len);
-    }
+    bt_control_send(data, len);
 }
 
 bool bt_disconnect() {
@@ -111,6 +178,15 @@ bool bt_disconnect() {
     return true;
 }
 
+bool bt_is_connected() {
+    return acl_handle != HCI_CON_HANDLE_INVALID;
+}
+
+bool bt_is_ready() {
+    return bt_is_connected() && link_encrypted &&
+           hid_control_open && hid_interrupt_open;
+}
+
 void bt_get_signal_strength(int8_t *rssi) {
     // gap_read_rssi() completes asynchronously, so this function can only
     // return the last cached RSSI value. Trigger a refresh afterwards so a
@@ -121,6 +197,10 @@ void bt_get_signal_strength(int8_t *rssi) {
     if (acl_handle != HCI_CON_HANDLE_INVALID) {
         gap_read_rssi(acl_handle);
     }
+}
+
+bool bt_signal_valid() {
+    return bt_rssi_valid;
 }
 
 void bt_l2cap_init() {
@@ -136,6 +216,7 @@ void bt_l2cap_init() {
 
 int bt_init() {
     queue_init(&send_fifo, sizeof(send_element), 10);
+    queue_init(&control_fifo, sizeof(ControlSend), 8);
 
     bt_l2cap_init();
 
@@ -266,6 +347,7 @@ void bt_blacklist_persist_if_dirty() {
 // disconnect handler) - link key is preserved so the disconnected controller
 // can still reconnect later.
 void bt_bootsel_click_action() {
+    manual_power_note_activity();
     printf("[BT] BOOTSEL click - fresh inquiry\n");
     if (hid_interrupt_cid != 0) {
         bt_disconnect();
@@ -282,6 +364,7 @@ void bt_bootsel_click_action() {
 // explicitly re-pairs the controller (in PS+Share mode) and L2CAP HID opens.
 // Triggers a six-flash LED confirmation via bt_inquiring_led().
 void bt_bootsel_hold_action() {
+    manual_power_note_activity();
     printf("[BT] BOOTSEL held - clearing all pairings\n");
 
     // Reset and rebuild blacklist from currently stored keys
@@ -373,12 +456,12 @@ void bt_inquiring_led() {
 // direction, otherwise the host may miss the change entirely.
 static void restore_full_usb_identity(void) {
     usb_set_idle_pid(false);
-    wake_note_usb_reconnect();
     if (usb_served_idle_pid()) {   // host currently holds the idle identity
-        tud_disconnect();
-        sleep_ms(250);             // > USB 100 ms debounce
+        usb_schedule_reconnect();
+    } else if (!usb_reconnect_pending()) {
+        if (!tud_mounted()) usb_select_host_mode();
+        tud_connect();
     }
-    tud_connect();
 }
 #endif
 
@@ -392,13 +475,11 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             const uint8_t state = btstack_event_state_get_state(packet);
             printf("[BT] State: %u\n", state);
             if (state == HCI_STATE_WORKING) {
-                // Faster reconnect: aggressive interlaced page scan (11.25 ms
-                // interval) so the dongle re-listens for the host quickly after a
-                // disconnect. Set here, AFTER the stack reaches WORKING, because
-                // btstack resets scan parameters during init - setting them in
-                // bt_init() would be overwritten. (Adopted from awalol upstream
-                // "fix: reconnect speed".)
-                gap_set_page_scan_activity(0x0012, 0x0012); // 11.25 ms
+                manual_power_note_activity();
+                // Restore the original reconnect policy: the low-duty scan can
+                // miss the controller's finite reconnect attempt window.
+                // Apply AFTER WORKING because initialization resets scan policy.
+                gap_set_page_scan_activity(0x0012, 0x0012);
                 gap_set_page_scan_type(PAGE_SCAN_MODE_INTERLACED);
                 printf("[BT] Stack ready, start inquiry\n");
                 bt_blacklist_load();
@@ -509,7 +590,10 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
                 }
 
                 acl_handle = handle;
+                link_encrypted = false;
+                hid_control_open = hid_interrupt_open = false;
                 bt_rssi = 0;
+                bt_rssi_valid = false;
                 bd_addr_copy(current_device_addr, conn_addr);
                 printf("[HCI] ACL connected handle=0x%04X\n", handle);
                 printf("[HCI] Request authentication on handle=0x%04X\n", handle);
@@ -564,11 +648,18 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
         case HCI_EVENT_AUTHENTICATION_COMPLETE: {
             const uint8_t status = hci_event_authentication_complete_get_status(packet);
             const hci_con_handle_t handle = hci_event_authentication_complete_get_connection_handle(packet);
+            if (handle != acl_handle) break;
             printf("[HCI] Authentication complete handle=0x%04X status=0x%02X\n", handle, status);
             if (status != ERROR_CODE_SUCCESS) {
-                printf("[HCI] Authentication failed, drop stored key for %s\n", bd_addr_to_str(current_device_addr));
-                gap_drop_link_key_for_bd_addr(current_device_addr);
-                // gap_inquiry_start(30);
+                link_encrypted = false;
+                // Transient failures must not destroy a valid pairing.
+                if (status == ERROR_CODE_AUTHENTICATION_FAILURE || status == ERROR_CODE_PIN_OR_KEY_MISSING) {
+                    printf("[HCI] Authentication rejected, drop stored key for %s\n", bd_addr_to_str(current_device_addr));
+                    gap_drop_link_key_for_bd_addr(current_device_addr);
+                }
+                bt_disconnect();
+                manual_power_note_activity();
+                gap_inquiry_start(30);
             } else {
                 hci_send_cmd(&hci_set_connection_encryption, handle, 1);
             }
@@ -579,6 +670,8 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             const uint8_t status = hci_event_encryption_change_get_status(packet);
             const hci_con_handle_t handle = hci_event_encryption_change_get_connection_handle(packet);
             const uint8_t enabled = hci_event_encryption_change_get_encryption_enabled(packet);
+            if (handle != acl_handle) break;
+            link_encrypted = status == ERROR_CODE_SUCCESS && enabled;
             printf("[HCI] Encryption change handle=0x%04X status=0x%02X enabled=%u\n", handle, status, enabled);
             if (status == ERROR_CODE_SUCCESS && enabled) {
                 printf("[L2CAP] Open HID channels\n");
@@ -615,6 +708,7 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
         }
 
         case HCI_EVENT_DISCONNECTION_COMPLETE: {
+            state_rumble_reset();
 #if !ENABLE_SERIAL
             // Hide the USB device when no controller is paired, whenever the host is awake --
             // even with wake on -- so it leaves DS4Windows/the host cleanly. Keep it on the bus
@@ -648,11 +742,9 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
                     // DualSense, which is exactly what was observed.
                     wake_on_bt_disconnect();
                     usb_set_idle_pid(true);
-                    wake_note_usb_reconnect();
-                    tud_disconnect();
-                    sleep_ms(250);   // > the USB 100 ms port debounce, or the host may not see the disconnect at all
-                    tud_connect();
+                    usb_schedule_reconnect();
                 } else {
+                    usb_cancel_reconnect();
                     tud_disconnect();     // wake off: leave the bus entirely
                 }
             }
@@ -663,10 +755,16 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             device_found = false;
             new_pair = false;
             acl_handle = HCI_CON_HANDLE_INVALID;
+            link_encrypted = false;
+            hid_control_open = hid_interrupt_open = false;
             bt_rssi = 0;
+            bt_rssi_valid = false;
             hid_control_cid = 0;
+            while (queue_try_remove(&control_fifo, nullptr)) {}
             hid_interrupt_cid = 0;
             while (queue_try_remove(&send_fifo, NULL)) {}
+            pending_send_valid = false;
+            native_queued = 0;
             cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 #if ENABLE_BATT_LED
             battery_led_on_disconnect();
@@ -685,6 +783,7 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             const hci_con_handle_t handle = gap_event_rssi_measurement_get_con_handle(packet);
             if (handle == acl_handle) {
                 bt_rssi = static_cast<int8_t>(gap_event_rssi_measurement_get_rssi(packet));
+                bt_rssi_valid = true;
             }
             break;
         }
@@ -695,10 +794,13 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
     (void) channel;
 
     if (packet_type == L2CAP_DATA_PACKET) {
+        if (packet == nullptr || size == 0) return;
         if (channel == hid_interrupt_cid) {
+            if (size < 2) return;
             // printf("[L2CAP] HID Interrupt data len=%u\n", size);
             // printf_hexdump(packet, size);
             bt_data_callback(INTERRUPT, packet, size);
+            if (size < 13) return;
 
             // 静默检测
             if (!(packet[2] & 1) || get_config().disable_inactive_disconnect) {
@@ -719,6 +821,9 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                 bt_disconnect();
             }
         } else if (channel == hid_control_cid) {
+            // HID HANDSHAKE is one byte (e.g. 0x02 for unsupported GET_REPORT).
+            // Only a DATA feature report needs the second report-id byte.
+            if (packet[0] == 0xA3 && size < 2) return;
             if (check_dse) {
                 if (packet[0] == 0xA3 && packet[1] == 0x70) {
                     printf("Connected DSE Controller\n");
@@ -771,12 +876,14 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                 if (psm == PSM_HID_CONTROL) {
                     printf("[L2CAP] HID Control opened cid=0x%04X\n", local_cid);
                     hid_control_cid = local_cid;
+                    hid_control_open = true;
 
                     const auto mtu = l2cap_get_remote_mtu_for_local_cid(hid_control_cid);
                     printf("[L2CAP] Remote Control MTU: %d\n",mtu);
                 } else if (psm == PSM_HID_INTERRUPT) {
                     printf("[L2CAP] HID Interrupt opened cid=0x%04X\n", local_cid);
                     hid_interrupt_cid = local_cid;
+                    hid_interrupt_open = true;
 
                     // Latency: set an automatic flush timeout on the ACL link so
                     // haptic/output packets that can't get on-air within a few BT
@@ -847,7 +954,9 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
             } else {
                 const uint16_t psm = l2cap_event_channel_opened_get_psm(packet);
                 hid_control_cid = 0;
+            while (queue_try_remove(&control_fifo, nullptr)) {}
                 hid_interrupt_cid = 0;
+                hid_control_open = hid_interrupt_open = false;
                 device_found = false;
                 printf("[L2CAP] Open failed psm=0x%04X status=0x%02X\n", psm, status);
                 bt_disconnect();
@@ -867,9 +976,12 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
             const uint16_t local_cid = l2cap_event_channel_closed_get_local_cid(packet);
             if (local_cid == hid_control_cid) {
                 hid_control_cid = 0;
+                while (queue_try_remove(&control_fifo, nullptr)) {}
+                hid_control_open = false;
                 printf("[L2CAP] HID Control closed cid=0x%04X\n", local_cid);
             } else if (local_cid == hid_interrupt_cid) {
                 hid_interrupt_cid = 0;
+                hid_interrupt_open = false;
                 printf("[L2CAP] HID Interrupt closed cid=0x%04X\n", local_cid);
             } else {
                 printf("[L2CAP] Channel closed cid=0x%04X\n", local_cid);
@@ -881,16 +993,90 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
         }
 
         case L2CAP_EVENT_CAN_SEND_NOW: {
-            // printf("[L2CAP] L2CAP_EVENT_CAN_SEND_NOW\n");
-
-            send_element send_packet{};
-            if (queue_try_remove(&send_fifo, &send_packet)) {
-                const uint8_t status = l2cap_send(hid_interrupt_cid, send_packet.data, send_packet.len);
-                if (status != 0) {
-                    printf("[L2CAP] L2CAP Send Error, Status: 0x%02X\n", status);
-                }
+            if (hid_control_cid && l2cap_event_can_send_now_get_local_cid(packet) == hid_control_cid) {
+                bt_control_send_ready();
+                break;
             }
-            if (!queue_is_empty(&send_fifo)) {
+            if (hid_interrupt_cid == 0 ||
+                l2cap_event_can_send_now_get_local_cid(packet) != hid_interrupt_cid) break;
+            for (unsigned scanned = 0; scanned < kSendScanLimit; ++scanned) {
+                if (!pending_send_valid) {
+                    pending_send_valid = queue_try_remove(&send_fifo, &pending_send);
+                    if (pending_send_valid && pending_send.native_audio) --native_queued;
+                    pending_send_retries = 0;
+                }
+                if (!pending_send_valid) break;
+                const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+                const bool audio = pending_send.data[1] == 0x36;
+                const uint32_t age = now_ms - pending_send.enqueued_ms;
+                // shortcut: 120 ms is a recovery trial value; tune with real congestion traces.
+                if (audio && pending_send.native_audio && now_ms - native_progress_ms >= kNativeRecoveryMs) {
+                    ++g_audio_transport_stats.recoveries;
+                    bt_discard_audio();
+                    audio_reset_stream();
+                    break;
+                }
+                const uint8_t retry_limit = pending_send.native_audio ? 5 : 2;
+                const uint32_t retry_budget_ms = !audio ? kControlRetryMs :
+                    (pending_send.native_audio ? kNativeRetryMs : kAudioRetryMs);
+                const bool expired_audio = audio && !pending_send.native_audio && age >= kMixedAudioAgeMs;
+                if (expired_audio || (pending_send_retries &&
+                    now_ms - pending_send_failed_ms >= retry_budget_ms)) {
+                    if (audio) {
+                        if (expired_audio) ++g_audio_transport_stats.expired;
+                        else ++g_audio_transport_stats.retry_expired;
+                    }
+                    pending_send_valid = false;
+                    continue;
+                } else {
+                    // Preserve queued control transitions; only stale audio may inherit a newer STOP.
+                    if (auto *queued = pending_send.data[1] == 0x36
+                            ? const_cast<uint8_t *>(output_report_state(pending_send.data + 1, pending_send.len - 1))
+                            : nullptr) {
+                        state_refresh_rumble(queued);
+                        fill_output_report_checksum(pending_send.data + 1, pending_send.len - 1);
+                    }
+                    const uint8_t status = l2cap_send(hid_interrupt_cid, pending_send.data, pending_send.len);
+                    if (audio) {
+                        if (age > g_audio_transport_stats.max_age_ms) g_audio_transport_stats.max_age_ms = age;
+                        if (status == 0) {
+                            ++g_audio_transport_stats.sent;
+                            if (pending_send.native_audio) native_progress_ms = now_ms;
+                        }
+                        else if (status == BTSTACK_ACL_BUFFERS_FULL && pending_send_retries >= retry_limit)
+                            ++g_audio_transport_stats.retry_exhausted;
+                        else if (status != BTSTACK_ACL_BUFFERS_FULL) ++g_audio_transport_stats.send_error;
+                    }
+                    if (status == 0) {
+                        // data includes the A2 prefix. Mic-status-only 0x32
+                        // reports carry seven bytes, not a SetStateData block.
+                        const auto *p = pending_send.data + 1;
+                        const auto n = pending_send.len - 1;
+                        if (const auto *state = output_report_state(p, n)) {
+                            state_report_sent(state, pending_send.lightbar_restore);
+                            // Older queued effects must drain before accepting the suspend OFF.
+                            if (state_suspend_release_pending() && queue_is_empty(&send_fifo))
+                                state_suspend_release_sent(state);
+                        }
+                    }
+                    if (status == BTSTACK_ACL_BUFFERS_FULL && pending_send_retries < retry_limit) {
+                        if (pending_send_retries == 0) pending_send_failed_ms = now_ms;
+                        ++pending_send_retries;
+                        if (audio) ++g_audio_transport_stats.retries;
+                    } else {
+                        pending_send_valid = false;
+                    }
+                    if (status != 0) {
+                        static uint32_t last_warning_ms = 0;
+                        if (now_ms - last_warning_ms >= 1000) {
+                            last_warning_ms = now_ms;
+                            printf("[L2CAP] L2CAP Send Error, Status: 0x%02X\n", status);
+                        }
+                    }
+                }
+                break; // A real send attempt consumes this send-ready opportunity.
+            }
+            if (pending_send_valid || !queue_is_empty(&send_fifo)) {
                 l2cap_request_can_send_now_event(hid_interrupt_cid);
             }
             break;
@@ -903,25 +1089,86 @@ uint16_t bt_control_cid() {
     return hid_control_cid;
 }
 
-void bt_control_send(const uint8_t *data, uint16_t len) {
-    if (hid_control_cid != 0) {
-        l2cap_send(hid_control_cid, const_cast<uint8_t *>(data), len);
+bool bt_control_send(const uint8_t *data, uint16_t len) {
+    if (!data || !len || len > MTU_CONTROL || !hid_control_cid || !hid_control_open ||
+        len > l2cap_get_remote_mtu_for_local_cid(hid_control_cid)) return false;
+    ControlSend item{};
+    memcpy(item.data, data, len); item.len = len;
+    if (!queue_try_add(&control_fifo, &item)) {
+        printf("[L2CAP] Control queue full; command rejected\n");
+        return false;
+    }
+    l2cap_request_can_send_now_event(hid_control_cid);
+    return true;
+}
+
+void bt_discard_audio() {
+    native_queued = 0;
+    if (pending_send_valid && pending_send.data[1] == 0x36) pending_send_valid = false;
+    const uint count = queue_get_level(&send_fifo);
+    static send_element item;
+    for (uint i=0; i<count; ++i) {
+        if (!queue_try_remove(&send_fifo, &item)) break;
+        if (item.data[1] != 0x36) queue_try_add(&send_fifo, &item);
     }
 }
 
 void __not_in_flash_func(bt_write)(const uint8_t *data, const uint16_t len) {
+    if (data == nullptr || len < 4 || len > sizeof(send_element::data) - 1) return;
     if (hid_interrupt_cid == 0) return;
+    if (data[0] == 0x36 && get_config().auto_haptics_enable == 0 && !native_audio_waiting())
+        native_progress_ms = to_ms_since_boot(get_absolute_time());
+    // Coalesce only against the latest control intent; A -> B -> A is not a duplicate.
+    if (data[0] == 0x31 && len >= 66) {
+        const uint count = queue_get_level(&send_fifo);
+        bool duplicate = false;
+        static send_element item;
+        for (uint i=0; i<count; ++i) {
+            if (!queue_try_remove(&send_fifo, &item)) break;
+            const auto *old = item.data + 1;
+            if (old[0] == 0x31) {
+                duplicate = item.len == len + 1 &&
+                    memcmp(old + 3, data + 3, 32) == 0 &&
+                    memcmp(old + 39, data + 39, 27) == 0;
+            }
+            queue_try_add(&send_fifo, &item);
+        }
+        if (duplicate) return;
+    }
+    // Core0 owns all FIFO access. Evict only the oldest queued audio;
+    // rotating the original count preserves the order of every remaining report.
+    if ((data[0] == 0x36 && queue_get_level(&send_fifo) >= kAudioQueueLimit) || queue_is_full(&send_fifo)) {
+        const uint count = queue_get_level(&send_fifo);
+        bool removed = false;
+        static send_element retained;
+        for (uint i = 0; i < count; ++i) {
+            if (!queue_try_remove(&send_fifo, &retained)) break;
+            if (!removed && retained.data[1] == 0x36) { removed = true; if (retained.native_audio) --native_queued; ++g_audio_transport_stats.overflow; continue; }
+            queue_try_add(&send_fifo, &retained);
+        }
+        if (!removed && data[0] == 0x36) { ++g_audio_transport_stats.overflow; return; }
+    }
     static send_element packet{};
-    memset(packet.data, 0, 512);
+    const auto *state = output_report_state(data, len);
+    packet.lightbar_restore = state && state_report_is_lightbar_restore(state);
+    packet.native_audio = data[0] == 0x36 && get_config().auto_haptics_enable == 0;
+    packet.enqueued_ms = to_ms_since_boot(get_absolute_time());
     packet.len = len + 1;
     packet.data[0] = 0xA2;
     memcpy(packet.data + 1, data, len);
     fill_output_report_checksum(packet.data + 1, len);
 
     if (!queue_try_add(&send_fifo, &packet)) {
+        if (data[0] == 0x36) ++g_audio_transport_stats.overflow;
+        static uint32_t last_warning_ms = 0;
+        const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+        if (now_ms - last_warning_ms >= 1000) {
+            last_warning_ms = now_ms;
         printf("[L2CAP bt_write] Error: Failed to add packet to send FIFO\n");
+        }
         return;
     }
+    if (packet.native_audio) ++native_queued;
     if (queue_get_level(&send_fifo) == 1) {
         l2cap_request_can_send_now_event(hid_interrupt_cid);
     }
@@ -951,7 +1198,7 @@ vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
     ) {
         if (hid_control_cid != 0) {
             uint8_t get_feature[] = {0x43, reportId};
-            l2cap_send(hid_control_cid, get_feature, sizeof(get_feature));
+            bt_control_send(get_feature, sizeof(get_feature));
 #if ENABLE_VERBOSE
             printf("[L2CAP] Requesting Get Feature Report 0x%02X\n", reportId);
 #endif
@@ -963,20 +1210,24 @@ vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
     return ret;
 }
 
-void set_feature_data(uint8_t reportId, uint8_t *data, uint16_t len) {
-    if (hid_control_cid != 0) {
-        uint8_t get_feature[len + 2];
+bool set_feature_data(uint8_t reportId, uint8_t *data, uint16_t len) {
+    // Report id participates in the CRC. Bound the transaction by both MTUs.
+    if (data == nullptr || len < 4 || len > MTU_CONTROL - 2) return false;
+    if (hid_control_cid != 0 && hid_control_open &&
+        len + 2 <= l2cap_get_remote_mtu_for_local_cid(hid_control_cid)) {
+        static uint8_t get_feature[MTU_CONTROL]; // core0 only
         get_feature[0] = 0x53;
         get_feature[1] = reportId;
         memcpy(get_feature + 2, data, len);
         fill_feature_report_checksum(get_feature + 1, len + 1);
-        l2cap_send(hid_control_cid, get_feature, len + 2);
+        const bool queued = bt_control_send(get_feature, len + 2);
 #if ENABLE_VERBOSE
         printf("[L2CAP] Requesting Set Feature Report 0x%02X\n", reportId);
         printf_hexdump(get_feature, len + 2);
 #endif
-        dse_on_profile_write(reportId);
+        return queued;
     }
+    return false;
 }
 
 void bt_power_off_controller() {

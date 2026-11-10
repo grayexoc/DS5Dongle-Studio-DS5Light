@@ -1,3 +1,4 @@
+#include "storage_redo.h"
 //
 // macro.cpp - chord / gesture -> keyboard combo engine.
 //
@@ -63,6 +64,8 @@ static_assert(MACRO_IMAGE_BYTES <= FLASH_SECTOR_SIZE);
 // ============================== state ======================================
 
 static MacroTable g_table;          // RAM working image
+static uint32_t mute_binding_mask = 0;
+static bool mute_binding_dirty = true;
 static bool       g_loaded    = false;
 static bool       g_suspended = false;
 
@@ -187,6 +190,7 @@ static void table_defaults(MacroTable &t) {
 }
 
 void macro_load() {
+    mute_binding_dirty = true;
     const auto *flashed =
         reinterpret_cast<const MacroTable *>(XIP_BASE + MACRO_FLASH_OFFSET);
 
@@ -274,12 +278,26 @@ void macro_load() {
 
 // Runs with core1 parked and interrupts off, exactly like config_save_flash_op.
 // Without the core1 park this races the audio core and corrupts audio.
+static bool macro_write_ok = false;
 static void macro_flash_op(void *param) {
     const uint8_t *img = static_cast<const uint8_t *>(param);
     const uint32_t interrupts = save_and_disable_interrupts();
-    flash_range_erase(MACRO_FLASH_OFFSET, FLASH_SECTOR_SIZE);
-    flash_range_program(MACRO_FLASH_OFFSET, img, MACRO_IMAGE_BYTES);
+    macro_write_ok = storage_redo_write(MACRO_FLASH_OFFSET, img, MACRO_IMAGE_BYTES);
     restore_interrupts(interrupts);
+}
+
+bool macro_uses_mute_button() {
+    if (!g_loaded) macro_load();
+    if (mute_binding_dirty) {
+        mute_binding_mask = 0;
+        for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+            const auto &entry = g_table.rec[i].entry;
+            if (entry.gesture == GESTURE_NONE && (entry.chord & BTN_MUTE) &&
+                (entry.out_btn || entry.keys[0])) mute_binding_mask |= 1u << i;
+        }
+        mute_binding_dirty = false;
+    }
+    return (mute_binding_mask & ~get_config().macro_disable) != 0;
 }
 
 bool macro_commit() {
@@ -295,7 +313,7 @@ bool macro_commit() {
     memcpy(image, &g_table, sizeof(MacroTable));
 
     const int rc = flash_safe_execute(macro_flash_op, image, 1000);
-    if (rc != PICO_OK) {
+    if (rc != PICO_OK || !macro_write_ok) {
         printf("[Macro] commit flash_safe_execute failed: %d\n", rc);
         return false;
     }
@@ -318,6 +336,7 @@ bool macro_set_entry(uint8_t idx, const MacroRecord &rec) {
     if (idx >= MACRO_COUNT) return false;
     if (!g_loaded) macro_load();
     g_table.rec[idx] = rec;
+    mute_binding_dirty = true;
     // motion_len indexes motion[] two bits at a time, so a value past
     // MACRO_MOTION_MAX reads off the end of a 2-byte array and into the
     // neighbouring record. It arrives straight off the wire in cmd 0x18, so
@@ -536,21 +555,6 @@ uint8_t macro_mouse_buttons() { return g_mouse_btns; }
 int8_t  macro_mouse_peek_scroll() { return g_mouse_scroll; }
 int8_t  macro_mouse_take_scroll() { const int8_t v = g_mouse_scroll; g_mouse_scroll = 0; return v; }
 
-// Gyro aim pause. Two independent sources, OR-ed: a LATCH flipped by one-shot
-// rows (the ratchet), and a per-tick HOLD state recomputed from scratch in
-// hold_task() every report. Keeping the held form stateless is what stops a
-// release being missed - there is no "restore what it was before" to get wrong,
-// because the held contribution simply stops being recomputed.
-static bool g_gyro_latch     = false;   // set by GOUT_TOGGLE / GOUT_OFF rows
-static bool g_gyro_hold_off  = false;   // a HOLD row asking for pause this tick
-static bool g_gyro_hold_on   = false;   // a HOLD row forcing run this tick
-
-bool macro_gyro_paused() {
-    if (g_gyro_hold_on) return false;   // an explicit "on" row wins while held
-    return g_gyro_latch || g_gyro_hold_off;
-}
-void macro_gyro_resume() { g_gyro_latch = false; }
-
 // Whether the COMMITTED table has a mouse output among the enabled rows. Drives
 // whether the mouse interface exists at all, so it must read flash rather than
 // any in-progress edit.
@@ -567,8 +571,6 @@ static void hold_task(const uint8_t *r, uint16_t len, uint32_t mask, uint32_t di
     g_hold_n     = 0;
     g_suppress   = 0;
     g_inject     = 0;
-    g_gyro_hold_off = false;   // recomputed below; the latch is NOT touched
-    g_gyro_hold_on  = false;
     g_sup_lstick = false;
     g_sup_rstick = false;
     g_analog_l2  = 0;
@@ -618,20 +620,6 @@ static void hold_task(const uint8_t *r, uint16_t len, uint32_t mask, uint32_t di
         // completes; there is no "while active" for it to hold.
         if (!macro_is_hold(e) || e.gesture != GESTURE_NONE || e.chord == 0) continue;
         if ((mask & e.chord) != e.chord) { g_scroll_latch &= ~(1u << i); continue; }
-
-        // Gyro pause rows on a HOLD trigger are MOMENTARY: paused exactly while
-        // the chord is held. Nothing is latched here, so letting go restores the
-        // gyro by simply not setting the flag on the next tick.
-        //
-        // GOUT_TOGGLE on a hold row has no sensible momentary meaning - a flip
-        // that un-flips itself at report rate - so it is treated as "pause while
-        // held", the behaviour a user who ticked Hold on a toggle row wants.
-        if (macro_is_gyro_out(e.out_btn)) {
-            if (e.out_btn == GOUT_ON) g_gyro_hold_on = true;
-            else                      g_gyro_hold_off = true;
-            if (e.flags & MACRO_FLAG_REPLACE) g_suppress |= e.chord;
-            continue;
-        }
 
         // Mouse outputs never reach g_inject: that mask is indexed by the
         // T2Button enum and main.cpp walks it up to T2BTN_COUNT, so a value of
@@ -709,15 +697,6 @@ static void hold_flush() {
 static void fire(int idx) {
     if (idx < 0 || g_suspended) return;
     const MacroEntry &e = g_table.rec[idx].entry;
-    // A gyro row sends nothing at all - no report, no pulse, no burst. It flips
-    // a flag and returns, which is what makes it a ratchet: the state persists
-    // after the button is long released, until the row is pressed again.
-    if (macro_is_gyro_out(e.out_btn)) {
-        if      (e.out_btn == GOUT_OFF) g_gyro_latch = true;
-        else if (e.out_btn == GOUT_ON)  g_gyro_latch = false;
-        else                            g_gyro_latch = !g_gyro_latch;
-        return;
-    }
     // A controller or mouse button output is a report STATE, not a keyboard
     // sequence, so it cannot travel through playback at all - that path only
     // writes the keyboard interface. Before this, a one-shot row with such an
@@ -1085,13 +1064,6 @@ void macro_on_input(const uint8_t *report, uint16_t len) {
         g_tap_chord = 0;
         g_pending_idx = -1;
         g_pulse_btn = 0;
-        // The LATCH goes too, not just the held form. With no enabled rows left
-        // there is nothing that could ever turn the gyro back on, so leaving it
-        // set would silently kill gyro aim with no way back short of a
-        // reconnect - the same shape of bug as the frozen stick above.
-        g_gyro_latch    = false;
-        g_gyro_hold_off = false;
-        g_gyro_hold_on  = false;
         return;
     }
 
@@ -1254,12 +1226,6 @@ void macro_reset() {
     g_mouse_btns   = 0;
     g_mouse_scroll = 0;
     g_scroll_latch = 0;
-    // A reset is a reconnect or a host suspend. Gyro aim must come back running
-    // on the far side of one, not paused by a ratchet the user set an hour ago
-    // and has no reason to remember.
-    g_gyro_latch    = false;
-    g_gyro_hold_off = false;
-    g_gyro_hold_on  = false;
     if (g_hold_sent_n) { send_usages(g_hold_keys, 0, 0); g_hold_sent_n = 0; }
     g_hold_pending = false;
     g_chord      = 0;

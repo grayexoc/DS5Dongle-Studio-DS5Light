@@ -11,7 +11,8 @@
 //   -2   legacy slots location  / btstack TLV bank
 //   -3   ACTIVE CONFIG
 //   -4 .. -19   SLOT RESERVATION (SLOT_SECTORS_RESERVED)
-//   -20  MACRO TABLE, growing downward if it ever needs a second sector
+//   -20  MACRO TABLE (one sector; growth requires a journal migration)
+//   -21/-22  CONFIG JOURNAL A/B (v1.4.1; original -3 retained for import)
 //
 
 #ifndef DS5_BRIDGE_FLASH_MAP_H
@@ -54,5 +55,17 @@ constexpr uint32_t MACRO_FLASH_OFFSET =
 static_assert(MACRO_FLASH_OFFSET % FLASH_SECTOR_SIZE == 0);
 static_assert(MACRO_FLASH_OFFSET < slot_sector_offset_at(SLOT_SECTORS_RESERVED - 1),
               "macro sector must sit strictly below every reserved slot sector");
+
+// Fixed anchors: do not move these when the slot reservation changes.
+constexpr uint32_t CONFIG_JOURNAL_A_OFFSET = PICO_FLASH_SIZE_BYTES - 21u * FLASH_SECTOR_SIZE;
+constexpr uint32_t CONFIG_JOURNAL_B_OFFSET = PICO_FLASH_SIZE_BYTES - 22u * FLASH_SECTOR_SIZE;
+static_assert(CONFIG_JOURNAL_A_OFFSET + FLASH_SECTOR_SIZE <= MACRO_FLASH_OFFSET,
+              "macro/slot growth requires an explicit journal migration");
+static_assert(CONFIG_JOURNAL_B_OFFSET + FLASH_SECTOR_SIZE <= CONFIG_JOURNAL_A_OFFSET);
+
+constexpr uint32_t STORAGE_REDO_DATA = PICO_FLASH_SIZE_BYTES - 23u * FLASH_SECTOR_SIZE;
+constexpr uint32_t STORAGE_REDO_META = PICO_FLASH_SIZE_BYTES - 24u * FLASH_SECTOR_SIZE;
+static_assert(STORAGE_REDO_DATA + FLASH_SECTOR_SIZE <= CONFIG_JOURNAL_B_OFFSET);
+static_assert(STORAGE_REDO_META + FLASH_SECTOR_SIZE <= STORAGE_REDO_DATA);
 
 #endif // DS5_BRIDGE_FLASH_MAP_H

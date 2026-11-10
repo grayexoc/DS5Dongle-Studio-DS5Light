@@ -7,7 +7,7 @@
     Installs every prerequisite (winget where possible, portable downloads as a
     fallback), fetches the pinned Raspberry Pi Pico SDK + TinyUSB, initialises
     this repo's submodules, then configures and builds the firmware with CMake +
-    Ninja. The resulting ds5-bridge.uf2 is copied next to this script and onto
+    Ninja. The resulting ds5-studio-light_v<VERSION>.uf2 is copied next to this script and onto
     your Desktop.
 
     The script is idempotent: re-running it skips anything already installed or
@@ -19,7 +19,7 @@
     wake               - adds -DENABLE_WAKE_HID=ON (Wake-on-PS build).
     waveshare          - adds -DWAVESHARE_RP2350B_PLUS_W_BUILD=ON, for the
                          Waveshare RP2350B-Plus-W board (USB-C, 16MB flash).
-                         Builds into build\waveshare as ds5-bridge-waveshare.uf2.
+                         Builds into build\waveshare; collected filename includes -waveshare.
 
 .PARAMETER Clean
     Delete the variant's build directory before configuring.
@@ -480,10 +480,12 @@ Info 'Building ds5-bridge...'
 if ($LASTEXITCODE -ne 0) { Die 'Build failed.' }
 
 # --- Collect output ----------------------------------------------------------
-$uf2 = Join-Path $buildDir 'ds5-bridge.uf2'
+$version = ((Select-String -LiteralPath (Join-Path $buildDir 'CMakeCache.txt') -Pattern '^VERSION:STRING=').Line -split '=', 2)[1]
+$baseName = "ds5-studio-light_v$version"
+$uf2 = Join-Path $buildDir "$baseName.uf2"
 if (-not (Test-Path $uf2)) { Die "Expected $uf2 was not produced." }
 
-$outName = if ($Variant -eq 'standard') { 'ds5-bridge.uf2' } else { "ds5-bridge-$Variant.uf2" }
+$outName = if ($Variant -eq 'standard') { "$baseName.uf2" } else { "$baseName-$Variant.uf2" }
 $nextToScript = Join-Path $PSScriptRoot $outName
 Copy-Item $uf2 $nextToScript -Force
 $desktop = [Environment]::GetFolderPath('Desktop')

@@ -251,4 +251,5 @@ cmake --build "$BUILD_DIR" --target ds5-bridge
 
 echo
 echo "Built firmware:"
-echo "  $ROOT/$BUILD_DIR/ds5-bridge.uf2"
+VERSION=$(sed -n 's/^VERSION:STRING=//p' "$BUILD_DIR/CMakeCache.txt")
+echo "  $ROOT/$BUILD_DIR/ds5-studio-light_v${VERSION}.uf2"

@@ -181,6 +181,26 @@ bool usb_served_idle_pid(void) { return s_served_idle_pid; }
 
 // Invoked when received GET DEVICE DESCRIPTOR
 // Application return pointer to descriptor
+#ifdef STUDIO_XINPUT_EXPERIMENT
+#include "xinput_usb.h"
+static constexpr uint8_t xinput_settings_report[] = {
+    0x06, 0x00, 0xff, 0x09, 0x01, 0xa1, 0x01,
+    0x15, 0, 0x26, 0xff, 0, 0x75, 8, 0x95, 63,
+    0x85, 0x80, 0x09, 0x80, 0xb1, 2,
+    0x85, 0x81, 0x09, 0x81, 0xb1, 2,
+    0x85, 0x84, 0x09, 0x84, 0xb1, 2,
+    0xc0,
+};
+#endif
+
+static bool s_xinput_active = false;
+bool usb_xinput_active() { return s_xinput_active; }
+void usb_select_host_mode() {
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    s_xinput_active = !s_idle_pid && get_config().usb_gamepad_mode == 1;
+#endif
+}
+
 uint8_t const *tud_descriptor_device_cb(void) {
     // The idle identity must not look like a Sony controller in ANY respect.
     // Changing only the product id was not enough: DS4Windows still claimed it,
@@ -188,6 +208,9 @@ uint8_t const *tud_descriptor_device_cb(void) {
     // idle identity uses the Raspberry Pi vendor id (this IS an RP2350 board),
     // its own product id, and its own manufacturer and product strings.
     s_served_idle_pid = s_idle_pid;   // record what this enumeration hands over
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    if (usb_xinput_active()) return xinput_device_descriptor();
+#endif
     if (s_idle_pid) {
         desc_device.idVendor  = 0x2E8A;   // Raspberry Pi — not Sony
         desc_device.idProduct = 0x0DE0;
@@ -260,7 +283,7 @@ uint8_t descriptor_configuration[] = {
     0x01, // bTerminalID: 1
     0x01, 0x01, // wTerminalType: USB Streaming (0x0101)
     0x06, // bAssocTerminal: 6 (paired with USB OUT terminal)
-    0x04, // bNrChannels: 4
+    CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX, // playback format shared with audio.cpp
     0x33, 0x00, // wChannelConfig: L/R Front + L/R Surround (0x0033)
     0x00, // iChannelNames: 0
     0x00, // iTerminal: 0
@@ -353,7 +376,7 @@ uint8_t descriptor_configuration[] = {
     0x24, // bDescriptorType: CS_INTERFACE
     0x02, // bDescriptorSubtype: FORMAT_TYPE
     0x01, // bFormatType: TYPE_I
-    0x04, // bNrChannels: 4
+    CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX, // playback format shared with audio.cpp
     0x02, // bSubframeSize: 2 bytes/sample
     0x10, // bBitResolution: 16 bits
     0x01, // bSamFreqType: 1 discrete frequency
@@ -548,6 +571,9 @@ uint8_t descriptor_configuration[] = {
 // Set while the controller is away and wake is on: present only the keyboard.
 
 uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    if (index != 0) return nullptr;
+#endif
     (void) index; // for multiple configurations
     auto bInterval = 0x01;
     switch (get_config().polling_rate_mode) {
@@ -562,6 +588,7 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
             break;
     }
     constexpr auto offset = CONFIG_DESC_LEN_BASE;
+    descriptor_configuration[offset - 15] = 1; // normal DualSense HID length high byte
     descriptor_configuration[offset - 1] = bInterval;
     descriptor_configuration[offset - 8] = bInterval;
     if (ds_mode()) {
@@ -599,6 +626,13 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     descriptor_configuration[2] = (uint8_t) (total & 0xFF);  // wTotalLength lo
     descriptor_configuration[3] = (uint8_t) (total >> 8);    // wTotalLength hi
     descriptor_configuration[4] = itfs;                      // bNumInterfaces
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    if (usb_xinput_active()) {
+        descriptor_configuration[offset - 16] = sizeof(xinput_settings_report);
+        descriptor_configuration[offset - 15] = 0;
+        return xinput_configuration_descriptor(descriptor_configuration, total, bInterval);
+    }
+#endif
     return descriptor_configuration;
 }
 
@@ -1036,6 +1070,9 @@ static uint8_t const desc_hid_report_mouse[] = {
 static_assert(sizeof(desc_hid_report_mouse) == 64, "wDescriptorLength in the interface block must match");
 
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    if (itf == 0 && usb_xinput_active()) return xinput_settings_report;
+#endif
     // In keyboard-only mode the keyboard is the ONLY HID interface, so it is
     // instance 0 rather than 1.
 #ifdef ENABLE_WAKE_HID
@@ -1079,6 +1116,12 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
 
     // Idle identity: nothing here may say "DualSense", or tools and Windows will
     // keep presenting it as a controller however the numeric ids read.
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    if (usb_xinput_active()) {
+        string_desc_arr[1] = "Studio OLED";
+        string_desc_arr[2] = ds_mode() ? "DualSense Wireless Controller" : "DualSense Edge Wireless Controller";
+    } else
+#endif
     if (usb_is_idle_pid()) {
         string_desc_arr[1] = "DS5Dongle";
         string_desc_arr[2] = "DS5Dongle (controller off)";
@@ -1105,10 +1148,13 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
             // Note: the 0xEE index string is a Microsoft OS 1.0 Descriptors.
             // https://docs.microsoft.com/en-us/windows-hardware/drivers/usbcon/microsoft-defined-usb-descriptors
 
-            if (!(index < sizeof(string_desc_arr) / sizeof(string_desc_arr[0]))) return NULL;
+            const char *str = nullptr;
+#ifdef STUDIO_XINPUT_EXPERIMENT
+            if (index == 5 && usb_xinput_active()) str = ds_mode() ? "DualSense Wireless Controller" : "DualSense Edge Wireless Controller";
+#endif
+            if (!str && index < sizeof(string_desc_arr) / sizeof(string_desc_arr[0])) str = string_desc_arr[index];
 
-            const char *str = string_desc_arr[index];
-
+            if (!str) return nullptr;
             // Cap at max char
             chr_count = strlen(str);
             size_t const max_count = sizeof(_desc_str) / sizeof(_desc_str[0]) - 1; // -1 for string type
@@ -1166,6 +1212,13 @@ uint8_t const desc_bos[] = {
 };
 
 uint8_t const *tud_descriptor_bos_cb(void) {
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    static constexpr uint8_t bos[] = {
+        TUD_BOS_DESCRIPTOR(BOS_TOTAL_LEN, 1),
+        TUD_BOS_MS_OS_20_DESCRIPTOR(46, 0x21),
+    };
+    if (usb_xinput_active()) return bos;
+#endif
     // BOS carries the MS OS 2.0 selective-suspend opt-in, only meaningful for wake.
     // When wake is off the device is USB 2.0 and the host won't ask -- guard anyway.
     if (!get_config().enable_wake) return nullptr;
@@ -1213,6 +1266,21 @@ TU_VERIFY_STATIC(sizeof(desc_ms_os_20) == MS_OS_20_DESC_LEN, "MS OS 2.0 descript
 // platform capability, then issues this vendor request to fetch the
 // descriptor set itself.
 bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request) {
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    static uint8_t xusb_os_descriptor[] = {
+        10, 0, 0, 0, 0, 0, 3, 6, 46, 0, // Windows 8.1+ set
+        8, 0, 1, 0, 0, 0, 36, 0,       // first configuration
+        8, 0, 2, 0, 4, 0, 28, 0,       // XUSB interface only
+        20, 0, 3, 0, 'X', 'U', 'S', 'B', '1', '0', 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+    };
+    static_assert(sizeof(xusb_os_descriptor) == 46);
+    if (usb_xinput_active()) {
+        if (request->bmRequestType != 0xc0 || request->bRequest != 0x21 || request->wIndex != 7) return false;
+        if (stage != CONTROL_STAGE_SETUP) return true;
+        return tud_control_xfer(rhport, request, xusb_os_descriptor, sizeof(xusb_os_descriptor));
+    }
+#endif
     if (!get_config().enable_wake) return false;
     if (stage != CONTROL_STAGE_SETUP) return true;
     if (request->bmRequestType_bit.type != TUSB_REQ_TYPE_VENDOR) return false;

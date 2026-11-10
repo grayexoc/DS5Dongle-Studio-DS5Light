@@ -1,10 +1,14 @@
+#include "storage_redo.h"
 //
 // Created by awalol on 2026/5/4.
 //
 
 #include "config.h"
+#include <cstddef>
 #include "flash_map.h"
 #include "macro.h"
+#include "audio.h"
+#include "pico/time.h"
 
 #include <cmath>
 #include <cstring>
@@ -17,18 +21,23 @@
 #include "pico/flash.h"
 
 constexpr uint32_t CONFIG_MAGIC = 0x66ccff00;
-constexpr uint16_t CONFIG_VERSION = 19;
+constexpr uint16_t CONFIG_VERSION = 22;
 // btstack's TLV flash bank (BT link keys + this project's pairing blacklist tag)
 // occupies the LAST TWO flash sectors by pico-sdk default
 // (PICO_FLASH_BANK_STORAGE_OFFSET) - and config + profile slots used to sit in
 // those exact sectors. Every TLV write (link-key churn on controller
 // sleep/wake/re-pair) could clobber them; the first visible casualty was profile
-// slot 0 reading "empty" after a sleep/wake cycle (the bank header lands at its
-// sector start). Config and slots now live in the two sectors BELOW the bank,
-// with one-shot boot migration from the legacy locations.
+// slot 0 reading "empty" after a sleep/wake cycle. Retain the relocated -3
+// config as a read-only import source. New settings use the A/B journal below
+// the fixed slot reservation and macro sector (see flash_map.h).
 constexpr uint32_t CONFIG_FLASH_OFFSET        = PICO_FLASH_SIZE_BYTES - 3 * FLASH_SECTOR_SIZE;
 constexpr uint32_t LEGACY_CONFIG_FLASH_OFFSET = PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE;
 static Config config{};
+static bool activation_save_pending = false;
+static uint32_t activation_retry_at_ms = 0;
+static uint32_t activation_idle_since_ms = 0;
+static bool activation_idle_tracking = false;
+static uint8_t activation_save_attempts = 0;
 bool is_dse = false;
 
 // 编译期保护
@@ -50,6 +59,8 @@ const Config *flash_config() {
     return reinterpret_cast<const Config *>(XIP_BASE + CONFIG_FLASH_OFFSET);
 }
 
+static void config_body_valid(Config_body &value);
+
 void config_valid() {
     // valid config and set default value
     if (config.magic != CONFIG_MAGIC) {
@@ -60,9 +71,13 @@ void config_valid() {
         config.size = sizeof(Config_body);
         printf("[Config] Config Body size is invalid\n");
     }
-    auto body = &config.body;
+    config_body_valid(config.body);
+}
+
+static void config_body_valid(Config_body &value) {
+    auto body = &value;
     if (std::isnan(body->haptics_gain) || body->haptics_gain < 1.0f || body->haptics_gain > 2.0f) {
-        body->haptics_gain = 1.0f;
+        body->haptics_gain = 1.2f;
         printf("[Config] Haptics Gain value is invalid\n");
     }
     if (body->speaker_volume < 0 || body->speaker_volume > 127) {
@@ -137,6 +152,10 @@ void config_valid() {
     if (body->auto_haptics_gate > 100) body->auto_haptics_gate = 20;
     if (body->auto_haptics_slope != 6 && body->auto_haptics_slope != 12 && body->auto_haptics_slope != 24) body->auto_haptics_slope = 12;
     if (body->lightbar_off > 1) body->lightbar_off = 0;
+    if (body->lightbar_fixed > 1) body->lightbar_fixed = 0;
+    if (body->rumble_gain < 100 || body->rumble_gain > 200) body->rumble_gain = 100;
+    if (body->rumble_release > 2) body->rumble_release = 0;
+    if (body->usb_gamepad_mode > 1) body->usb_gamepad_mode = 0;
     if (body->auto_haptics_smooth > 100) body->auto_haptics_smooth = 40;
     // Staged battery notification. An upgraded config arrives with this tail
     // 0xFF-filled, so every value has to be clamped into range rather than
@@ -156,7 +175,7 @@ void config_valid() {
     if (body->tilt_steer_y_invert > 1) body->tilt_steer_y_invert = 0;
     if (body->flick_angle == 0 || body->flick_angle > 180) body->flick_angle = 90;
     if (body->player_led_mode > 2) body->player_led_mode = 0;
-    if (body->player_led_bright > 2) body->player_led_bright = 0;
+    if (body->player_led_bright > 3) body->player_led_bright = 0;
     if (body->trigger_reduce > 10) body->trigger_reduce = 0;
     if (body->touch_mouse_sens == 0 || body->touch_mouse_sens > 250) body->touch_mouse_sens = 100;
     if (body->touch_mouse_min > 20) body->touch_mouse_min = 1;
@@ -252,7 +271,7 @@ void config_valid() {
     if (body->gyro_axis > 2) body->gyro_axis = 0;
     if (body->gyro_invert > 3) body->gyro_invert = 0;
     // Native-haptics smoothing: 0 is invalid so a fresh config defaults to Light (2).
-    if (body->haptics_aa < 1 || body->haptics_aa > 3) body->haptics_aa = 2;
+    if (body->haptics_aa < 1 || body->haptics_aa > 3) body->haptics_aa = 1;
     if (body->synth_force > 1) body->synth_force = 0;
     // Two-stage triggers. A slot written before v1.21 reads back 0xFF here, so
     // the OFF default has to come from the clamp, not from the stored value.
@@ -315,35 +334,138 @@ static void migrate_legacy_slots(); // defined after the slot machinery below
 // boot before BT init, so the bank cannot be mid-write while we read. Strict CRC
 // validation: anything the TLV bank already clobbered is skipped (unrecoverable).
 static void migrate_legacy_storage() {
-    // Config: if the NEW location holds no valid config but the legacy one does,
-    // adopt it.
-    if (flash_config()->magic != CONFIG_MAGIC) {
-        Config legacy{};
-        memcpy(&legacy, reinterpret_cast<const void *>(XIP_BASE + LEGACY_CONFIG_FLASH_OFFSET), sizeof(Config));
-        if (legacy.magic == CONFIG_MAGIC && legacy.crc32 == calc_config_crc(legacy)) {
-            config = legacy;
-            config_valid();
-            if (config_save()) printf("[Config] migrated config from legacy sector\n");
-        }
-    }
+    // Active-config recovery is read-only in config_load; never overwrite a
+    // corrupt record merely by booting. Slot migration keeps its own CRC gate.
     // Slot migration lives after the slot machinery is defined.
     migrate_legacy_slots();
 }
 
-void config_load() {
-    memcpy(&config, flash_config(), sizeof(Config));
-    migrate_legacy_storage();
-    // migration may have replaced `config`; reload from the (new) authoritative sector
-    memcpy(&config, flash_config(), sizeof(Config));
+// Self-describing journal: header CRC protects the sequence/length/body CRC,
+// and the body CRC protects exactly the stored span across future tail growth.
+constexpr uint32_t CONFIG_JOURNAL_MAGIC = 0x32474643; // "CFG2"
+struct __attribute__((packed)) ConfigJournalHeader {
+    uint32_t magic;
+    uint32_t sequence;
+    uint16_t body_bytes;
+    uint16_t format;
+    uint32_t body_crc;
+    uint32_t header_crc;
+};
+static_assert(sizeof(ConfigJournalHeader) == 20);
+// Device policy lives in the CRC-protected journal metadata, outside slots.
+static constexpr uint32_t DORMANT_POLICY_BIT = 0x80000000u;
+static constexpr uint32_t DOCK_DISCONNECT_BIT = 0x20000000u;
+static constexpr uint32_t DEVICE_POLICY_MASK = DORMANT_POLICY_BIT | DOCK_DISCONNECT_BIT;
+static bool dormant_policy = false;
+static bool dock_disconnect_policy = false;
+bool device_auto_dormant() { return dormant_policy; }
 
+
+struct __attribute__((packed)) ConfigProfileIdentity {
+    uint32_t tagged_slot;
+    uint32_t fingerprint;
+    uint32_t crc;
+};
+constexpr uint32_t CONFIG_PROFILE_TAG = 0x534c0000;
+static_assert((CONFIG_PROFILE_TAG & DEVICE_POLICY_MASK) == 0);
+static_assert(sizeof(ConfigProfileIdentity) == 12);
+
+static const ConfigJournalHeader *config_journal_read(uint32_t offset) {
+    const auto *header = reinterpret_cast<const ConfigJournalHeader *>(XIP_BASE + offset);
+    if (header->magic != CONFIG_JOURNAL_MAGIC || header->format != 1 ||
+        header->body_bytes == 0 || header->body_bytes > sizeof(Config_body) ||
+        header->header_crc != crc32(reinterpret_cast<const uint8_t *>(header),
+                                   offsetof(ConfigJournalHeader, header_crc))) return nullptr;
+    const auto *body = reinterpret_cast<const uint8_t *>(header) + sizeof(*header);
+    if (body[0] == 0 || body[0] > CONFIG_VERSION ||
+        header->body_crc != crc32(body, header->body_bytes)) return nullptr;
+    return header;
+}
+
+static const ConfigJournalHeader *config_journal_latest(uint32_t &offset) {
+    const auto *a = config_journal_read(CONFIG_JOURNAL_A_OFFSET);
+    const auto *b = config_journal_read(CONFIG_JOURNAL_B_OFFSET);
+    if (b && (!a || static_cast<int32_t>(b->sequence - a->sequence) > 0)) {
+        offset = CONFIG_JOURNAL_B_OFFSET;
+        return b;
+    }
+    offset = a ? CONFIG_JOURNAL_A_OFFSET : 0;
+    return a;
+}
+
+// Optional trailer: older journal readers still understand the header/body.
+// Corrupt/missing identity never invalidates an otherwise valid settings body.
+static bool config_journal_identity(const ConfigJournalHeader *header, ConfigProfileIdentity &identity) {
+    if (!header) return false;
+    memcpy(&identity, reinterpret_cast<const uint8_t *>(header) + sizeof(*header) +
+           header->body_bytes, sizeof(identity));
+    if (identity.crc != (crc32(reinterpret_cast<const uint8_t *>(&identity),
+                              offsetof(ConfigProfileIdentity, crc)) ^
+                         header->sequence ^ header->body_crc)) return false;
+    const uint32_t tag = identity.tagged_slot & ~DEVICE_POLICY_MASK;
+    return (tag == 0 && identity.fingerprint == 0) ||
+        ((tag & 0xffffff00u) == CONFIG_PROFILE_TAG &&
+         (identity.tagged_slot & 0xffu) < SLOT_COUNT);
+}
+
+static Config_body boot_config_body;
+
+static bool recovery_ok = false;
+static void recover_storage(void *) {
+    const auto irq = save_and_disable_interrupts();
+    recovery_ok = storage_redo_recover();
+    restore_interrupts(irq);
+}
+void config_load() {
+    // Boot only: core1 is not launched until audio_init(), after config_load().
+    recover_storage(nullptr);
+    if (!recovery_ok) panic("Profile storage recovery failed");
+    auto adopt = [](const Config *record) {
+        // Old layouts CRC the original stored body span, not today's tail.
+        const uint16_t bytes = record->size;
+        if (record->magic != CONFIG_MAGIC || bytes == 0 ||
+            bytes > sizeof(Config_body) || record->body.config_version == 0 ||
+            record->body.config_version > CONFIG_VERSION ||
+            record->crc32 != crc32(reinterpret_cast<const uint8_t *>(&record->body), bytes))
+            return false;
+        memset(&config, 0xff, sizeof(config));
+        config.magic = CONFIG_MAGIC;
+        config.size = sizeof(Config_body);
+        memcpy(&config.body, &record->body, bytes);
+        return true;
+    };
+    uint32_t journal_offset;
+    const auto *journal = config_journal_latest(journal_offset);
+    if (journal) {
+        memset(&config, 0xff, sizeof(config));
+        config.magic = CONFIG_MAGIC;
+        config.size = sizeof(Config_body);
+        memcpy(&config.body, reinterpret_cast<const uint8_t *>(journal) + sizeof(*journal),
+               journal->body_bytes);
+    } else if (!adopt(flash_config()) &&
+        !adopt(reinterpret_cast<const Config *>(XIP_BASE + LEGACY_CONFIG_FLASH_OFFSET))) {
+        // Explicit defaults, while preserving damaged Flash for recovery.
+        memset(&config, 0xff, sizeof(config));
+        printf("[Config] No valid CRC record; using RAM defaults\n");
+    }
     config_valid();
+    if (!journal) boot_config_body = config.body;
+    migrate_legacy_storage();
+    ConfigProfileIdentity identity{};
+    const bool identity_valid = config_journal_identity(journal, identity);
+    dormant_policy = identity_valid && (identity.tagged_slot & DORMANT_POLICY_BIT);
+    dock_disconnect_policy = identity_valid && (identity.tagged_slot & DOCK_DISCONNECT_BIT);
+    if (identity_valid && (identity.tagged_slot & ~DEVICE_POLICY_MASK) != 0) {
+        // Restore the name/baseline only; leave the loaded live settings intact.
+        active_profile_restore(static_cast<uint8_t>(identity.tagged_slot), identity.fingerprint);
+    }
 }
 
 // Runs with core1 parked (flash_safe_execute) and core0 interrupts disabled, so
 // neither core touches XIP flash while the sector is erased/programmed. Without
 // the core1 park this races the audio core and corrupts audio (buzzing).
-// How much of the erased sector we actually program: sizeof(Config) rounded up to
-// whole pages. It was a hard-coded single page, which is why Config_body could
+// Program the journal header and body rounded up to whole pages. The old writer
+// used a hard-coded single page, which is why Config_body could
 // not grow past 246 bytes even though the sector has 4 KB and the slot records
 // have room for far more.
 //
@@ -353,34 +475,74 @@ void config_load() {
 // looks like anything except a flash bug. The assert below and this length must
 // move together.
 constexpr uint32_t CONFIG_WRITE_LEN =
-    ((sizeof(Config) + FLASH_PAGE_SIZE - 1) / FLASH_PAGE_SIZE) * FLASH_PAGE_SIZE;
-static_assert(CONFIG_WRITE_LEN >= sizeof(Config), "config write must cover the struct");
+    ((sizeof(ConfigJournalHeader) + sizeof(Config_body) + sizeof(ConfigProfileIdentity) + FLASH_PAGE_SIZE - 1) /
+     FLASH_PAGE_SIZE) * FLASH_PAGE_SIZE;
+static_assert(CONFIG_WRITE_LEN >= sizeof(ConfigJournalHeader) + sizeof(Config_body) + sizeof(ConfigProfileIdentity));
 static_assert(CONFIG_WRITE_LEN <= FLASH_SECTOR_SIZE, "config must fit its sector");
+static uint32_t config_write_offset = CONFIG_JOURNAL_A_OFFSET;
+
+static bool config_journal_fits_firmware() {
+    extern const uint8_t __flash_binary_end[];
+    return reinterpret_cast<uintptr_t>(__flash_binary_end) <=
+           XIP_BASE + STORAGE_REDO_META;
+}
 
 static void config_save_flash_op(void *param) {
     const uint8_t *page = static_cast<const uint8_t *>(param);
     const uint32_t interrupts = save_and_disable_interrupts();
-    flash_range_erase(CONFIG_FLASH_OFFSET, FLASH_SECTOR_SIZE);
-    flash_range_program(CONFIG_FLASH_OFFSET, page, CONFIG_WRITE_LEN);
+    flash_range_erase(config_write_offset, FLASH_SECTOR_SIZE);
+    flash_range_program(config_write_offset, page, CONFIG_WRITE_LEN);
     restore_interrupts(interrupts);
 }
 
-bool config_save() {
-    config.crc32 = calc_config_crc(config);
-    alignas(4) uint8_t page[CONFIG_WRITE_LEN];
+static bool config_journal_write(const uint8_t *body, uint16_t bytes, ConfigProfileIdentity identity, uint32_t timeout_ms) {
+    if (!config_journal_fits_firmware()) return false;
+    const uint32_t body_crc = crc32(body, bytes);
+    uint32_t latest_offset;
+    const auto *stored = config_journal_latest(latest_offset);
+    ConfigProfileIdentity previous_identity{};
+    if (stored && stored->body_bytes == bytes &&
+        stored->body_crc == body_crc &&
+        memcmp(reinterpret_cast<const uint8_t *>(stored) + sizeof(*stored),
+               body, bytes) == 0 &&
+        config_journal_identity(stored, previous_identity) &&
+        identity.tagged_slot == previous_identity.tagged_slot &&
+        identity.fingerprint == previous_identity.fingerprint) {
+        return true;
+    }
+    // Config saves run on core0 only; keep the flash page off the USB stack.
+    alignas(4) static uint8_t page[CONFIG_WRITE_LEN];
     memset(page, 0xff, sizeof(page));
-    memcpy(page, &config, sizeof(Config));
+    ConfigJournalHeader header{};
+    header.magic = CONFIG_JOURNAL_MAGIC;
+    header.sequence = stored ? stored->sequence + 1 : 1;
+    header.body_bytes = bytes;
+    header.format = 1;
+    header.body_crc = body_crc;
+    header.header_crc = crc32(reinterpret_cast<const uint8_t *>(&header),
+                             offsetof(ConfigJournalHeader, header_crc));
+    memcpy(page, &header, sizeof(header));
+    memcpy(page + sizeof(header), body, bytes);
+    identity.crc = crc32(reinterpret_cast<const uint8_t *>(&identity),
+                         offsetof(ConfigProfileIdentity, crc)) ^ header.sequence ^ header.body_crc;
+    memcpy(page + sizeof(header) + bytes, &identity, sizeof(identity));
+    // Never erase the latest validated copy. The legacy -3 record is untouched.
+    config_write_offset = latest_offset == CONFIG_JOURNAL_A_OFFSET ?
+                          CONFIG_JOURNAL_B_OFFSET : CONFIG_JOURNAL_A_OFFSET;
 
-    const int rc = flash_safe_execute(config_save_flash_op, page, 1000);
+    const int rc = flash_safe_execute(config_save_flash_op, page, timeout_ms);
     if (rc != PICO_OK) {
         printf("[Config] config_save flash_safe_execute failed: %d\n", rc);
         return false;
     }
 
-    Config verify{};
-    memcpy(&verify, flash_config(), sizeof(verify));
-    const auto verify_crc32 = calc_config_crc(verify);
-    if (verify_crc32 == config.crc32) {
+    const auto *verify = config_journal_read(config_write_offset);
+    if (verify && verify->sequence == header.sequence &&
+        verify->body_bytes == bytes && verify->body_crc == body_crc &&
+        memcmp(reinterpret_cast<const uint8_t *>(verify) + sizeof(*verify),
+               body, bytes) == 0 &&
+        config_journal_identity(verify, previous_identity) &&
+        memcmp(&identity, &previous_identity, sizeof(identity)) == 0) {
         printf("[Config] Config write flash verify success\n");
         return true;
     }
@@ -388,13 +550,92 @@ bool config_save() {
     return false;
 }
 
+static bool config_save_impl(uint32_t timeout_ms) {
+    config.crc32 = calc_config_crc(config);
+    ConfigProfileIdentity identity{};
+    uint8_t slot;
+    uint32_t fingerprint;
+    if (active_profile_resume_state(slot, fingerprint)) {
+        identity.tagged_slot = CONFIG_PROFILE_TAG | slot;
+        identity.fingerprint = fingerprint;
+    }
+    if (dormant_policy) identity.tagged_slot |= DORMANT_POLICY_BIT;
+    if (dock_disconnect_policy) identity.tagged_slot |= DOCK_DISCONNECT_BIT;
+    if (!config_journal_write(reinterpret_cast<const uint8_t *>(&config.body),
+                              sizeof(Config_body), identity, timeout_ms)) return false;
+    activation_save_pending = false;
+    return true;
+}
+
+static bool save_device_policy(uint32_t bit, bool enabled, bool &policy) {
+    if (enabled == policy) return true;
+    if (audio_processing_active()) return false;
+
+    uint32_t offset;
+    const auto *stored = config_journal_latest(offset);
+    ConfigProfileIdentity identity{};
+    if (!config_journal_identity(stored, identity)) identity = {};
+    identity.tagged_slot &= ~bit;
+    if (enabled) identity.tagged_slot |= bit;
+    // Keep the saved profile identity and settings, including older layouts.
+    const auto *body = stored ? reinterpret_cast<const uint8_t *>(stored) + sizeof(*stored)
+                              : reinterpret_cast<const uint8_t *>(&boot_config_body);
+    const uint16_t bytes = stored ? stored->body_bytes : sizeof(boot_config_body);
+    if (!config_journal_write(body, bytes, identity, 10)) return false;
+    policy = enabled;
+    return true;
+}
+
+bool device_set_auto_dormant(bool enabled) {
+    return save_device_policy(DORMANT_POLICY_BIT, enabled, dormant_policy);
+}
+
+bool device_disconnect_on_dock() { return dock_disconnect_policy; }
+
+bool device_set_disconnect_on_dock(bool enabled) {
+    return save_device_policy(DOCK_DISCONNECT_BIT, enabled, dock_disconnect_policy);
+}
+
+bool config_save() { return config_save_impl(1000); }
+
+static void config_defer_activation_save() {
+    activation_save_pending = true;
+    activation_save_attempts = 0;
+    activation_idle_tracking = false;
+    activation_retry_at_ms = to_ms_since_boot(get_absolute_time()) + 60;
+}
+
+void config_task() {
+    if (!activation_save_pending || activation_save_attempts >= 3) return;
+    const uint32_t now = to_ms_since_boot(get_absolute_time());
+    if (audio_processing_active()) { activation_idle_tracking = false; return; }
+    if (static_cast<int32_t>(now - activation_retry_at_ms) < 0) return;
+    if (!activation_idle_tracking) {
+        activation_idle_tracking = true;
+        activation_idle_since_ms = now;
+        return;
+    }
+    if (now - activation_idle_since_ms < 500) return;
+    ++activation_save_attempts;
+    if (!config_save_impl(10)) {
+        activation_idle_tracking = false;
+        activation_retry_at_ms = now + 1000;
+    }
+}
+
 Config_body& get_config() {
     return config.body;
 }
 
+bool config_flush_pending_activation() {
+    return !activation_save_pending || config_save();
+}
+
+bool config_activation_save_pending() { return activation_save_pending; }
+
 void set_config(const uint8_t *new_config, const uint16_t len) {
     const auto copy_len = len < sizeof(Config_body) ? len : sizeof(Config_body);
-    memcpy(&config.body, new_config, copy_len);
+    memmove(&config.body, new_config, copy_len);
     config_valid();
     if (config.body.disable_pico_led) {
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
@@ -495,7 +736,7 @@ static bool slot_read_ptr(const uint8_t *p, uint8_t name_out[SLOT_NAME_LEN], Con
             if (stored == crc32(name, (uint32_t)SLOT_NAME_LEN + blen)) {
                 memcpy(name_out, name, SLOT_NAME_LEN);
                 memset(&body_out, 0xFF, sizeof(Config_body));
-                memcpy(&body_out, body, blen);
+                memcpy(&body_out, body, blen < sizeof(Config_body) ? blen : sizeof(Config_body));
                 return true;
             }
         }
@@ -508,10 +749,10 @@ static bool slot_read_ptr(const uint8_t *p, uint8_t name_out[SLOT_NAME_LEN], Con
 alignas(4) static uint8_t slot_sector_image[FLASH_SECTOR_SIZE];
 
 static uint32_t slot_op_offset = SLOTS_FLASH_OFFSET; // which sector the op targets
+static bool slot_write_ok = false;
 static void slots_flash_op(void *) {
     const uint32_t interrupts = save_and_disable_interrupts();
-    flash_range_erase(slot_op_offset, FLASH_SECTOR_SIZE);
-    flash_range_program(slot_op_offset, slot_sector_image, FLASH_SECTOR_SIZE);
+    slot_write_ok = storage_redo_write(slot_op_offset, slot_sector_image, FLASH_SECTOR_SIZE);
     restore_interrupts(interrupts);
 }
 
@@ -537,6 +778,8 @@ static bool slot_read(uint8_t idx, uint8_t name_out[SLOT_NAME_LEN], Config_body 
 // snapshot is the config body as loaded; active_profile_get() reports "edited"
 // by comparing the live body to it, so any later field change flips the flag
 // without needing a hook on every write path.
+// Manual dormant resume may explicitly restore this identity from a validated
+// scratch-register token; ordinary cold boots keep the original unknown state.
 static int16_t     g_active_slot = -1;         // -1 = unknown / not from a slot
 static Config_body g_active_snapshot;          // config body as it was loaded
 static bool        g_active_snapshot_valid = false;
@@ -562,18 +805,66 @@ bool active_profile_get(uint8_t &slot_out, bool &edited_out, uint8_t name_out[SL
     // three fields the firmware syncs from hardware at runtime - speaker_volume,
     // headset_volume and speaker_gain (state_mgr.cpp). Otherwise a hardware volume
     // change, or the audio re-sync the host performs right after a USB
-    // re-enumeration, rewrites those fields and masquerades as a user edit. Copy
-    // both sides and neutralise those fields before the compare.
-    Config_body a = config.body;
-    Config_body b = g_active_snapshot;
-    a.speaker_volume = b.speaker_volume;
-    a.headset_volume = b.headset_volume;
-    a.speaker_gain   = b.speaker_gain;
-    edited_out = (memcmp(&a, &b, sizeof(Config_body)) != 0);
+    // re-enumeration, rewrites those fields and masquerades as a user edit.
+    // Compare the spans around them instead of copying two complete bodies.
+    constexpr size_t volume = offsetof(Config_body, speaker_volume);
+    constexpr size_t headset = offsetof(Config_body, headset_volume);
+    constexpr size_t gain = offsetof(Config_body, speaker_gain);
+    static_assert(headset == volume + 1 && gain > headset + 1);
+    const auto *a = reinterpret_cast<const uint8_t *>(&config.body);
+    const auto *b = reinterpret_cast<const uint8_t *>(&g_active_snapshot);
+    edited_out = memcmp(a, b, volume) != 0 ||
+        memcmp(a + headset + 1, b + headset + 1, gain - headset - 1) != 0 ||
+        memcmp(a + gain + 1, b + gain + 1, sizeof(Config_body) - gain - 1) != 0;
     Config_body bd;
     if (!slot_read((uint8_t)g_active_slot, name_out, bd)) {
         memset(name_out, 0, SLOT_NAME_LEN);    // slot since deleted/overwritten
     }
+    return true;
+}
+
+static uint32_t resume_slot_fingerprint(const uint8_t *name, const Config_body &body) {
+    return crc32(name, SLOT_NAME_LEN) ^
+           crc32(reinterpret_cast<const uint8_t *>(&body), sizeof(body));
+}
+
+bool active_profile_resume_state(uint8_t &slot, uint32_t &fingerprint) {
+    slot = 0xFF;
+    fingerprint = 0;
+    if (g_active_slot < 0 || !g_active_snapshot_valid) return false;
+    uint8_t name[SLOT_NAME_LEN]{};
+    Config_body body{};
+    if (!slot_read(static_cast<uint8_t>(g_active_slot), name, body)) return false;
+    slot = static_cast<uint8_t>(g_active_slot);
+    fingerprint = resume_slot_fingerprint(name, body);
+    return true;
+}
+
+bool active_profile_restore(uint8_t slot, uint32_t fingerprint) {
+    uint8_t name[SLOT_NAME_LEN]{};
+    Config_body body{};
+    if (slot >= SLOT_COUNT || !slot_read(slot, name, body)) return false;
+    if (resume_slot_fingerprint(name, body) != fingerprint) {
+        // Prior firmware fingerprinted the raw slot (including 0xFF padding).
+        // Accept its old span only when this extension is entirely absent.
+        const bool old_tail = body.lightbar_fixed == 0xff && body.lightbar_r == 0xff &&
+                              body.lightbar_g == 0xff && body.lightbar_b == 0xff;
+        const bool new_tail = body.rumble_gain == 0xff && body.rumble_release == 0xff;
+        const auto prefix_id = [&](size_t bytes) {
+            return crc32(name, SLOT_NAME_LEN) ^ crc32(reinterpret_cast<const uint8_t *>(&body), bytes);
+        };
+        if (body.usb_gamepad_mode != 0xff ||
+            (prefix_id(offsetof(Config_body, usb_gamepad_mode)) != fingerprint &&
+             !(new_tail && prefix_id(offsetof(Config_body, rumble_gain)) == fingerprint) &&
+             !(new_tail && old_tail && prefix_id(offsetof(Config_body, lightbar_fixed)) == fingerprint)))
+            return false;
+    }
+    // Validate a private copy. Restore identity/baseline only: never activate a
+    // slot or overwrite the saved live settings loaded by config_load().
+    config_body_valid(body);
+    g_active_snapshot = body;
+    g_active_slot = slot;
+    g_active_snapshot_valid = true;
     return true;
 }
 
@@ -593,7 +884,7 @@ bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len) {
     memcpy(slot_sector_image + local * SLOT_STRIDE, &rec, sizeof(rec));
     slot_op_offset = sec_off;
     int rc = flash_safe_execute(slots_flash_op, nullptr, 500);
-    if (rc != PICO_OK) {
+    if (rc != PICO_OK || !slot_write_ok) {
         printf("[Config] slot_save flash_safe_execute failed: %d\n", rc);
         return false;
     }
@@ -624,13 +915,16 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
     // slot, clamp it, and diff against a copy of what was live before.
     static Config_body prev_body;   // static: keep it off the USB task stack
     prev_body = config.body;
-    config.body = slot_body;
-    config_valid();                 // clamp 0xFF fills from older slots
+    set_config(reinterpret_cast<const uint8_t *>(&slot_body), sizeof(slot_body));
+    state_rumble_reset();            // never carry a release across profile boundaries
     const Config_body &o = prev_body;
     const Config_body &n = config.body;
-    needs_reenum = (o.controller_mode      != n.controller_mode)      ||
+    needs_reenum =
+#ifdef STUDIO_XINPUT_EXPERIMENT
+                   (o.usb_gamepad_mode != n.usb_gamepad_mode) ||
+#endif
+                   (o.controller_mode      != n.controller_mode)      ||
                    (o.polling_rate_mode    != n.polling_rate_mode)    ||
-                   (o.audio_buffer_length  != n.audio_buffer_length)  ||
                    (o.disable_mic          != n.disable_mic)          ||
                    (o.disable_speaker      != n.disable_speaker)      ||
                    (o.enable_wake          != n.enable_wake)          ||
@@ -647,22 +941,16 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
                    // The mouse is its own interface, and it implies the keyboard -
                    // so the keyboard test above does not cover losing the mouse.
                    (usb_mouse_iface_needed(o) != usb_mouse_iface_needed(n));
-    // A gyro-aim ratchet never crosses a slot switch. It is set for one game's
-    // menus, so carrying it into the next profile would leave gyro mysteriously
-    // dead there - and the row that could clear it may not even exist on the
-    // new profile. RAM only, so there is nothing to un-persist.
-    macro_gyro_resume();
     active_profile_set(idx); // record the loaded slot (RAM) for the portal readout
-    // Persist. flash_safe_execute parks core1 with a 1 s timeout; at game
-    // launch core1 is at its busiest (BT stream + haptics), which is exactly
-    // when a lockout timeout can trip - and never during calm portal tests.
-    // Retry once; if persistence still fails, the activation itself has
-    // ALREADY happened (config.body is live) - report 2 so callers can treat
-    // a launch-time activation as successful instead of "slot failed".
-    if (config_save()) return 1;
-    sleep_ms(60);
-    if (config_save()) return 1;
+    // During playback, apply RAM immediately and coalesce persistence at idle.
+    // Explicit Save and the pre-dormant flush keep synchronous durability.
+    if (audio_processing_active()) {
+        config_defer_activation_save();
+        return 2;
+    }
+    if (config_save_impl(10)) return 1;
     fail_stage = 3;
+    config_defer_activation_save();
     return 2;
 }
 
@@ -698,11 +986,13 @@ static void migrate_legacy_slots() {
     bool new_has = false;
     uint8_t nm[SLOT_NAME_LEN]; static Config_body bd;
     for (uint8_t i = 0; i < SLOT_COUNT && !new_has; ++i)
-        new_has = slot_read_at(SLOTS_FLASH_OFFSET, i, nm, bd);
+        new_has = slot_read(i, nm, bd);
     if (new_has) return;
     uint8_t migrated = 0;
     memset(slot_sector_image, 0xff, FLASH_SECTOR_SIZE);
-    for (uint8_t i = 0; i < SLOT_COUNT; ++i) {
+    // The old store occupied ONE sector (8 slots), even though the current
+    // format exposes 32 slots in four separately mapped sectors.
+    for (uint8_t i = 0; i < SLOTS_PER_SECTOR && i < SLOT_COUNT; ++i) {
         if (!slot_read_at(LEGACY_SLOTS_FLASH_OFFSET, i, nm, bd)) continue;
         SlotRecordV2 rec{};
         rec.magic = SLOT_MAGIC_V2;
@@ -715,12 +1005,11 @@ static void migrate_legacy_slots() {
     }
     if (migrated) {
         slot_op_offset = slot_sector_offset(0);
-        if (flash_safe_execute(slots_flash_op, nullptr, 1000) == PICO_OK)
+        if (flash_safe_execute(slots_flash_op, nullptr, 1000) == PICO_OK && slot_write_ok)
             printf("[Config] migrated %u profile slot(s) from legacy sector\n", migrated);
     }
 }
 
 void set_config(const Config_body &new_config) {
-    config.body = new_config;
-    config_valid();
+    set_config(reinterpret_cast<const uint8_t *>(&new_config), sizeof(new_config));
 }

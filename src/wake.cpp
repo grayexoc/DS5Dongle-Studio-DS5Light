@@ -3,6 +3,7 @@
 //
 
 #include "wake.h"
+#include "manual_power.h"
 
 #ifdef ENABLE_WAKE_HID
 
@@ -186,6 +187,7 @@ void wake_init(void) {
 // Called right before a deliberate USB reconnect (FUNC_RECONNECT): arm a grace window so the
 // suspend the reconnect causes is ignored, and drop any already-pending debounced power-off.
 void wake_note_usb_reconnect(void) {
+    manual_power_note_activity();
     reconnect_until_us = time_us_64() + WAKE_RECONNECT_GRACE_US;
     suspend_at_us = 0;
 }
@@ -337,10 +339,7 @@ void wake_task(void) {
     if (!host_suspended && identity_wrong && cooled_down && bt_link_up && !tud_suspended()) {
         last_restore_us = now;
         usb_set_idle_pid(false);
-        wake_note_usb_reconnect();
-        tud_disconnect();
-        sleep_ms(250);   // > the USB 100 ms port debounce, or the host may not see the disconnect at all
-        tud_connect();
+        usb_schedule_reconnect();
         WAKE_DBG("host awake + controller back -> restoring full USB device");
     }
 

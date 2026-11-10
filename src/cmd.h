@@ -8,5 +8,6 @@
 #include <stdint.h>
 
 void pico_cmd_set(uint8_t report_id, uint8_t const *buffer,uint16_t bufsize);
+void pico_cmd_reply_read(uint8_t report_id, const uint8_t *payload, uint16_t len);
 
 #endif //DS5_BRIDGE_CMD_H

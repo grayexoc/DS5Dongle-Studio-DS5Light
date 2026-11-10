@@ -59,6 +59,7 @@ else ()
         set(ENABLE_SERIAL_VALUE 0)
 endif ()
 option(ENABLE_VERBOSE "Enable Log Verbose" OFF)
+option(BOOTSEL_POLL_DURING_AUDIO "Keep QSPI BOOTSEL polling during active audio" OFF)
 if(ENABLE_VERBOSE)
     set(ENABLE_VERBOSE_VALUE 1)
 else()
@@ -107,11 +108,14 @@ add_executable(ds5-bridge
         src/battery_notify.cpp
         src/usb_descriptors.cpp
         src/main.cpp
+        src/oled_status.cpp
+        src/manual_power.cpp
         src/usb.cpp
         src/audio.cpp
         src/bt.cpp
         src/button_functions.cpp
         src/dse.cpp
+        src/storage_redo.cpp
         src/config.cpp
         src/cmd.cpp
         src/state_mgr.cpp
@@ -121,6 +125,9 @@ add_executable(ds5-bridge
 if (ENABLE_BATT_LED)
         target_sources(ds5-bridge PRIVATE src/battery_led.cpp)
 endif ()
+
+option(STUDIO_XINPUT_EXPERIMENT "Enumerate as an Xbox 360 pad for the first XInput prototype" OFF)
+
 
 # Cockos WDLResampler
 add_library(wdl_resampler STATIC
@@ -283,6 +290,8 @@ set_source_files_properties(src/ram_mem.c PROPERTIES COMPILE_OPTIONS
         "-fno-builtin;-fno-tree-loop-distribute-patterns")
 
 target_compile_options(ds5-bridge PRIVATE -fsigned-char)
+target_compile_definitions(ds5-bridge PRIVATE
+    BOOTSEL_POLL_DURING_AUDIO=$<BOOL:${BOOTSEL_POLL_DURING_AUDIO}>)
 target_compile_definitions(wdl_resampler PRIVATE
         WDL_RESAMPLE_TYPE=float
 )
@@ -291,6 +300,11 @@ if(${SYS_CLOCK_KHZ_VALUE} GREATER 266000)
 else()
     set(PICO_FLASH_SPI_CLKDIV 2)
 endif()
+if (STUDIO_XINPUT_EXPERIMENT)
+    target_sources(ds5-bridge PRIVATE src/xinput_usb.cpp)
+    target_compile_definitions(ds5-bridge PRIVATE STUDIO_XINPUT_EXPERIMENT=1)
+endif()
+
 target_compile_definitions(bs2_default PRIVATE PICO_FLASH_SPI_CLKDIV=${PICO_FLASH_SPI_CLKDIV})
 target_compile_definitions(ds5-bridge PRIVATE PICO_EMBED_XIP_SETUP=1)
 target_compile_definitions(ds5-bridge PRIVATE
@@ -330,7 +344,11 @@ if(WAKE_DEBUG)
     )
 endif()
 
-set(VERSION "dev" CACHE STRING "Program version string")
+set(VERSION "30" CACHE STRING "Program version string")
+if(VERSION STREQUAL "dev")
+    set(VERSION "30" CACHE STRING "Program version string" FORCE)
+endif()
+set_target_properties(ds5-bridge PROPERTIES OUTPUT_NAME "ds5-studio-light_v${VERSION}")
 
 pico_set_program_name(ds5-bridge "ds5-bridge")
 pico_set_program_version(ds5-bridge "${VERSION}")
@@ -354,6 +372,7 @@ target_link_libraries(ds5-bridge
         pico_multicore
         hardware_watchdog
         hardware_timer
+        hardware_spi
         hardware_flash
         pico_btstack_classic
 #        pico_cyw43_arch_threadsafe_background
@@ -363,6 +382,8 @@ target_link_libraries(ds5-bridge
         tinyusb_board
         wdl_resampler
         opus
+        hardware_xosc
+        hardware_pll
 )
 
 pico_add_extra_outputs(ds5-bridge)

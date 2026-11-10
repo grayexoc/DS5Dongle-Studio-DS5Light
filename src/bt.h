@@ -22,15 +22,17 @@ void bt_send_control(uint8_t *data, uint16_t len);
 void bt_power_off_controller();
 bool bt_disconnect();
 bool bt_is_connected();
+bool bt_is_ready();
 void bt_set_scan_idle();
 void bt_set_scan_active();
 void dse_unlock_task();
 bool bt_dse_profiles_ready();
 void bt_write(const uint8_t *data, uint16_t len);
 void bt_get_signal_strength(int8_t *rssi);
+bool bt_signal_valid();
 std::vector<uint8_t> get_feature_data(uint8_t reportId,uint16_t len);
 void init_feature();
-void set_feature_data(uint8_t reportId, uint8_t* data,uint16_t len);
+bool set_feature_data(uint8_t reportId, uint8_t* data,uint16_t len);
 void bt_inquiring_led();
 // BOOTSEL button actions, dispatched from button_functions.cpp.
 void bt_bootsel_click_action();
@@ -38,3 +40,9 @@ void bt_bootsel_hold_action();
 void bt_blacklist_persist_if_dirty();
 
 #endif //DS5_BRIDGE_BT_H
+
+// Core0 only: invalidate audio belonging to a closed stream.
+void bt_discard_audio();
+
+bool bt_control_send(const uint8_t *data, uint16_t len);
+void bt_diagnostic_snapshot(uint8_t *data); // nine LE32 counters + LE16 queue depth

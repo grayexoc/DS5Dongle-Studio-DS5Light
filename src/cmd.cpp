@@ -11,12 +11,15 @@
 
 #include "bt.h"
 #include "config.h"
+#include "manual_power.h"
 #include "macro.h"
 #include "wake.h"
 #include "device/usbd.h"
 #include "pico/time.h"
 #include "pico/bootrom.h"
 #include "audio.h"
+#include "usb.h"
+#include "state_mgr.h"
 
 // spk_active (main.cpp) + audio_mic_active() (audio.cpp) are surfaced in the
 // 0xf9 command response so the config UI can display the real gated mic/speaker
@@ -36,7 +39,7 @@ static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize)
 // Firmware version, reported via read-only fields 0x7D/0x7E/0x7F so the portal
 // can display which build is flashed. Bump on every released build.
 constexpr uint8_t FW_VER_MAJOR = 1;
-constexpr uint8_t FW_VER_MINOR = 43;
+constexpr uint8_t FW_VER_MINOR = 42;
 constexpr uint8_t FW_VER_PATCH = 0;
 
 // Width of the value the LAST successful write_config_value() emitted. The bulk
@@ -238,6 +241,20 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0xb9: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.player_led_mode=v; break; }
         case 0xba: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.player_led_bright=v; break; }
         case 0xc0: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.trigger_reduce=v; break; }
+        case 0xc1: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize) || v > 1)return false; new_config.lightbar_fixed=v; break; }
+        case 0xc3: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize) || v < 100 || v > 200)return false; new_config.rumble_gain=v; break; }
+#ifdef STUDIO_XINPUT_EXPERIMENT
+        case 0xc5: { uint8_t mode{}; if (!read_config_value(mode, buffer, bufsize) || mode > 1) return false; new_config.usb_gamepad_mode = mode; break; }
+#endif
+        case 0xc4: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize) || v > 2)return false; new_config.rumble_release=v; break; }
+        case 0xc2: { // Atomic RGB, u32 little-endian value 0x00RRGGBB.
+            uint32_t v{};
+            if (!read_config_value(v,buffer,bufsize) || v > 0xffffffu) return false;
+            new_config.lightbar_r = (v >> 16) & 0xff;
+            new_config.lightbar_g = (v >> 8) & 0xff;
+            new_config.lightbar_b = v & 0xff;
+            break;
+        }
         case 0xb3: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.tilt_steer_y=v; break; }
         case 0xb4: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.tilt_steer_y_amount=v; break; }
         case 0xb5: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.tilt_steer_y_invert=v; break; }
@@ -394,6 +411,14 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0xb9: return write_config_value(buffer, bufsize, config.player_led_mode);
         case 0xba: return write_config_value(buffer, bufsize, config.player_led_bright);
         case 0xc0: return write_config_value(buffer, bufsize, config.trigger_reduce);
+        case 0xc1: return write_config_value(buffer, bufsize, uint8_t(config.lightbar_fixed == 1));
+        case 0xc3: return write_config_value(buffer, bufsize, config.rumble_gain);
+#ifdef STUDIO_XINPUT_EXPERIMENT
+        case 0xc5: return write_config_value(buffer, bufsize, config.usb_gamepad_mode);
+#endif
+        case 0xc4: return write_config_value(buffer, bufsize, config.rumble_release);
+        case 0xc2: return write_config_value(buffer, bufsize,
+            (uint32_t(config.lightbar_r) << 16) | (uint32_t(config.lightbar_g) << 8) | config.lightbar_b);
         case 0xbb: { extern volatile uint8_t g_diag_pled_bits;  return write_config_value(buffer, bufsize, g_diag_pled_bits); }
         case 0xbc: { extern volatile uint8_t g_diag_pled_state; return write_config_value(buffer, bufsize, g_diag_pled_state); }
         case 0xbd: { extern volatile uint8_t  g_diag_pled_mode; return write_config_value(buffer, bufsize, g_diag_pled_mode); }
@@ -464,12 +489,10 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         // above even while it was working correctly.
         //   bit0 left stick centred, bit1 right stick centred,
         //   bit2 macro engine wants the report rewritten this tick
-        //   bit3 gyro aim paused by a macro ratchet (GOUT_* in macro.h)
         case 0x8c: { extern bool macro_report_active();
                      const uint8_t v = (uint8_t) ((macro_suppress_stick(false) ? 1 : 0) |
                                                   (macro_suppress_stick(true)  ? 2 : 0) |
-                                                  (macro_report_active()       ? 4 : 0) |
-                                                  (macro_gyro_paused()         ? 8 : 0));
+                                                  (macro_report_active()       ? 4 : 0));
                      return write_config_value(buffer, bufsize, v); }
         // Keyboard/mouse output right now: keys held, the first key's HID usage,
         // and the mouse button mask.
@@ -595,7 +618,43 @@ static bool get_config_field(uint8_t field_id, uint8_t *buffer, uint16_t bufsize
     return get_config_field_from(get_config(), field_id, buffer, bufsize);
 }
 
+// CMD 0x1B has its own namespace; field id 0x1B remains unchanged.
+static void pico_power_command(const uint8_t *buffer, uint16_t bufsize) {
+    uint8_t reply[63]{};
+    reply[0] = 0x66; reply[1] = 0x1b; reply[2] = 0x01;
+    reply[3] = buffer && bufsize ? buffer[0] : 0xff;
+    reply[4] = 1; // protocol version
+    if (buffer && bufsize && buffer[0] == 0) {
+        reply[2] = 0; // read-only capability/status query
+    } else if (buffer && bufsize >= 3 && buffer[0] == 1 &&
+               buffer[1] == 0x53 && buffer[2] == 0x4c) {
+        manual_power_request_host_sleep();
+        reply[2] = 0; // accepted, not a guarantee that standby has completed
+    }
+    reply[5] = static_cast<uint8_t>(manual_power_state());
+    reply[6] = static_cast<uint8_t>(manual_power_error());
+    reply[7] = (bt_is_connected() ? 1 : 0) | (bt_is_ready() ? 2 : 0) |
+               (config_activation_save_pending() ? 4 : 0) | 8; // physical-key wake only
+    feature_data[0x84].assign(reply, reply + sizeof(reply));
+}
+
+void pico_cmd_reply_read(uint8_t report_id, const uint8_t *payload, uint16_t len) {
+    if (report_id == 0x84 && payload && len >= 8 && payload[0] == 0x66 &&
+        payload[1] == 0x1b && payload[2] == 0 && payload[3] == 1 && payload[4] == 1)
+        manual_power_sleep_reply_read();
+}
+
 void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
+    // Writes, capture sessions and deliberate reconnects extend awake time.
+    // Read-only polling must not prevent standby forever.
+    switch (cmd_id) {
+        case 0x01: case 0x02: case 0x03: case 0x07:
+        case 0x08: case 0x09: case 0x0b: case 0x0d:
+        case 0x11: case 0x13: case 0x18: case 0x19: case 0x1a:
+            manual_power_note_activity(60000);
+            break;
+        default: break;
+    }
     // 0x01 update config field in variable: field_id + typed value
     // 0x02 write config to flash
     // 0x03 reconnect tinyusb device;
@@ -624,14 +683,17 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             break;
         }
         case 0x02: {
-            printf("[CMD] Enter config save func\n");
-            config_save();
+            // Optional request tag distinguishes this completion from a stale reply.
+            uint8_t reply[63]{0x66, 0x02, 0xfe, 1};
+            if (bufsize >= 4) memcpy(reply + 4, buffer, 4);
+            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            reply[2] = config_save() ? 0 : 2;
+            feature_data[0x84].assign(reply, reply + sizeof(reply));
             break;
         }
         case 0x03: {
             printf("[CMD] Enter tud reconnect func\n");
-            wake_note_usb_reconnect(); // this disconnect is intentional, not a host sleep
-            tud_disconnect();
+            // Keep the detach interval while servicing the main loop.
             // 250 ms, matching restore_full_usb_identity() in bt.cpp. v1.18.12
             // found 60 ms sat under the USB 100 ms port debounce and some hosts
             // never registered the disconnect at all; this path was raised only
@@ -640,8 +702,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             // gyro-mouse off, or disabling the last mouse macro - a missed
             // disconnect means the host keeps the old descriptor and the mouse
             // lingers until something else forces a real re-enumeration.
-            sleep_ms(250);
-            tud_connect();
+            usb_schedule_reconnect();
             break;
         }
         case 0x04: {
@@ -989,6 +1050,82 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             break;
         }
 
+        case 0x1b: {
+            pico_power_command(buffer, bufsize);
+            break;
+        }
+
+        case 0x1c: {
+            // Device standby policy. [0] reads; [1, mode] writes and saves.
+            uint8_t reply[63]{0x66, 0x1c, 1, 1, 0};
+            if (bufsize >= 1 && buffer[0] == 0) reply[2] = 0;
+            else if (bufsize >= 2 && buffer[0] == 1 && buffer[1] <= 1) {
+                reply[2] = device_set_auto_dormant(buffer[1] != 0) ? 0 : 2;
+                if (reply[2] == 0) manual_power_note_activity();
+            }
+            reply[4] = device_auto_dormant();
+            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            break;
+        }
+
+        case 0x1e: {
+            // Read-only, tagged snapshots. Never reset counters or touch flash.
+            uint8_t reply[63]{0x66, 0x1e, 1, 1};
+            if (bufsize >= 5) {
+                reply[4] = buffer[0];
+                memcpy(reply + 5, buffer + 1, 4);
+                if (buffer[0] == 0) {
+                    extern volatile uint16_t g_diag_ch01_peak, g_diag_ch23_peak;
+                    extern volatile uint8_t g_diag_actual_ch;
+                    reply[2] = 0;
+                    reply[9] = (bt_is_connected() ? 1 : 0) | (bt_is_ready() ? 2 : 0) |
+                        (audio_processing_active() ? 4 : 0) | (audio_haptics_stream_active() ? 8 : 0) |
+                        (bt_signal_valid() ? 16 : 0);
+                    reply[10] = usb_xinput_active();
+                    reply[11] = get_config().auto_haptics_enable;
+                    reply[12] = g_diag_actual_ch;
+                    const uint16_t front = g_diag_ch01_peak, rear = g_diag_ch23_peak;
+                    reply[13] = front; reply[14] = front >> 8;
+                    reply[15] = rear; reply[16] = rear >> 8;
+                    int8_t rssi = 0; bt_get_signal_strength(&rssi); reply[17] = rssi;
+                    state_diagnostic_snapshot(reply + 18);
+                    const uint32_t now = to_ms_since_boot(get_absolute_time());
+                    memcpy(reply + 43, &now, 4);
+                } else if (buffer[0] == 1) {
+                    reply[2] = 0; bt_diagnostic_snapshot(reply + 9);
+                }
+            }
+            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            break;
+        }
+        case 0x1f: {
+            // Explicit short output tests; no profile or persistent setting writes.
+            uint8_t reply[63]{0x66, 0x1f, 1, 1};
+            if (bufsize >= 5) {
+                reply[4] = buffer[0]; memcpy(reply + 5, buffer + 1, 4);
+                if (buffer[0] <= 6 && (buffer[0] == 0 ||
+                    (bt_is_ready() && !audio_processing_active() && get_config().auto_haptics_enable == 0 &&
+                     manual_power_state() == ManualPowerState::Idle))) {
+                    reply[2] = 0;
+                    state_output_test(buffer[0]);
+                    manual_power_note_activity(5000);
+                }
+            }
+            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            break;
+        }
+        case 0x1d: {
+            // Dock disconnect policy. [0] reads; [1, enabled] writes and saves.
+            uint8_t reply[63]{0x66, 0x1d, 1, 1, 0};
+            if (bufsize >= 1 && buffer[0] == 0) reply[2] = 0;
+            else if (bufsize >= 2 && buffer[0] == 1 && buffer[1] <= 1) {
+                reply[2] = device_set_disconnect_on_dock(buffer[1] != 0) ? 0 : 2;
+            }
+            reply[4] = device_disconnect_on_dock();
+            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            break;
+        }
+
         case 0x67: {
             // Read the currently-loaded profile (RAM only, set by slot_activate /
             // slot_save - so it reflects loads from the portal AND the automation).
@@ -999,6 +1136,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             buf[3] = slot;
             buf[4] = edited ? 1 : 0;
             memcpy(buf + 5, nm, SLOT_NAME_LEN);
+            buf[21] = macro_uses_mute_button() ? 2 : 1; // 0 on older firmware (unsupported)
             // Reply on 0x81 (the poll/GET buffer), NOT 0x84: this read is polled
             // once a second, and 0x84 is reserved for slot commands (activate/save/
             // info) precisely so a periodic poll can't consume their replies.

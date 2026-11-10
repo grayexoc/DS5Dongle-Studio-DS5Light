@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" id="_레이어_1" data-name="레이어_1" version="1.1" viewBox="62 70 802 188"><!--User-provided vector artwork; presentation attributes retain TkSVG compatibility.-->
+  <defs>
+    <linearGradient id="pulse-fade" gradientUnits="userSpaceOnUse" x1="521" y1="130" x2="864" y2="130">
+      <stop offset="0" stop-color="#d6ad52" stop-opacity="1" />
+      <stop offset="1" stop-color="#d6ad52" stop-opacity="0" />
+    </linearGradient>
+  </defs>
+  <g>
+    <path d="M70,78h42c28.72,0,52,23.28,52,52s-23.28,52-52,52h-42v-104Z" fill="none" stroke="#fff" stroke-width="16px" />
+    <path d="M284,98c-8-16-26-20-40-20-24,0-40,12-40,28,0,18,20,22,40,24,22,2,40,8,40,26,0,16-16,26-40,26-16,0-34-4-42-20" fill="none" stroke="#fff" stroke-width="16px" />
+    <path d="M392,78h-56l-6,46c10-8,22-10,30-10,24,0,36,14,36,34s-14,34-38,34c-16,0-28-4-36-14" fill="none" stroke="#fff" stroke-width="16px" />
+  </g>
+  <path d="M410,130h36l12-22,12,44,12-62,14,80,14-94,16,108,16-86,12,64,12-46,10,28,8-14h276" fill="none" stroke="url(#pulse-fade)" stroke-linecap="round" stroke-linejoin="round" stroke-width="8px" />
+  <g>
+    <path d="M65,219v36h30" stroke-width="5px" fill="none" stroke="#fff" />
+    <path d="M255.5,219v36" stroke-width="5px" fill="none" stroke="#fff" />
+    <path d="M450,229c-4-8-12-10-17-10-11,0-17,8-17,18,0,12,6,18,17,18s17-6,17-16h-16" stroke-width="5px" fill="none" stroke="#fff" />
+    <path d="M610.5,219v36M640.5,219v36M610.5,237h30" stroke-width="5px" fill="none" stroke="#fff" />
+    <path d="M801,219h34M818,219v36" stroke-width="5px" fill="none" stroke="#fff" />
+  </g>
+</svg>

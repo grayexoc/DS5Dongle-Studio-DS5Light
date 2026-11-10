@@ -10,6 +10,12 @@
 #include "utils.h"
 #include "resample.h"
 #include "audio.h"
+#include "oled_status.h"
+#include "manual_power.h"
+#include "usb.h"
+#ifdef STUDIO_XINPUT_EXPERIMENT
+#include "xinput_usb.h"
+#endif
 #include "wake.h"
 #ifdef ENABLE_WAKE_HID
 #include "ps_shortcut.h"
@@ -291,6 +297,20 @@ static inline bool report_needs_rewrite(const Config_body &c) {
 }
 
 void __not_in_flash_func(interrupt_loop)() {
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    if (usb_xinput_active()) {
+        if (!xinput_report_ready()) return;
+        uint8_t report[63]{0x80, 0x80, 0x80, 0x80, 0, 0, 0, 8};
+        if (bt_is_ready()) {
+            critical_section_enter_blocking(&report_cs);
+            memcpy(report, interrupt_in_data, sizeof(report));
+            critical_section_exit(&report_cs);
+            apply_trigger_output(report);
+        }
+        xinput_send_report(report);
+        return;
+    }
+#endif
     if (!tud_hid_ready()) return;
 
     // TODO: Refactor for better code reuse
@@ -1083,12 +1103,6 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
 
 
     if (cfg.gyro_mode == 0) return;
-    // A macro ratchet can pause gyro aiming outright. Placed HERE, below every
-    // stick feature above and above every activation gate below, so the pause
-    // stops the gyro and nothing else: flick stick, stick-to-mouse,
-    // touchpad-to-mouse and tilt steering all keep working, and the mouse
-    // interface is not touched at all. See macro.h (GOUT_*).
-    if (macro_gyro_paused()) return;
     // Activation schemes (industry set: ADS-gated, always-on, touch-enable, ratchet):
     //   1 = only while L2 (aim) held past ~12%
     //   2 = always on
@@ -1182,6 +1196,8 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     d[3] = (uint8_t)(ry < 0 ? 0 : (ry > 255 ? 255 : ry));
 }
 
+static bool dock_disconnect_requested = false;
+
 void __not_in_flash_func(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16_t len) {
     // printf("[Main] BT data callback: channel=%u len=%u\n", channel, len);
     if (channel == INTERRUPT && len > 2 && data[1] == 0x31) {
@@ -1192,6 +1208,13 @@ void __not_in_flash_func(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16
                 mic_add_queue(data + 4, len - 4);
             }
             return;
+        }
+        if (len < 3 + sizeof(interrupt_in_data)) return;
+        constexpr uint8_t kDockDetect = 1u << 6;
+        if (!(data[56] & kDockDetect) || !device_disconnect_on_dock()) {
+            dock_disconnect_requested = false;
+        } else if (!dock_disconnect_requested && bt_is_ready()) {
+            dock_disconnect_requested = bt_disconnect();
         }
         if ((data[56] & 1) != (interrupt_in_data[53] & 1)) {
             set_headset(data[56] & 1);
@@ -1209,6 +1232,7 @@ void __not_in_flash_func(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16
 
         if (get_config().polling_rate_mode != 2) {
             memcpy(interrupt_in_data, data + 3, 63);
+            if ((interrupt_in_data[9] & 4u) && macro_uses_mute_button()) interrupt_in_data[9] &= ~4u;
             apply_gyro_stick(interrupt_in_data);
             { extern volatile uint8_t g_l2_pos, g_r2_pos, g_l1_btn, g_r1_btn; g_l2_pos = interrupt_in_data[4]; g_r2_pos = interrupt_in_data[5]; g_l1_btn = (interrupt_in_data[8] & 0x01) ? 1 : 0; g_r1_btn = (interrupt_in_data[8] & 0x02) ? 1 : 0; } // L2@4 R2@5 L1/R1@8
 #if ENABLE_BATT_LED
@@ -1225,6 +1249,7 @@ void __not_in_flash_func(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16
         //  and needs to be sent in the next interrupt report.
         critical_section_enter_blocking(&report_cs);
         memcpy(interrupt_in_data, data + 3, 63);
+        if ((interrupt_in_data[9] & 4u) && macro_uses_mute_button()) interrupt_in_data[9] &= ~4u;
         apply_gyro_stick(interrupt_in_data);
         report_dirty = true;
         critical_section_exit(&report_cs);
@@ -1278,6 +1303,7 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
         if ((report_id == 0x81 || report_id == 0x84) && feature_data[0] == 0x66) {
             const uint16_t n = (uint16_t)((feature_data.size() < reqlen) ? feature_data.size() : reqlen);
             memcpy(buffer, feature_data.data(), n);
+            pico_cmd_reply_read(report_id, buffer, n);
             return n;
         }
         const uint16_t n = (uint16_t)(((feature_data.size() - 1) < reqlen) ? (feature_data.size() - 1) : reqlen);
@@ -1296,6 +1322,7 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
     if (itf == 1) {
         printf("[AUDIO] Set interface Speaker to alternate setting %d\n", alt);
         spk_active = alt;
+        if (!alt) audio_reset_stream();
     }
     if (itf == 2) { // ITF_NUM_AUDIO_STREAMING_IN (microphone)
         printf("[AUDIO] Set interface Microphone to alternate setting %d\n", alt);
@@ -1309,6 +1336,7 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
 // received data on OUT endpoint ( Report ID = 0, Type = 0 )
 void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer,
                            uint16_t bufsize) {
+    if (buffer == nullptr || bufsize == 0) return;
 #ifdef ENABLE_WAKE_HID
     if (itf == 1) {
         // Drop keyboard SET_REPORT (host LED state).
@@ -1321,14 +1349,21 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     (void) buffer;
     (void) bufsize;
 
-    // INTERRUPT OUT
-    if (report_id == 0) {
-        switch (buffer[0]) {
-            case 0x02: {
-                bool changed = state_update(buffer + 1, bufsize - 1);
-                if (spk_active && !changed) {
-                    break;
-                }
+    // Interrupt OUT includes the ID; SET_REPORT carries it separately.
+    if ((report_id == 0 && buffer[0] == 0x02) ||
+        (report_type == HID_REPORT_TYPE_OUTPUT && report_id == 0x02)) {
+                const uint8_t *payload = buffer;
+                uint16_t payload_size = bufsize;
+                if (report_id == 0) { ++payload; --payload_size; }
+                if (payload_size == 0 || payload_size > sizeof(SetStateData)) return;
+                bool changed = state_update(payload, payload_size);
+                // Re-arm explicit trigger effects at most once per 8 ms.
+                static uint32_t last_rearm_ms = 0;
+                const uint32_t now = to_ms_since_boot(get_absolute_time());
+                const bool rearm = get_config().auto_haptics_enable == 0 &&
+                    payload_size >= 32 && (payload[0] & 0x0c) && now - last_rearm_ms >= 8;
+                if (spk_active && !changed && !rearm && !state_rumble_wants_report()) return;
+                if (rearm) last_rearm_ms = now;
                 uint8_t outputData[78]{};
                 outputData[0] = 0x31;
                 outputData[1] = reportSeqCounter << 4;
@@ -1339,9 +1374,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
                 // memcpy(outputData + 3, buffer + 1, bufsize - 1);
                 state_set(outputData + 3, sizeof(SetStateData));
                 bt_write(outputData, sizeof(outputData));
-                break;
-            }
-        }
+                return;
     }
     if (report_id == 0x80 && bufsize >= 2 && buffer[0] == 0x66) {
 #if ENABLE_VERBOSE
@@ -1362,6 +1395,7 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
 }
 
 int main() {
+    const bool manual_resume = manual_power_boot_is_resume();
 #if SYS_CLOCK_KHZ != 150000
     vreg_set_voltage(VREG_VOLTAGE_1_20);
     sleep_ms(1000);
@@ -1384,8 +1418,10 @@ int main() {
 #endif
 
     if (cyw43_arch_init()) {
-        printf("Failed to initialize CYW43\n");
-        return 1;
+        printf("Failed to initialize CYW43, rebooting\n");
+        sleep_ms(500);
+        watchdog_reboot(0, 0, 0);
+        while (true) tight_loop_contents();
     }
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 
@@ -1405,7 +1441,7 @@ int main() {
 #endif
 
 #if !ENABLE_SERIAL
-    if (watchdog_caused_reboot()) {
+    if (watchdog_caused_reboot() && !manual_resume) {
         printf("Rebooted by Watchdog!\n");
         // 当崩溃重启以后，闪三下灯
         for (int i = 0; i < 6; i++) {
@@ -1426,12 +1462,16 @@ int main() {
     wake_init();
 
     config_load();
+    usb_select_host_mode();
+    manual_power_restore_profile();
 
     bt_init();
     bt_register_data_callback(on_bt_data);
 
     audio_init();
     state_init();
+    oled_status_init();
+    manual_power_init();
 
 #if !ENABLE_SERIAL
     watchdog_enable(1000, true);
@@ -1450,15 +1490,23 @@ int main() {
         // sleep and across the deferred power-off the wake path relies on.
         {
             static bool was_suspended = false;
+            static uint32_t last_release_attempt_ms = 0;
             const bool susp = wake_host_is_suspended();
-            if (susp && !was_suspended && state_release_for_suspend()) {
-                uint8_t outputData[78]{};
-                outputData[0] = 0x31;
-                outputData[1] = reportSeqCounter << 4;
-                if (++reportSeqCounter == 256) reportSeqCounter = 0;
-                outputData[2] = 0x10;
-                state_set(outputData + 3, sizeof(SetStateData));
-                bt_write(outputData, sizeof(outputData));
+            const bool entering_suspend = susp && !was_suspended;
+            if (entering_suspend) state_release_for_suspend();
+            if (!susp && was_suspended) state_cancel_suspend_release();
+            if (susp && bt_is_connected() && state_suspend_release_pending()) {
+                const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+                if (entering_suspend || now_ms - last_release_attempt_ms >= 40) {
+                    uint8_t outputData[78]{};
+                    outputData[0] = 0x31;
+                    outputData[1] = reportSeqCounter << 4;
+                    if (++reportSeqCounter == 256) reportSeqCounter = 0;
+                    outputData[2] = 0x10;
+                    state_set(outputData + 3, sizeof(SetStateData));
+                    bt_write(outputData, sizeof(outputData));
+                    last_release_attempt_ms = now_ms;
+                }
             }
             #ifdef ENABLE_WAKE_HID
             // Keyboard-side twin of state_release_for_suspend(). Doing this
@@ -1485,7 +1533,7 @@ int main() {
             // wake less reliable than 1.13.3.)
             // Interval is re-evaluated EVERY pass (cheap), so trigger movement
             // restores the fast cadence immediately; only the tick is rate-limited.
-            if (!wake_host_is_suspended() &&
+            if (bt_is_connected() && !wake_host_is_suspended() &&
                 now - last_synth_tick_ms >= state_synth_interval_ms()) {
                 last_synth_tick_ms = now;
                 // ...or when a battery notification is running. state_synth_tick()
@@ -1503,14 +1551,14 @@ int main() {
                 // REWRITTEN on a schedule anyway, or its charging pulse and low
                 // blink could never animate. Still inside the interval gate above,
                 // so this composes at the synth cadence rather than every pass.
-                if (state_synth_tick() || battery_notify_wants_report() ||
-                    player_led_wants_report()) {
-                    uint8_t outputData[78]{};
+                const bool force = state_synth_tick() ||
+                    (!get_config().lightbar_fixed && !get_config().lightbar_off && battery_notify_wants_report());
+                uint8_t outputData[78]{};
+                if (state_prepare_report(outputData + 3, force)) {
                     outputData[0] = 0x31;
                     outputData[1] = reportSeqCounter << 4;
                     if (++reportSeqCounter == 256) reportSeqCounter = 0;
                     outputData[2] = 0x10;
-                    state_set(outputData + 3, sizeof(SetStateData));
                     bt_write(outputData, sizeof(outputData));
                 }
             }
@@ -1525,7 +1573,16 @@ int main() {
         macro_task();
         gyro_mouse_task();   // USB send happens HERE, never in the BT callback
         #endif
-        audio_loop();
+        // Catch up at most three USB milliseconds; return BT airtime between blocks.
+        const uint32_t audio_started_us = time_us_32();
+        for (unsigned block = 0; block < 3; ++block) {
+            const auto available = tud_audio_available();
+            audio_loop();
+            if (block == 2 || tud_audio_available() < 384 || tud_audio_available() >= available ||
+                time_us_32() - audio_started_us >= 500) break;
+            cyw43_arch_poll();
+            tud_task();
+        }
         interrupt_loop();
 #if ENABLE_BATT_LED
         battery_led_tick();
@@ -1539,5 +1596,15 @@ int main() {
         button_check();
         bt_inquiring_led();
         dse_task();
+        oled_status_loop();
+        usb_reconnect_task();
+        config_task();
+        manual_power_task();
+        if (!bt_is_connected()) {
+            dock_disconnect_requested = false;
+            // Service connection setup promptly while retaining CPU idle waits.
+            // Once connected, the audio/BT loop runs without this delay.
+            sleep_ms(5);
+        }
     }
 }

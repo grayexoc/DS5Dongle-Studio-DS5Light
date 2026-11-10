@@ -62,7 +62,7 @@ struct __attribute__((packed)) Config_body {
     uint8_t gyro_axis;      // horizontal source: 0=yaw (turn), 1=roll (tilt sideways),
                             // 2=player space (uses gravity; see config_valid clamp)
     uint8_t gyro_invert;    // bit0 = invert X, bit1 = invert Y
-    uint8_t haptics_aa;     // native-haptics smoothing: 1=off (raw/gritty), 2=light 1-pole ~2.4kHz (default), 3=strong 2-pole ~1.3kHz
+    uint8_t haptics_aa;     // native-haptics smoothing: 1=off (default), 2=light 1-pole ~2.4kHz, 3=strong 2-pole ~1.3kHz
     uint8_t synth_force;    // 0=yield to game trigger effects (default), 1=force r2t/at even if a game/app sends effects
     // Adaptive triggers Stage 2: push-back kick (recoil). While resistance is
     // engaged, the vibration envelope momentarily raises the resistance strength,
@@ -395,7 +395,7 @@ struct __attribute__((packed)) Config_body {
     //   1 = off
     //   2 = battery gauge
     uint8_t  player_led_mode;
-    uint8_t  player_led_bright;      // 0 bright, 1 mid, 2 dim (LightBrightness)
+    uint8_t  player_led_bright;      // 0 passthrough, 1 mid, 2 dim, 3 off
     uint8_t  flick_angle;            // degrees for a 90-degree stick push, 1-180
     // ---- Trigger strength reduction (appended 1.42.0) ----
     // Asks the CONTROLLER to scale down its adaptive-trigger motor power, in ten
@@ -404,6 +404,14 @@ struct __attribute__((packed)) Config_body {
     // fork's own - without reshaping any of them. 0 leaves the power alone.
     // Ported from awalol's DS5Dongle 0.72 (trigger_reduce).
     uint8_t  trigger_reduce;         // 0 off, 1-10 reduction steps
+    // Appended: old records are 0xFF-filled and normalize to fixed OFF.
+    uint8_t lightbar_fixed;          // bool; lightbar_off takes precedence
+    uint8_t lightbar_r;
+    uint8_t lightbar_g;
+    uint8_t lightbar_b;
+    uint8_t rumble_gain;            // 100..200 percent; only native rumble with auto-haptics OFF
+    uint8_t rumble_release;         // 0 off, 1 linear 20ms, 2 linear 40ms
+    uint8_t usb_gamepad_mode;       // 0 DualSense, 1 XInput
 };
 
 // Stage-2 output buttons. Values are PERSISTED in every profile and slot, so
@@ -461,6 +469,13 @@ struct __attribute__((packed)) Config {
 void config_default();
 void config_load();
 bool config_save();
+bool device_auto_dormant();
+bool device_set_auto_dormant(bool enabled);
+bool device_disconnect_on_dock();
+bool device_set_disconnect_on_dock(bool enabled);
+void config_task();
+bool config_flush_pending_activation();
+bool config_activation_save_pending();
 
 // --- Profile slots -----------------------------------------------------------
 // Named copies of Config_body stored in their own flash sector (the sector
@@ -493,6 +508,8 @@ bool slot_load_body(uint8_t idx, Config_body &out);
 // is tracked; otherwise fills the source slot name and sets edited when the live
 // config has diverged from the slot as loaded.
 bool active_profile_get(uint8_t &slot_out, bool &edited_out, uint8_t name_out[SLOT_NAME_LEN]);
+bool active_profile_resume_state(uint8_t &slot, uint32_t &fingerprint);
+bool active_profile_restore(uint8_t slot, uint32_t fingerprint);
 Config_body& get_config();
 void set_config(const uint8_t *new_config, const uint16_t len);
 void config_valid();
