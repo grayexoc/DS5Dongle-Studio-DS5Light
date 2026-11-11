@@ -59,18 +59,13 @@ public:
         data[1] &= ~0x08u;
         data[38] &= ~0x02u;
         data[41] = 0;
-        // No host colour exists yet: preserve controller startup state, or release
-        // a previous override instead of inventing black as the host colour.
-        if (!next.mode && !host_color_valid_ && !temporary) {
-            data[1] &= ~0x04u;
-            if (restore_pending_ || (valid_ && queued_.mode) || host_release_) {
-                data[1] = (data[1] & ~0x10u) | 8;
-            }
-            if (host_setup_pending_) { data[38] |= 2; data[41] = host_setup_; }
-            restore_prepared_ = false;
-            return;
+        // Preserve untouched startup LEDs; after an override, restore the
+        // requested startup blue only when no game colour has been received.
+        if (!next.mode && !host_color_valid_ && !temporary && restore_pending_ &&
+            !host_release_ && !host_setup_pending_) {
+            data[44] = 0; data[45] = 0; data[46] = 255;
         }
-        if (setup_pending_) {
+        if (setup_pending_ && (next.mode || host_color_valid_ || temporary)) {
             // Take Bluetooth lightbar ownership only for a requested colour or override.
             data[38] |= 2; data[41] = 2;
             data[1] &= ~0x14u;
@@ -108,20 +103,8 @@ public:
     void accepted(const uint8_t *data, bool off, bool fixed, uint8_t r, uint8_t g, uint8_t b,
                   bool restore_report = false) {
         const Key next = key(off, fixed, r, g, b);
-        if (!next.mode && !host_color_valid_) {
-            if ((data[1] & 4) || ((data[38] & 2) && !host_setup_pending_)) {
-                restore_pending_ = true;
-                valid_ = false;
-            }
-            if ((data[1] & 8) && !(data[1] & 4)) {
-                restore_pending_ = host_release_ = false;
-                setup_pending_ = true;
-                queued_ = next; valid_ = true;
-            }
-            if (host_setup_pending_ && (data[38] & 2) && data[41] == host_setup_)
-                host_setup_pending_ = false;
-            return;
-        }
+        if (!next.mode && !host_color_valid_ && (data[1] & 4) && !restore_report)
+            restore_pending_ = true;
         if (data[1] & 4) {
             sent_color_valid_ = true;
             sent_r_ = data[44]; sent_g_ = data[45]; sent_b_ = data[46];

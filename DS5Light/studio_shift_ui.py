@@ -17,6 +17,10 @@ class ShiftUI:
             ttk.Button(bar,text=title,command=lambda v=value:self.select_macro_layer(v),
                        style='Selected.Filter.TButton' if value==getattr(self,'macro_layer',False) else 'Filter.TButton').pack(side='left',padx=(0,5))
         ttk.Button(bar,text=tr('시프트 레이어키 지정'),command=self.open_shift_picker).pack(side='right')
+        row=shift_key(self.doc.macros)
+        bit=int.from_bytes(bytes(row[1][:4]),'little').bit_length()-1 if row else None
+        self.shift_key_label=tk.Label(bar,text=NAMES[bit] if bit is not None and 0<=bit<23 else tr('없음'),bg=CARD,fg=MUTED)
+        self.shift_key_label.pack(side='right',padx=(8,8))
         self.shift_editor=tk.Frame(host,bg=CARD)
         self.shift_selection=tk.StringVar(value=tr('없음'))
         self.shift_enabled=tk.BooleanVar()

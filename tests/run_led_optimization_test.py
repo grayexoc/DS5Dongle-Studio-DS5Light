@@ -182,13 +182,13 @@ int main() {
         if(old_needed)assert(memcmp(old_data,new_data,63)==0);
         if(step%5!=0 && new_needed)state_report_sent(new_data,state_report_is_lightbar_restore(new_data));
     }
-    // No host LED authority: return the latched gauge to zero, including forced ticks.
+    // No host LED authority: return the latched gauge to player 1, including forced ticks.
     memset(state.bytes,0,63);config.player_led_bright=0;config.player_led_mode=2;
     config.lightbar_fixed=config.lightbar_off=config.batt_notify_enable=0;
     config.auto_haptics_enable=0;stream_active=false;g_batt_raw=5;
     assert(state_prepare_report(data,true));state_report_sent(data,false);
     config.player_led_mode=0;now_us+=1000;
-    assert(state_prepare_report(data,true));assert((data[1]&16)&&(data[43]&31)==0);
+    assert(state_prepare_report(data,true));assert((data[1]&16)&&(data[43]&31)==4);
     now_us+=2000000;assert(state_prepare_report(data,false));assert(data[1]&16); // not acked: still retries
     uint8_t stale[63]{};stale[1]=16;stale[43]=7;state_report_sent(stale,false);
     assert(player_led_restore_pending);
@@ -222,7 +222,28 @@ int main() {
     state_host_led_update(command,42);assert(state.bytes[44]==0&&!(state.bytes[1]&4));
     state_set(data,63);assert((data[38]&2)&&data[41]==2);
     state_report_sent(data,false);state_set(data,63);assert(!(data[38]&2));
-    puts("PASS: static LED suppression, brightness, queue retry, reconnect, charging/low blink, debounce, hand-back, battery override gating");
+    // No game running: native startup -> brown/off audio profile -> native startup.
+    memset(state.bytes,0,63);lightbar_fixed_policy.reset();player_led_sent.reset();
+    player_led_previous_mode=0;player_led_restore_pending=false;
+    config.batt_notify_enable=0;config.lightbar_fixed=config.lightbar_off=0;
+    config.player_led_mode=config.player_led_bright=0;
+    for(int cycle=0;cycle<100;cycle++) {
+        config.auto_haptics_enable=1;config.lightbar_fixed=1;
+        config.lightbar_r=120;config.lightbar_g=80;config.lightbar_b=40;
+        config.player_led_mode=1;state_prepare_report(data,false);send();send();
+        state_set(data,63);assert(data[44]==120&&data[45]==80&&data[46]==40);
+        assert((data[43]&31)==0);
+        config.auto_haptics_enable=0;config.lightbar_fixed=0;config.player_led_mode=0;
+        assert(state_prepare_report(data,false));
+        assert((data[1]&0x14)==0x14&&data[44]==0&&data[45]==0&&data[46]==255);
+        assert((data[43]&31)==4);send();
+        assert(!state_prepare_report(data,false));
+    }
+    // An explicit game-off pattern must win over the startup fallback.
+    state.bytes[1]=0x14;state.bytes[43]=0;
+    config.player_led_mode=1;state_prepare_report(data,false);send();config.player_led_mode=0;
+    state_prepare_report(data,false);assert((data[43]&31)==0);send();
+    puts("PASS: LED policies, no-game native/audio roundtrip x100, explicit game off, mapped mute isolation");
 }
 '''
 (out/'test.cpp').write_text(code,encoding='utf-8')

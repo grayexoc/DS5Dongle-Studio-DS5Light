@@ -63,6 +63,31 @@ class ShiftUITests(unittest.TestCase):
         ui=self.editor();ui.doc.macros={str(i):[0]*35 for i in range(32)}
         ui.doc.macro_baseline=copy.deepcopy(ui.doc.macros);ui.select_category(4);return ui
 
+    def test_refresh_reloads_layer_records_without_opening_picker(self):
+        from studio_button_names import NAMES
+        from test_studio_reconnect import fresh
+        ui=self.prepare();ui.entry_attempts={'fields','macros'}
+        ui.entry_queries_enabled=True
+        with patch.object(ui,'schedule_entry'),patch.object(self.ui,'refresh_devices'):
+            ui.results.put(('read',fresh(),None));ui.poll()
+        self.assertNotIn('macros',ui.entry_attempts)
+        with patch.object(ui,'task') as task:
+            ui.entry_step(ui.entry_generation)
+            self.assertEqual(task.call_args.args[0],'macros')
+        records={str(i):[0]*35 for i in range(32)}
+        records,mask=set_shift_key(records,0xffffffff,19)
+        row=[0]*35;row[0]=1;row[5]=32;row[17]=1;row[19:24]=b'Layer'
+        records['1']=row;ui.macro_layer=True
+        with patch.object(ui,'schedule_entry'):
+            ui.results.put(('macros',records,None));ui.poll()
+        self.assertEqual(ui.shift_key_label.cget('text'),NAMES[19])
+        self.assertFalse(ui.shift_editor.winfo_manager())
+        def labels(widget):
+            for child in widget.winfo_children():
+                if child.winfo_class()=='Label':yield child.cget('text')
+                yield from labels(child)
+        self.assertIn('Layer',list(labels(ui.body)))
+
     def test_inline_choice_cancel_and_stage_never_send(self):
         from studio_button_names import NAMES
         ui=self.prepare();before=copy.deepcopy(ui.doc.macros)

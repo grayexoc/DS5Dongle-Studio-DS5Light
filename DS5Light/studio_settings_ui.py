@@ -845,6 +845,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             else:
                 if self.path is not None and self.path!=result['path']:self.doc=SettingsDocument()
                 self.path=result['path'];self.device_choice.current(next(i for i,d in enumerate(self.device_rows) if d['path']==self.path));self.doc.revert();self.doc.load(result['values']);self.doc.effects={};self.doc.effect_baseline={};self.doc.macros={};self.doc.macro_baseline={};self.invalid.clear();self.loaded=True
+                self.entry_attempts.discard('macros')
                 self._policy_save_errors={}
                 self.standby_policy=(self.path,result.get('standby'))
                 self.dock_policy=(self.path,result.get('dock'))

@@ -82,7 +82,7 @@ void state_report_sent(const uint8_t *data, bool lightbar_restore) {
     const auto *host = reinterpret_cast<const uint8_t *>(&state);
     const uint8_t player_mode = c.player_led_bright == 3 ? 1 : c.player_led_mode;
     if (player_led_restore_pending && player_mode == 0 && (data[1] & 0x10) &&
-        (data[43] & 0x1f) == (host[43] & 0x1f)) player_led_restore_pending = false;
+        (data[43] & 0x1f) == ((host[1] & 0x10) ? (host[43] & 0x1f) : 4)) player_led_restore_pending = false;
     uint8_t current[sizeof(SetStateData)]{};
     state_refresh_rumble(current);
     if ((data[0] & 3) == (current[0] & 3) && (data[38] & 4) == (current[38] & 4) &&
@@ -370,13 +370,13 @@ void __not_in_flash_func(state_set)(uint8_t *data, const uint8_t size) {
     // only going through Off (which writes all-dark) cleared it. Same trap as the
     // lightbar colour that stuck after a battery notification.
     //
-    // On leaving a takeover mode, restore the cached host pattern (zero if absent)
+    // On leaving a takeover mode, restore the cached host pattern (player 1 if absent)
     // until successful submission, including when the host never allowed LED writes.
     {
         // Keep restoring until the matching report is successfully submitted.
         if (player_mode == 0 && player_led_restore_pending) {
             data[1]  |= 0x10;                                  // AllowPlayerIndicators
-            data[43]  = (uint8_t) ((data[43] & 0x1F) | 0x20);  // the game's own pattern, instant
+            data[43] = static_cast<uint8_t>((((reinterpret_cast<const uint8_t *>(&state)[1] & 0x10) ? data[43] : 4) & 0x1f) | 0x20);
         }
     }
 

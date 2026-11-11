@@ -561,7 +561,7 @@ class App:
 
         self.mute_shortcut=MuteShortcut(); self._shortcut_dialog=None
 
-        root.title(f'DS5Light v{APP_VERSION} - Modified'); root.configure(bg=BG,borderwidth=0,highlightthickness=0)
+        root.title(f'DS5Light v{APP_VERSION} - Studio'); root.configure(bg=BG,borderwidth=0,highlightthickness=0)
 
         root.iconbitmap(default=str(Path(__file__).resolve().parent/'assets'/'dslight.ico'))
 

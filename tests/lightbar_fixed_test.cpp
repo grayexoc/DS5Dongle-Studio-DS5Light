@@ -25,16 +25,16 @@ int main() {
     memset(report,0,63);p.apply(report,false,true,12,34,56);
     p.accepted(report,false,true,12,34,56);
     memset(report,0,63);p.apply(report,false,false,0,0,0);
-    assert((report[1]&8)&&!(report[1]&4));
-    p.accepted(report,false,false,0,0,0);
+    assert((report[1]&4)&&!(report[1]&8)&&report[44]==0&&report[45]==0&&report[46]==255);
+    p.accepted(report,false,false,0,0,0,p.is_restore_report(report));
     assert(!p.pending(false,false,0,0,0));
     // A queued old override arriving after release must trigger another release.
     uint8_t late_override[63]{};late_override[1]=4;late_override[44]=12;
     p.accepted(late_override,false,false,0,0,0);
     assert(p.pending(false,false,0,0,0));
     memset(report,0,63);p.apply(report,false,false,0,0,0);
-    assert((report[1]&8)&&!(report[1]&4));
-    p.accepted(report,false,false,0,0,0);
+    assert((report[1]&4)&&!(report[1]&8)&&report[44]==0&&report[45]==0&&report[46]==255);
+    p.accepted(report,false,false,0,0,0,p.is_restore_report(report));
     assert(!p.pending(false,false,0,0,0));
     // A real host colour requests Bluetooth setup before RGB restoration.
     uint8_t first[63]{};first[1]=4;first[44]=90;p.host_update(first,63);
