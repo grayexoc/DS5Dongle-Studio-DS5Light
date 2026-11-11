@@ -32,6 +32,8 @@ _SLOT_DEFAULTS = {
     'stick_mouse_deadzone': 8, 'stick_mouse_curve': 18, 'stick_mouse_invert': 0,
 }
 
+_SLOT_DEFAULTS['ps_shortcut_enabled']=0
+
 _SLOT_DEFAULTS.update({'at_mode': 0, 'at_strength': 70, 'at_threshold': 30, 'at_start_pos': 0, 'at_shape': 0, 'at_strength_b': 70, 'at_detent_pos': 5, 'at_pushback': 0, 'at_kick_style': 0, 'at_pushback_freq': 35, 'at_l2_mode': 0, 'at_l2_strength': 70, 'at_l2_threshold': 30, 'at_l2_start_pos': 0, 'at_l2_shape': 0, 'at_l2_strength_b': 70, 'at_l2_detent_pos': 5, 'at_l2_pushback': 0, 'at_l2_kick_style': 0, 'at_l2_pushback_freq': 35, 'at_pushback_src': 2, 'ce_r2_enable': 0, 'ce_l2_enable': 0, 'ce_r2_yield': 0, 'ce_l2_yield': 0})
 
 def _slot_value(field,value):

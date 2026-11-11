@@ -74,7 +74,7 @@ class MacroDraft:
         if rule_changed:
             flags=(self.original[5]&~31)|{'tap':0,'long':1,'double':16,'hold':2}[s['condition']]
             if s['kind']=='stick':flags=(flags&~17)|2
-            if s['kind']=='swipe':flags&=~31
+            if s['kind']=='swipe':flags=(flags&~31)|(4 if s['hide'] else 0)
             if flags&2 and s['hide']:flags|=4
             if s['kind']=='stick' and flags&4 and s['always']:flags|=8
             raw[5]=flags

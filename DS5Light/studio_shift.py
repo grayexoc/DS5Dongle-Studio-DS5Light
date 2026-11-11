@@ -48,3 +48,33 @@ def validate_extension(row):
     if row[5] & CHIME and not PROFILE_FIRST <= row[17] <= PROFILE_LAST:
         raise ValueError(_ui_tr('신호음은 프로필 전환에서만 사용합니다.'))
     return row
+
+
+def reserved_input(row, records, disable_mask, ps_shortcut=False):
+    """Keep controller/system shortcuts; do not rewrite firmware precedence."""
+    if row[4] != 0:
+        return ''
+    chord = int.from_bytes(bytes(row[:4]), 'little')
+    if row[5] & SHIFT:
+        for key, shift in records.items():
+            if shift[17] == SHIFT_KEY and not disable_mask & (1 << int(key)):
+                chord |= int.from_bytes(bytes(shift[:4]), 'little')
+                break
+    ps, create, fn = 1 << 16, 1 << 12, (1 << 19) | (1 << 20)
+    if ps_shortcut and chord & ps:
+        return _ui_tr('PS 기본 단축키가 켜져 있어 PS 매핑을 사용할 수 없습니다. 기본 단축키를 끄거나 다른 입력을 선택하세요.')
+    if chord & ps and chord & create:
+        return _ui_tr('PS + Create는 컨트롤러 페어링 조합이므로 매핑에 사용할 수 없습니다.')
+    if chord & fn and chord & (0x0f | 0xf0 | (1 << 13)):
+        return _ui_tr('FN + 얼굴 버튼·방향키·Options는 Edge 기본 기능과 충돌할 수 있어 사용할 수 없습니다. 다른 조합을 선택하세요.')
+    return ''
+
+
+def validate_reserved_inputs(records, values):
+    mask = int(values.get('macro_disable', 0xffffffff))
+    for key, row in records.items():
+        if mask & (1 << int(key)):
+            continue
+        reason = reserved_input(row, records, mask, bool(values.get('ps_shortcut_enabled', 0)))
+        if reason:
+            raise ValueError(f'{int(key)+1:02d} · ' + reason)

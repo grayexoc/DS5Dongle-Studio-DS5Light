@@ -4708,3 +4708,6 @@ EN.update({
 })
 FIELD_LABELS.update({'disable_inactive_disconnect':'Disable idle disconnect',
  'speaker_volume':'DualSense speaker volume','speaker_gain':'DualSense speaker gain'})
+
+FIELD_LABELS['ps_shortcut_enabled']='PS default shortcuts'
+FIELD_HELP['ps_shortcut_enabled']='Short press sends Win+G; long press sends Win+Tab. Turn this off to use PS in Pico mappings or Shift combinations.'

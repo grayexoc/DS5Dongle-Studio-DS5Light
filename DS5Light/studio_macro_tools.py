@@ -44,10 +44,10 @@ def normalize_macro(record):
     if gesture&32: # stick-to-keys is always held; no keyboard chord gate
         flags=(flags|2)&~(1|16);record[:4]=bytes(4);record[17]=0
     elif gesture&128: # a swipe is an event, never held
-        flags&=~(1|2|4|8|16)
+        flags&=~(1|2|8|16)
     if flags&16 and flags&(1|2):raise ValueError(_ui_tr('두 번 누름은 길게 누름·유지와 함께 사용할 수 없습니다.'))
     if flags&1 and flags&2:raise ValueError(_ui_tr('길게 누름과 누르는 동안 유지는 동시에 선택할 수 없습니다.'))
-    if not flags&2:flags&=~(4|8)
+    if not flags&2 and not gesture&128:flags&=~(4|8)
     if not (gesture&32 and flags&4):flags&=~8
     if gesture==0 and not chord and any(record[7:11]+[record[17]]):raise ValueError(_ui_tr('입력 버튼을 선택하세요.'))
     if record[18] and not 10<=record[18]<=120:raise ValueError(_ui_tr('스틱 작동 깊이는 0(기본값) 또는 10~120입니다.'))
@@ -111,12 +111,24 @@ class MacroTools:
     def filter_macros(self,kind):self.render_fields() # All definitions remain visible.
     def toggle_macro(self,index,enabled,status=None,kind=''):
         mask=int(self.doc.values.get('macro_disable',0xffffffff))
+        if enabled:
+            from studio_shift import validate_reserved_inputs
+            try:validate_reserved_inputs(self.doc.macros,dict(self.doc.values,macro_disable=mask&~(1<<index)))
+            except ValueError as exc:
+                messagebox.showinfo(_ui_tr('입력 조합 제한'),str(exc),parent=self.parent)
+                self.render_fields();return
         self.changed('macro_disable',mask&~(1<<index) if enabled else mask|(1<<index))
         if status:status.set(kind+' · '+(_ui_tr('활성') if enabled else _ui_tr('비활성')))
         self.update_macro_warnings()
     def macro_conflicts(self):
         from studio_macro_design import conflicts
         messages=conflicts(self.doc.macros,int(self.doc.values.get('macro_disable',0xffffffff)))
+        from studio_shift import reserved_input
+        mask=int(self.doc.values.get('macro_disable',0xffffffff))
+        for key,row in self.doc.macros.items():
+            if not mask&(1<<int(key)):
+                reason=reserved_input(row,self.doc.macros,mask,bool(self.doc.values.get('ps_shortcut_enabled',0)))
+                if reason:messages.append(f'{int(key)+1:02d} · '+reason)
         if getattr(self.app,'mute_binding',{}).get('enabled'):
             for key,record in self.doc.macros.items():
                 if int.from_bytes(bytes(record[:4]),'little')&(1<<18) and not int(self.doc.values.get('macro_disable',0xffffffff))&(1<<int(key)):
@@ -147,7 +159,7 @@ class MacroTools:
             source=_ui_tr('오른쪽 스틱') if data[4]&64 else _ui_tr('왼쪽 스틱')
             target=' · '.join(d+' '+keyname(c) for d,c in zip(('↑','→','↓','←'),data[7:11]))
         elif data[4]&128:source=(_ui_tr('오른쪽') if data[4]&4 else _ui_tr('왼쪽'))+_ui_tr(' 터치 · ')+[_ui_tr('위'),_ui_tr('아래'),_ui_tr('왼쪽'),_ui_tr('오른쪽')][data[4]&3]+_ui_tr(' 밀기')
-        return (_ui_tr('[시프트] ') if data[5]&32 else '')+source+' → '+target+'\n'+CONDITIONS[condition(data)]+(_ui_tr(' · 전환 신호음') if data[5]&64 else '')+(_ui_tr(' · 조건 버튼 숨김') if data[5]&4 else '')
+        return (_ui_tr('[시프트] ') if data[5]&32 else '')+source+' → '+target+'\n'+(_ui_tr('스와이프 감지 시') if data[4]&128 and not data[4]&48 else CONDITIONS[condition(data)])+(_ui_tr(' · 전환 신호음') if data[5]&64 else '')+((_ui_tr(' · 터치패드 클릭 차단') if data[4]&128 and not data[4]&48 else _ui_tr(' · 조건 버튼 숨김')) if data[5]&4 else '')
     def new_macro(self):
         if self.busy or not self.loaded:return
         if 'macro_disable' not in self.doc.values:self.progress.configure(text=_ui_tr('매크로 사용 설정을 먼저 읽어 주세요.'));return

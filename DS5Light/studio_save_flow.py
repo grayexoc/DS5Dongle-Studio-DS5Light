@@ -38,6 +38,10 @@ class SaveFlow:
 
     def save_shared_macros(self,after=None):
         if not self.loaded or not self.write_ready or self.busy or self.invalid:return
+        from studio_shift import validate_reserved_inputs
+        try:validate_reserved_inputs(self.doc.macros,self.doc.values)
+        except ValueError as exc:
+            messagebox.showinfo(_ui_tr('입력 조합 제한'),str(exc),parent=self.parent);return
         changes=copy.deepcopy(self.doc.macro_changes)
         if not changes and not self.doc.macros_pending_flash:
             if after:after()

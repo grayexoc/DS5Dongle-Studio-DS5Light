@@ -81,7 +81,7 @@ int main(){
  assert(feature_data[0x84][2]==0&&test_kind==0&&starts==before+1);
  // Capability and preview requests must reach the real command dispatch.
  payload[0]=0;before=activity;command(0x20,payload,5);r=feature_data[0x84];
- assert(r.size()==63&&r[0]==0x66&&r[1]==0x20&&r[2]==0&&r[3]==1&&r[4]==0&&r[9]==7);
+ assert(r.size()==63&&r[0]==0x66&&r[1]==0x20&&r[2]==0&&r[3]==1&&r[4]==0&&r[9]==15);
  assert(!memcmp(r.data()+5,payload+1,4)&&chimes==0&&activity==before);
  for(unsigned n=0;n<5;++n){command(0x20,payload,n);assert(feature_data[0x84][2]==1);}
  payload[0]=2;command(0x20,payload,5);assert(feature_data[0x84][2]==1&&chimes==0);

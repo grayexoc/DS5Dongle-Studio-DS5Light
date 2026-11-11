@@ -629,6 +629,9 @@ static void hold_task(const uint8_t *r, uint16_t len, uint32_t mask, uint32_t di
     for (uint8_t i = 0; i < MACRO_COUNT; i++) {
         const MacroEntry &e = g_table.rec[i].entry;
         if (!macro_is_enabled(disable, i)) { g_stick_latch[i] = 0; continue; }
+        // Swipe click suppression is active for this layer, before gesture recognition.
+        if ((e.gesture & GEST_VALID) && !(e.gesture & (GEST_MOTION | GEST_STICK)) && (e.flags & MACRO_FLAG_REPLACE))
+            g_suppress |= BTN_TOUCHPAD | BTN_PAD_CLICK_LEFT | BTN_PAD_CLICK_RIGHT;
 
         if (macro_is_stick(e)) {
             const bool right = (e.gesture & GEST_STICK_RIGHT) != 0;

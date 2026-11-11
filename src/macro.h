@@ -196,7 +196,7 @@ enum : uint8_t {
     // REPLACE hides the input from the game: the source button is cleared, or
     // the source stick zeroed, in the OUTBOUND report. Without it a remap is
     // additive and the game sees both the original and the replacement.
-    MACRO_FLAG_REPLACE = 1u << 2,
+    MACRO_FLAG_REPLACE = 1u << 2, // HOLD: hide input; swipe: block touchpad click while enabled
     // STICK_ALWAYS extends REPLACE on a STICK row from "while a direction is
     // engaged" to "for as long as the row exists". Without it the stick is only
     // centred past the threshold, so at rest the pad's own jitter still reaches

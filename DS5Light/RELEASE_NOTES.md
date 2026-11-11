@@ -1,3 +1,25 @@
+# v1.0.6 — Mapping and audio device compatibility / 매핑·오디오 장치 호환성
+
+**DS5Light v1.0.6 · Studio v34 · Windows x64 · Pico 2 W**
+
+Files: `DS5Light-win-x64-v1.0.6.zip` (experimental build: `DS5Light-win-x64-v1.0.6-Experimental.zip`), `ds5-studio-light_v34.uf2`.
+
+- Swipe mappings can block touchpad clicks while enabled in the current profile/layer. The redundant swipe press-mode control is replaced by this option. Supporting firmware is required.
+- Audio startup and diagnostics share the same device matching procedure, with physical USB parent identity recovery and manual confirmation for ambiguous outputs.
+- Diagnostic refusal messages distinguish connection, profile and active-audio prerequisites. Selecting an output does not play a waveform.
+- Reserved PS/Edge FN input combinations are blocked with explanations. Existing mic-button mapping policy is preserved.
+- Firmware restores startup blue/player 1 after profile overrides when no game LED command exists; explicit game colours and off commands take precedence.
+- No change to native haptic DSP, transport or buffer policy in this update. Hardware regressions remain separate from code checks.
+
+## 한국어
+
+- 스와이프의 누르는 방식 대신 터치패드 클릭 차단 옵션을 표시합니다. 활성 프로필·레이어에서만 적용하며 구형 펌웨어에는 저장을 거부합니다.
+- 오디오 시작·진단의 장치 매칭을 통일하고 부모 USB 장치 정보와 수동 확인으로 연결을 보완합니다.
+- PS·Edge FN 충돌 조합 안내 및 제한, 마이크 매핑 정책, 초기 LED 복원 수정을 포함합니다.
+- 빌드 후에도 실기기의 클릭 차단·LED 외관·모드 왕복은 별도 확인이 필요합니다.
+
+---
+
 # v1.0.5 — UI and stability fixes / UI·안정성 수정
 
 **DS5Light v1.0.5 · Studio v33 · Windows x64 · Raspberry Pi Pico 2 W**

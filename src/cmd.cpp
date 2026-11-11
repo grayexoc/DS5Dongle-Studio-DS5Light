@@ -1118,7 +1118,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             uint8_t reply[63]{0x66, 0x20, 1, 1};
             if (bufsize >= 5) {
                 reply[4] = buffer[0]; memcpy(reply + 5, buffer + 1, 4);
-                if (buffer[0] == 0) { reply[2] = 0; reply[9] = 7; }
+                if (buffer[0] == 0) { reply[2] = 0; reply[9] = 15; }
                 else if (buffer[0] == 1) {
                     manual_power_note_activity(1000);
                     reply[2] = audio_profile_chime() ? 0 : 2;

@@ -545,3 +545,7 @@ TITLES['Native Haptics Filter']=_ui_tr('햅틱 질감')
 DESCRIPTIONS['speaker_gain']=_ui_tr('음량이 부족할 때 조절\n높이면 왜곡될 수 있음')
 
 LABELS['disable_inactive_disconnect']=_ui_tr('자동 연결 해제 안함')
+
+DESCRIPTIONS['ps_shortcut_enabled']=_ui_tr('PS 기본 단축키: 짧게 Win+G, 길게 Win+Tab. 켜져 있으면 PS를 포함한 Pico 매핑·시프트 조합은 비활성화됩니다. 해당 매핑을 사용하려면 기본 단축키를 끄세요.')
+
+LABELS['ps_shortcut_enabled']=_ui_tr('PS 기본 단축키')

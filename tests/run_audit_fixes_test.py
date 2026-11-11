@@ -495,6 +495,7 @@ unsigned bytes=0,now=0,cost=100,calls=0,polls=0,tasks=0;bool progress=true;
 unsigned tud_audio_available(){return bytes;}uint32_t time_us_32(){return now;}
 void audio_loop(){++calls;now+=cost;if(progress)bytes=bytes>384?bytes-384:0;}
 void cyw43_arch_poll(){++polls;}void tud_task(){++tasks;}
+void usb_profile_event_task(){}
 void service(){
 """+s[a:b]+r"""
 }

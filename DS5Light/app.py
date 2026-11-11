@@ -2400,7 +2400,7 @@ class App:
                 if not any(d.get('maxOutputChannels',0)>=4 and not d.get('isLoopbackDevice') for d in self.ds):
                     messagebox.showerror(_ui_tr('출력 확인'),_ui_tr('Windows에서 듀얼센스 오디오 출력을 찾지 못했습니다. Pico USB 연결과 Windows 소리 설정을 확인하세요.'),parent=self.root);return
                 messagebox.showerror(_ui_tr('출력 확인'),_ui_tr('선택한 출력을 안전하게 식별할 수 없습니다. 장치 이름을 구분하고 새로 고침하세요.'),parent=self.root);return
-            auto_paired=binding.auto_pair_output(self.ds,hid_rows,requested)
+            auto_paired=binding.match_output(self.ds,hid_rows,requested) is not None
             if auto_paired:
                 record('single_device_auto_pair',self.ds,binding,requested)
             if not auto_paired and not messagebox.askyesno(_ui_tr('출력 확인'),_ui_tr('선택한 출력이 현재 Pico의 듀얼센스 오디오 장치인지 확인하세요. 이 출력으로 연결할까요?')+'\n'+matches[0]['name'],parent=self.root):
@@ -2715,7 +2715,7 @@ class App:
             token=self.run_intent.generation,seed=self.studio.observed_profile,paused=paused)
         if observation:
             self._mute_macro_policy = (observation['path'], observation['profile'].get('mute_macro', False))
-            if watch_audio:self._external_profile(observation)
+            self._external_profile(observation)
             self._update_mute_state()
 
         if self.run_intent.profile_paused and self.run_intent.route!=self._run_route():

@@ -236,3 +236,49 @@ void tud_suspend_cb(bool remote_wakeup_en) {
 }
 
 #endif
+
+// Event-only vendor collection: no command reply buffers or flash writes.
+#include "macro.h"
+#include <cstring>
+namespace {
+bool profile_event_subscribed = false;
+uint8_t profile_event_data[15] = {'S','L','P','1',1};
+uint8_t profile_event_state[4] = {255,255,255,255};
+uint32_t profile_event_seq = 0, profile_event_next = 0, profile_event_lease = 0;
+bool profile_event_pending = false;
+}
+uint16_t usb_profile_event_get(uint8_t *buffer, uint16_t length) {
+    if (length < sizeof(profile_event_data)) return 0;
+    profile_event_subscribed = true;
+    profile_event_lease = to_ms_since_boot(get_absolute_time());
+    profile_event_pending = true;
+    memcpy(buffer, profile_event_data, sizeof(profile_event_data));
+    return sizeof(profile_event_data);
+}
+void usb_profile_event_task() {
+    if (!profile_event_subscribed || usb_served_idle_pid() || usb_reconnect_pending()) return;
+    const uint32_t now = to_ms_since_boot(get_absolute_time());
+    if (now - profile_event_lease >= 65000) { profile_event_subscribed = false; return; }
+    if (static_cast<int32_t>(now - profile_event_next) >= 0) {
+        profile_event_next = now + 100;
+        uint8_t slot; bool edited;
+        active_profile_get(slot, edited, nullptr);
+        const uint8_t state[4] = {slot, uint8_t(edited), get_config().auto_haptics_enable,
+#ifdef ENABLE_WAKE_HID
+            uint8_t(macro_uses_mute_button())
+#else
+            0
+#endif
+        };
+        if (memcmp(state, profile_event_state, sizeof(state))) {
+            memcpy(profile_event_state, state, sizeof(state));
+            ++profile_event_seq;
+            memcpy(profile_event_data + 5, &profile_event_seq, 4);
+            memcpy(profile_event_data + 9, state, sizeof(state));
+            profile_event_pending = true;
+        }
+    }
+    if (profile_event_pending && tud_hid_ready() &&
+        tud_hid_report(0x8f, profile_event_data, sizeof(profile_event_data)))
+        profile_event_pending = false;
+}

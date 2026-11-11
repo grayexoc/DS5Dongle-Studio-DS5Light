@@ -1,5 +1,5 @@
-DS5Light v1.0.5 — Modified
-Combined release v1.0.5 / DS5Light v1.0.5 / Studio firmware v33.
+DS5Light v1.0.6 — Modified
+Combined release v1.0.6 / DS5Light v1.0.6 / Studio firmware v34.
 SETUP.md · RELEASE_NOTES.md
 
 Run

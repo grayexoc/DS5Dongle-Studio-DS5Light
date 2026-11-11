@@ -82,6 +82,17 @@ int main(){
  fresh_device();macro_set_entry(0,held);enable_only(1);g_ps_owns_stub=true;
  btn_r3(true);step(10);assert(g_sent_n==0&&macro_busy());
  g_ps_owns_stub=false;macro_task();assert(key_down_now(K_J));
+ // Swipe suppression does not wait for a swipe, and obeys profile/layer/suspend.
+ fresh_device();auto swipe=output(0,T2BTN_CROSS,MACRO_FLAG_REPLACE);
+ swipe.entry.gesture=0x80;macro_set_entry(0,swipe);enable_only(1);step(10);
+ assert(macro_suppress_mask()&BTN_TOUCHPAD);
+ g_cfg.macro_disable=0xffffffffu;step(10);assert(!(macro_suppress_mask()&BTN_TOUCHPAD));
+ g_cfg.macro_disable=~1u;macro_suspend(true);step(10);assert(!macro_suppress_mask());macro_suspend(false);
+ fresh_device();macro_set_entry(0,output(BTN_MUTE,MACRO_SHIFT_KEY,MACRO_FLAG_HOLD));
+ swipe.entry.flags|=MACRO_FLAG_SHIFT;macro_set_entry(1,swipe);enable_only(3);step(10);
+ assert(!(macro_suppress_mask()&BTN_TOUCHPAD));rpt[RPT_BTN2]|=4;step(80);
+ assert(macro_suppress_mask()&BTN_TOUCHPAD);rpt[RPT_BTN2]&=~4;tick(80);
+ assert(!(macro_suppress_mask()&BTN_TOUCHPAD));
  // Cue finishes, starts/stops at zero, does not overrun, and handles timer wrap.
  ProfileChime cue;cue.start(0xfffffff0,1000);assert(cue.active(20));assert(cue.next()==0);
  for(int i=0;i<4000;++i){float x=cue.next();assert(x>=-.061f&&x<=.061f);}

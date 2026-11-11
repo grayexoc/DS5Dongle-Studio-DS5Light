@@ -507,6 +507,7 @@ bool slot_load_body(uint8_t idx, Config_body &out);
 // Currently-loaded profile (RAM only): slot_out=0xFF + returns false when nothing
 // is tracked; otherwise fills the source slot name and sets edited when the live
 // config has diverged from the slot as loaded.
+// name_out may be null for a RAM-only status query without slot flash reads.
 bool active_profile_get(uint8_t &slot_out, bool &edited_out, uint8_t name_out[SLOT_NAME_LEN]);
 bool active_profile_resume_state(uint8_t &slot, uint32_t &fingerprint);
 bool active_profile_restore(uint8_t slot, uint32_t fingerprint);

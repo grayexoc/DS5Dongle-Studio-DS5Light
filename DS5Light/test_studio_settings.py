@@ -48,7 +48,7 @@ class Device:
 
 class SchemaTests(unittest.TestCase):
     def test_full_stable_registry_and_descriptions(self):
-        self.assertEqual(len(FIELDS),140);self.assertEqual(len({f[0] for f in FIELDS.values()}),140)
+        self.assertEqual(len(FIELDS),141);self.assertEqual(len({f[0] for f in FIELDS.values()}),141)
         self.assertEqual(set(FIELDS),set(LABELS));self.assertFalse(any('experimental' in s['title'].lower() for s in SECTIONS))
         for key,f in FIELDS.items():
             text=help_text(key);self.assertIn(f[3],text);self.assertNotIn('('+key+')',text)
@@ -232,7 +232,7 @@ class RevisionTests(unittest.TestCase):
         self.assertEqual(macro_records(structured_macros(r)),r)
         a=[0]*35;a[4]=160;a[5]=16;a[17]=3;normalize_macro(a)
         self.assertEqual(a[5]&2,2);self.assertEqual(a[5]&16,0);self.assertEqual(a[17],0)
-        a[4]=128;a[5]=31;normalize_macro(a);self.assertEqual(a[5],0)
+        a[4]=128;a[5]=31;normalize_macro(a);self.assertEqual(a[5],4)
     def test_macro_stick_threshold_120(self):
         r=macro_records([dict(index=0,gesture=160,stick_thresh=120)])
         self.assertEqual(r['0'][18],120)

@@ -299,6 +299,7 @@ class SettingsClient(StudioClient):
         if row[2] or len(row)<10 or row[3]!=1 or not preview and row[9]&7!=7:
             raise RuntimeError(_ui_tr('시프트·프로필 전환은 v31 이상 실험 펌웨어가 필요합니다.'))
         self._macro_extensions=True
+        self._macro_feature_bits=row[9]
         return row
 
     def require_macro_features(self, records):
@@ -306,6 +307,10 @@ class SettingsClient(StudioClient):
         for row in records:validate_extension(row)
         if any(extended(row) for row in records) and not getattr(self,'_macro_extensions',False):
             self.macro_features()
+        if any(r[4]&128 and not r[4]&48 and r[5]&4 for r in records):
+            if not hasattr(self,'_macro_feature_bits'):self.macro_features()
+            if not self._macro_feature_bits&8:
+                raise RuntimeError(_ui_tr('터치패드 클릭 차단은 지원 펌웨어 업데이트 후 사용할 수 있습니다.'))
 
     def write_macro(self,index,data):
         if not 0<=index<32 or len(data)!=35:raise ValueError(_ui_tr('매크로 형식 오류'))

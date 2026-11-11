@@ -37,6 +37,10 @@ for _section in SECTIONS:
     if _section['title']=='Device & Connection':
         _section['fields'].insert(next(i for i,f in enumerate(_section['fields']) if f[1]=='controller_mode'), [0xC5,'usb_gamepad_mode','u8','XBOX Mode','bool'])
 
+for _section in SECTIONS:
+    if _section['title']=='Device & Connection':
+        _section['fields'].append([0x0e,'ps_shortcut_enabled','u8','PS default shortcuts','bool'])
+
 FIELDS = {f[1]: f for s in SECTIONS for f in s["fields"]}
 
 # A disabled custom effect legitimately has zero active stages on firmware.

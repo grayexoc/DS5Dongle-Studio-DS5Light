@@ -1280,6 +1280,9 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
     (void) buffer;
     (void) reqlen;
 
+    if (itf == 0 && report_type == HID_REPORT_TYPE_FEATURE && report_id == 0x8f)
+        return usb_profile_event_get(buffer, reqlen);
+
     // DSE profiles: while the unlock + prefetch is still in progress, return 0
     // (NAK) for profile reads so the PS app retries rather than caching an
     // empty snapshot. Still kick off the background BT fetch.
@@ -1597,6 +1600,7 @@ int main() {
             cyw43_arch_poll();
             tud_task();
         }
+        usb_profile_event_task();
         interrupt_loop();
 #if ENABLE_BATT_LED
         battery_led_tick();

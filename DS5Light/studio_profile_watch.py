@@ -4,6 +4,7 @@ from studio_i18n import text as _ui_tr
 import queue,threading,time
 from studio_slots import StudioClient,_DEVICE_LOCK,devices
 from device_binding import resolve_hid
+from studio_profile_events import ProfileEvents
 
 
 def read_current(identity,previous=None,full=False):
@@ -42,10 +43,14 @@ class ProfileWatch:
     INTERVAL=3.
     MODE_INTERVAL=30.
     def __init__(self):
+        self.events=ProfileEvents()
         self.results=queue.SimpleQueue();self.busy=False;self.closed=False;self.key=None;self.generation=0
         self.next_check=0.;self.next_full=0.;self.profile=None;self.failures=0;self.was_paused=False
     def tick(self,binding,enabled,token,seed=None,paused=False):
         now=time.monotonic();identity=binding.snapshot();key=(token,identity.serial or identity.hid_path) if enabled else None
+        if enabled:self.events.tick(identity)
+        else:
+            self.events.stop.set();self.events.key=None;self.events.supported=False
         if key!=self.key or paused!=self.was_paused:
             self.key=key;self.was_paused=paused;self.generation+=1
             self.next_check=now+self.INTERVAL;self.next_full=now+self.MODE_INTERVAL
@@ -61,8 +66,10 @@ class ProfileWatch:
                     if data['full']:self.next_full=now+self.MODE_INTERVAL
                 elif error:
                     self.failures+=1
-                self.next_check=now+min(12.,self.INTERVAL*max(1,self.failures))
+                self.next_check=now+(self.MODE_INTERVAL if data and self.events.supported else min(12.,self.INTERVAL*max(1,self.failures)))
+        if self.events.changed:self.next_check=now;self.next_full=now
         if (self.closed or key is None or paused or self.busy or now<self.next_check or not identity.hid_path):return result
+        self.events.changed=False
         generation=self.generation;previous=dict(self.profile) if self.profile else None;full=now>=self.next_full
         self.busy=True;self.next_check=now+self.INTERVAL
         def work():
@@ -70,4 +77,4 @@ class ProfileWatch:
             except Exception as exc:self.results.put((generation,None,str(exc)))
         start_thread(threading.Thread(target=work,name='DS5Light-profile-watch',daemon=True))
         return result
-    def close(self):self.closed=True;self.generation+=1
+    def close(self):self.closed=True;self.generation+=1;self.events.close()

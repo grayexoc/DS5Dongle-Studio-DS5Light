@@ -89,6 +89,12 @@ class MacroEditor(InlineCapture):
         self.gesture_area=tk.Frame(one,bg=CARD);self.gesture_area.columnconfigure(1,weight=1);self.gesture_area.grid(row=3,column=0,columnspan=2,sticky='ew',pady=8)
         self.gesture_control=ControllerChoice(self.gesture_area,textvariable=self.gesture,values=list(self.gestures));self.form(self.gesture_area,0,_ui_tr('방향·동작'),_ui_tr('스틱은 네 방향을 각각 키로 보냅니다. 스와이프는 지정한 방향·터치 위치·손가락 수가 일치할 때 한 번 실행합니다.'),self.gesture_control)
         self.mode_control=self.combo(one,self.mode,list(CONDITIONS.values()));self.form(one,4,_ui_tr('누르는 방식'),_ui_tr('길게 누르기·두 번 누르기·유지 중 하나만 선택합니다. 스틱은 유지, 스와이프는 단발 동작을 사용합니다.'),self.mode_control)
+        self.mode_widgets=one.grid_slaves(row=4)
+        self.swipe_click_row=tk.Frame(one,bg=CARD)
+        self.swipe_click_row.grid(row=4,column=0,columnspan=2,sticky='ew',pady=6)
+        CircleCheck(self.swipe_click_row,text=_ui_tr('터치패드 클릭을 게임에 전달하지 않기'),variable=self.hide,command=lambda:None,background=CARD).pack(anchor='w')
+        tk.Label(self.swipe_click_row,text=_ui_tr('현재 프로필·레이어에서 이 스와이프가 활성인 동안 클릭만 차단합니다. 스와이프 성공 여부와 관계없이 적용하며, 터치 위치와 이동은 유지합니다.'),bg=CARD,fg=MUTED,wraplength=480,justify='left').pack(anchor='w',pady=4)
+
         two=self.card(_ui_tr('▶ 실행 동작'));self.output_kind_control=tk.Frame(two,bg=CARD);self.output_kind_buttons=[]
         for i,(key,title) in enumerate(OUTPUTS.items()):
             button=ttk.Button(self.output_kind_control,text=title,command=lambda title=title:self.output_kind.set(title),style='Filter.TButton');button.grid(row=0,column=i,sticky='ew',padx=(0,5));self.output_kind_control.columnconfigure(i,weight=1,uniform='out');self.output_kind_buttons.append((title,button))
@@ -113,6 +119,7 @@ class MacroEditor(InlineCapture):
         tk.Label(three,text=_ui_tr('동작 규칙'),bg=CARD,fg=GOLD,font=(_ui_tr('맑은 고딕'),10,'bold')).grid(row=0,column=0,columnspan=2,sticky='w',pady=(0,6))
         self.form(three,1,_ui_tr('조건 버튼 전달'),_ui_tr('켜면 선택한 버튼은 게임에 보내지 않고 지정한 동작만 보냅니다. 예를 들어 L3를 R3로 바꾸면 게임에는 R3만 전달됩니다. 누르는 동안 유지에서 사용할 수 있습니다.'),None)
         self.hide_control=CircleCheck(three,text=_ui_tr('조건 버튼 숨기기'),variable=self.hide,command=lambda:None,background=CARD);self.hide_control.grid(row=1,column=1,sticky='e')
+        self.hide_widgets=three.grid_slaves(row=1)
         self.always_control=CircleCheck(three,text=_ui_tr('스틱을 항상 게임에서 숨김'),variable=self.always,command=lambda:None,background=CARD);self.always_control.grid(row=2,column=0,columnspan=2,sticky='w',pady=6)
         self.rules=tk.StringVar();tk.Label(three,textvariable=self.rules,bg=CARD,fg=MUTED,wraplength=560,justify='left').grid(row=3,column=0,columnspan=2,sticky='ew',pady=8)
         self.release_details=tk.Frame(self.key_area,bg=CARD);self.release_details.grid(row=2,column=0,columnspan=4,sticky='ew',pady=(8,0));self.release_details.columnconfigure(1,weight=1)
@@ -189,6 +196,11 @@ class MacroEditor(InlineCapture):
             self.gesture_area.grid_remove() if kind=='button' else self.gesture_area.grid()
             self.gesture_control.configure(values=[name for name,value in self.gestures.items() if bool(value&32)==(kind=='stick')])
             self.mode_control.configure(state='readonly' if kind=='button' else 'disabled')
+            for widget in self.mode_widgets:
+                widget.grid_remove() if kind=='swipe' else widget.grid()
+            self.swipe_click_row.grid() if kind=='swipe' else self.swipe_click_row.grid_remove()
+            for widget in self.hide_widgets:
+                widget.grid_remove() if kind=='swipe' else widget.grid()
             for title,button in self.kind_buttons:button.configure(style='Selected.Filter.TButton' if title==self.kind.get() else 'Filter.TButton')
             for title,button in self.output_kind_buttons:button.configure(state='disabled' if kind=='stick' else 'normal',style='Selected.Filter.TButton' if title==self.output_kind.get() else 'Filter.TButton')
             self.input_summary.set(' + '.join(name for name,v in zip(self.button_names,self.buttons) if v.get()) or _ui_tr('실행할 버튼을 선택하세요.'))
@@ -214,11 +226,16 @@ class MacroEditor(InlineCapture):
             self.threshold_row.grid() if kind=='stick' else self.threshold_row.grid_remove()
             self.release_row.grid() if outkind=='keyboard' and kind!='stick' else self.release_row.grid_remove()
             self.rules.set((_ui_tr('입력을 놓으면 유지한 출력을 해제합니다. 조건 버튼 숨기기를 켜도 지정한 동작은 게임에 전달됩니다.') if held else _ui_tr('조건이 맞으면 한 번 실행하고 출력을 해제합니다. 조건 버튼 숨기기는 누르는 동안 유지에서 사용할 수 있습니다.'))+(_ui_tr('\n키보드·마우스로 동작을 보내면 게임 화면의 버튼 안내가 키보드·마우스용으로 바뀔 수 있습니다.') if outkind in ('keyboard','mouse') else ''))
+            if kind=='swipe':self.rules.set(_ui_tr('스와이프를 감지하면 지정한 동작을 한 번 실행합니다. 클릭 차단은 이 프로필·레이어에서 해당 매핑이 활성인 동안 계속 적용됩니다.'))
+            self.rules.set(self.rules.get()+_ui_tr('\n마이크 버튼을 Pico 매핑·시프트로 사용하면 PC로 보내는 기본 음소거 입력과 마이크 LED 표시를 억제합니다. Edge FN 기본 조합과 PS + Create는 사용할 수 없습니다.'))
             self.release_name.set(next((k for k,v in self.orders.items() if v==int(self.release.get())),_ui_tr('기존 순서 {0}').format(f'{self.release.get()}')))
             preview=self.draft.build(self.state());self.summary.set(self.ui.macro_summary(preview).replace('\n',' · '))
             raw=self.draft.build(self.state(),strict=True)
             records=dict(self.ui.doc.macros);records[str(self.index)]=raw;mask=int(self.ui.doc.values.get('macro_disable',0xffffffff))
             mask=mask&~(1<<self.index) if self.enabled.get() else mask|(1<<self.index)
+            from studio_shift import reserved_input
+            reason=reserved_input(raw,records,mask,bool(self.ui.doc.values.get('ps_shortcut_enabled',0)))
+            if reason:raise ValueError(reason)
             warnings=[s for s in conflicts(records,mask) if f'{self.index+1:02d} ·' in s or f'· {self.index+1:02d} ·' in s]
             self.feedback.set('\n'.join(warnings[:2]) or _ui_tr('편집에 반영한 뒤 Pico 매핑·매크로 저장을 누르세요. 사용 체크는 현재 프로필에 저장합니다.'))
             self.save.configure(state='normal' if not self.ui.busy else 'disabled')
@@ -274,7 +291,13 @@ class MacroEditor(InlineCapture):
         self.stop_capture();self.step=index;self.sync_step();self.canvas.yview_moveto(0)
     def commit(self):
         if self.ui.busy:return
-        try:raw=self.draft.build(self.state(),strict=True)
+        try:
+            raw=self.draft.build(self.state(),strict=True)
+            from studio_shift import reserved_input
+            records=dict(self.ui.doc.macros);records[str(self.index)]=raw
+            mask=int(self.ui.doc.values.get('macro_disable',0xffffffff)) & ~(1<<self.index)
+            reason=reserved_input(raw,records,mask,bool(self.ui.doc.values.get('ps_shortcut_enabled',0)))
+            if reason:raise ValueError(reason)
         except (ValueError,KeyError) as exc:self.feedback.set(str(exc));return
         self.ui.doc.macros[str(self.index)]=raw
         mask=int(self.ui.doc.values.get('macro_disable',0xffffffff))

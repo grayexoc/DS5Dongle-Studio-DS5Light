@@ -734,7 +734,10 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 self.select_category(5);self.progress.configure(text=_ui_tr('저장할 슬롯의 현재 설정 저장을 눌러 주세요.'));return
         if 'macro_disable' in self.doc.changes and self.shared_changes_pending():
             messagebox.showinfo(_ui_tr('매크로 저장 순서'),_ui_tr('Pico 매핑·매크로를 먼저 저장한 뒤 현재 프로필의 사용 체크를 적용하거나 저장하세요.'),parent=self.parent);return
-        try:validate_changes(self.doc.baseline,self.doc.changes)
+        try:
+            validate_changes(self.doc.baseline,self.doc.changes)
+            from studio_shift import validate_reserved_inputs
+            validate_reserved_inputs(self.doc.macros,self.doc.values)
         except ValueError as exc:messagebox.showerror(_ui_tr('설정 확인'),str(exc),parent=self.parent);return
         baseline=dict(self.doc.baseline);changes=dict(self.doc.changes);effects=copy.deepcopy(self.doc.effect_changes)
         effect_baseline=copy.deepcopy(self.doc.effect_baseline)

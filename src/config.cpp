@@ -797,7 +797,7 @@ bool active_profile_get(uint8_t &slot_out, bool &edited_out, uint8_t name_out[SL
     if (g_active_slot < 0 || !g_active_snapshot_valid) {
         slot_out = 0xFF;
         edited_out = false;
-        memset(name_out, 0, SLOT_NAME_LEN);
+        if (name_out) memset(name_out, 0, SLOT_NAME_LEN);
         return false;
     }
     slot_out   = (uint8_t)g_active_slot;
@@ -816,6 +816,7 @@ bool active_profile_get(uint8_t &slot_out, bool &edited_out, uint8_t name_out[SL
     edited_out = memcmp(a, b, volume) != 0 ||
         memcmp(a + headset + 1, b + headset + 1, gain - headset - 1) != 0 ||
         memcmp(a + gain + 1, b + gain + 1, sizeof(Config_body) - gain - 1) != 0;
+    if (!name_out) return true; // Event status does not read/CRC the slot in flash.
     Config_body bd;
     if (!slot_read((uint8_t)g_active_slot, name_out, bd)) {
         memset(name_out, 0, SLOT_NAME_LEN);    // slot since deleted/overwritten

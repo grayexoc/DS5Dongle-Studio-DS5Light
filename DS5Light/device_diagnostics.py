@@ -30,7 +30,7 @@ def tagged_command(client, command, value):
     reply = client.command(command, bytes([value]) + tag, report=0x84,
                            echo=bytes([1, value]) + tag, echo_offset=3, attempts=6)
     if len(reply) != 63 or reply[2] != 0:
-        raise ValueError('진단 미지원 또는 시험 거부 · 최신 펌웨어와 Native 프로필을 확인하세요.')
+        raise ValueError('시험 요청이 거부됐거나 응답 형식이 맞지 않습니다. 신호는 확인되지 않았습니다. 상태 새로 고침으로 연결·프로필·오디오 사용 여부를 확인하세요.')
     return reply
 
 
@@ -202,10 +202,14 @@ def run_output_test(device, kind, cancel, binding, identity, row=None):
     if kind not in TESTS:raise ValueError('Invalid output test')
     client = SettingsClient(device)  # STOP must still run after user cancellation.
     status = decode_status(tagged_command(client, 0x1e, 0))
-    if not status['ready'] or status['audio_processing'] or status['auto_haptics'] != 0:
-        raise RuntimeError('게임·오디오 출력을 정지하고 오디오햅틱 OFF인 Native 프로필을 선택하세요.')
+    if not status['ready']:
+        raise RuntimeError('시험 시작 안 됨 · 듀얼센스 연결 준비가 완료되지 않았습니다.')
+    if status['auto_haptics'] != 0:
+        raise RuntimeError('시험 시작 안 됨 · 오디오햅틱 OFF인 Native 프로필을 선택하세요.')
+    if status['audio_processing']:
+        raise RuntimeError('시험 시작 안 됨 · 게임·다른 앱의 Pico 오디오 출력 또는 마이크 사용을 중지하세요.')
     if kind.startswith('haptic_') or kind == 'speaker':
-        if row is None or not row.get('endpoint_id'):raise RuntimeError('같은 Pico의 4채널 출력을 먼저 확인하세요.')
+        if row is None or not row.get('endpoint_id'):raise RuntimeError('시험 시작 안 됨 · Pico의 4채널 오디오 출력 연결을 확인하지 못했습니다. 오디오 출력 연결 버튼에서 장치를 선택하세요.')
     settings = speaker_settings(client) if kind == 'speaker' else None
     reason = speaker_block_reason(settings) if settings is not None else None
     if reason:

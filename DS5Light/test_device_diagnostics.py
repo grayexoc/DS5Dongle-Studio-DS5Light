@@ -245,6 +245,25 @@ class DiagnosticTests(unittest.TestCase):
 
 
 class DialogTests(unittest.TestCase):
+    def test_manual_output_requires_selection_and_same_hid(self):
+        from tkinter import ttk
+        identity=DeviceIdentity(hid_path=b'a',container_id='pico')
+        self.app.studio.binding._identity=identity
+        row=dict(name='DualSense',endpoint_id='audio',container_id='other',maxOutputChannels=4)
+        for changed in (False,True):
+            self.app.studio.binding._identity=identity
+            with patch.object(tk.Toplevel,'grab_set'):
+                self.dialog.show_audio_outputs(dict(outputs=[row],identity=identity))
+            popup=next(w for w in self.dialog.window.winfo_children() if isinstance(w,tk.Toplevel))
+            box=next(w for w in popup.winfo_children() if isinstance(w,ttk.Combobox))
+            button=next(w for w in popup.winfo_children() if isinstance(w,ttk.Button))
+            button.invoke()
+            self.assertIsNone(self.app.studio.binding.snapshot().endpoint_id)
+            box.current(0)
+            if changed:self.app.studio.binding._identity=DeviceIdentity(hid_path=b'b')
+            button.invoke()
+            self.assertEqual(self.app.studio.binding.snapshot().endpoint_id,None if changed else 'audio')
+
     def setUp(self):
         from device_binding import DeviceBinding
         self.root = tk.Tk();self.root.withdraw()

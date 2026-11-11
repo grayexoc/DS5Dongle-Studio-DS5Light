@@ -77,3 +77,8 @@ bt.cpp. These are host/mock checks, not controller validation.
 
 No firmware linked, UF2 regenerated or device flashed. The existing v31 UF2
 listed above predates these source fixes.
+
+
+## Swipe click blocking (2026-11-11)
+
+Capability command 0x20, subcommand 0, reply byte 9 bit 3 advertises swipe click blocking (other feature bits unchanged). A swipe record uses existing flag bit 2 (MACRO_FLAG_REPLACE) to suppress the touchpad click and qualified half-click inputs for the entire time that record is enabled in the effective profile/layer. Position, contact and swipe recognition remain unchanged. No record size, slot schema or persistent setting was added. Suspend/disabled/inactive layers do not suppress clicks. Apps must check the capability before writing a swipe record carrying this flag. Older firmware does not implement this behaviour.

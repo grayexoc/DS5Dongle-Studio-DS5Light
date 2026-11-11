@@ -179,6 +179,8 @@ void usb_set_idle_pid(bool on) { s_idle_pid = on; }
 bool usb_is_idle_pid(void)     { return s_idle_pid; }
 bool usb_served_idle_pid(void) { return s_served_idle_pid; }
 
+#define PROFILE_EVENT_DESCRIPTOR 0x06,0x00,0xff,0x09,0x52,0xa1,0x01,0x85,0x8f,0x15,0x00,0x26,0xff,0x00,0x75,0x08,0x95,0x0f,0x09,0x52,0x81,0x02,0x09,0x52,0xb1,0x02,0xc0
+
 // Invoked when received GET DEVICE DESCRIPTOR
 // Application return pointer to descriptor
 #ifdef STUDIO_XINPUT_EXPERIMENT
@@ -190,6 +192,7 @@ static constexpr uint8_t xinput_settings_report[] = {
     0x85, 0x81, 0x09, 0x81, 0xb1, 2,
     0x85, 0x84, 0x09, 0x84, 0xb1, 2,
     0xc0,
+    PROFILE_EVENT_DESCRIPTOR,
 };
 #endif
 
@@ -592,9 +595,9 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     descriptor_configuration[offset - 1] = bInterval;
     descriptor_configuration[offset - 8] = bInterval;
     if (ds_mode()) {
-        descriptor_configuration[offset - 16] = 0x21;
+        descriptor_configuration[offset - 16] = 0x3c;
     }else {
-        descriptor_configuration[offset - 16] = 0x95;
+        descriptor_configuration[offset - 16] = 0xb0;
     }
 
     // Wake / Game Bar are runtime features. Advertise REMOTE_WAKEUP only when wake is
@@ -784,9 +787,10 @@ uint8_t const desc_hid_report_ds[] = {
     0xB1, 0x02, //   Feature (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
     0xC0, // End Collection
 
-    // 289 bytes
+    PROFILE_EVENT_DESCRIPTOR,
+    // 316 bytes
 };
-static_assert(sizeof(desc_hid_report_ds) == 289);
+static_assert(sizeof(desc_hid_report_ds) == 316);
 
 uint8_t const desc_hid_report_dse[] = {
     0x05, 0x01, // Usage Page (Generic Desktop Ctrls)
@@ -989,9 +993,10 @@ uint8_t const desc_hid_report_dse[] = {
     0x09, 0x53, //   Usage (0x53)
     0xB1, 0x02, //   Feature (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position,Non-volatile)
     0xC0, // End Collection
-    // 405 bytes
+    PROFILE_EVENT_DESCRIPTOR,
+    // 432 bytes
 };
-static_assert(sizeof(desc_hid_report_dse) == 405);
+static_assert(sizeof(desc_hid_report_dse) == 432);
 
 #ifdef ENABLE_WAKE_HID
 // 41-byte boot-keyboard report descriptor (modifier byte + reserved + 6 keycodes,

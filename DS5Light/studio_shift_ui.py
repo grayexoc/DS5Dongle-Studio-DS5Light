@@ -64,6 +64,8 @@ class ShiftUI:
             records,mask=set_shift_key(self.doc.macros,int(self.doc.values.get('macro_disable',0xffffffff)),bit)
             row=shift_key(records)
             if row and not self.shift_enabled.get():mask|=1<<row[0]
+            from studio_shift import validate_reserved_inputs
+            validate_reserved_inputs(records,dict(self.doc.values,macro_disable=mask))
             self.doc.macros=records;self.changed('macro_disable',mask)
             self.render_fields()
         except ValueError as exc:self.shift_notice.set(str(exc))
