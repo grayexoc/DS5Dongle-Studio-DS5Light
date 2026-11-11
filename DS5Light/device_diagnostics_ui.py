@@ -1,4 +1,5 @@
 """Explicit device checks in a modal dialog; idle application does no extra work."""
+from thread_start import start_thread
 import json
 import queue
 import threading
@@ -244,7 +245,7 @@ class DeviceDiagnosticsDialog:
                     lambda device:operation(device, identity), self.cancel)
                 self.results.put((kind, value, None))
             except Exception as exc:self.results.put((kind, None, str(exc)))
-        threading.Thread(target=work, name='DS5Light-device-diagnostics', daemon=True).start()
+        start_thread(threading.Thread(target=work, name='DS5Light-device-diagnostics', daemon=True))
         self.job = self.window.after(100, self.poll)
 
     def snapshot(self):
@@ -502,5 +503,5 @@ def open_diagnostics(app):
             app._diagnostics_support=dict(identity=diagnostic_identity(app),supported=supported,hint=hint)
             app.status.set(hint+' '+tr(error or ''))
         update_diagnostics_button(app)
-    threading.Thread(target=work,name='DS5Light-diagnostics-support',daemon=True).start()
+    start_thread(threading.Thread(target=work,name='DS5Light-diagnostics-support',daemon=True))
     app.root.after(60,finish)

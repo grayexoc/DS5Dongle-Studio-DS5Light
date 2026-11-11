@@ -1,4 +1,5 @@
 """Read only current profile: no full slot scan, no normal HID enumeration."""
+from thread_start import start_thread
 from studio_i18n import text as _ui_tr
 import queue,threading,time
 from studio_slots import StudioClient,_DEVICE_LOCK,devices
@@ -67,6 +68,6 @@ class ProfileWatch:
         def work():
             try:self.results.put((generation,read_current(identity,previous,full),None))
             except Exception as exc:self.results.put((generation,None,str(exc)))
-        threading.Thread(target=work,name='DS5Light-profile-watch',daemon=True).start()
+        start_thread(threading.Thread(target=work,name='DS5Light-profile-watch',daemon=True))
         return result
     def close(self):self.closed=True;self.generation+=1

@@ -25,6 +25,10 @@ ALIASES={'△':_ui_tr('트라이앵글'),'○':_ui_tr('서클'),'×':_ui_tr('크
     _ui_tr('터치 오른쪽'):_ui_tr('터치패드 오른쪽 클릭'),'PS':_ui_tr('PS 버튼'),'Mute':_ui_tr('마이크 버튼')}
 
 
+# Compact English option captions still refer to the same physical buttons.
+ALIASES.update({'Hold '+key:key for key in ('L1','R1','L2','R2','L3','R3')})
+ALIASES.update({'Right stick':_ui_tr('오른쪽 스틱'),'Left stick':_ui_tr('왼쪽 스틱')})
+
 def readable(value):return ALIASES.get(str(value),str(value))
 
 

@@ -63,3 +63,33 @@ class TerminologyTests(unittest.TestCase):
   self.assertEqual(catalog['체크 해제'],'Unchecked')
   for source,target in catalog.items():
    self.assertNotIn('audiohaptic',target.lower(),source)
+
+
+@skipUnless(localization.LANGUAGE=='en', 'English presentation checks')
+class EnglishRevisionTests(unittest.TestCase):
+ def test_new_layer_and_profile_terms(self):
+  from studio_help import label
+  self.assertEqual(text('프로필 {0}번').format(8),'Profile 8')
+  self.assertEqual(text('시프트 레이어에서 사용'),'Use in shift layer')
+  self.assertEqual(label('speaker_gain'),'DualSense speaker gain')
+  self.assertEqual(label('disable_inactive_disconnect'),'Disable idle disconnect')
+  self.assertEqual(localization.tr('오디오햅틱 세기'),'Audio haptics strength')
+ def test_gyro_conditions_keep_button_icons(self):
+  from studio_help import options
+  from studio_fields import FIELDS
+  from controller_glyphs import icon_key,glyph
+  import tkinter as tk
+  root=tk.Tk();root.withdraw()
+  try:
+   for key in ('gyro_mode','at_mode','at_l2_mode'):
+    for _,value in options(FIELDS[key]):
+     if value.startswith('Hold '):
+      self.assertEqual(icon_key(value),value[5:])
+      self.assertIsNotNone(glyph(root,value),value)
+   from studio_button_names import NAMES
+   for name in NAMES:self.assertIsNotNone(glyph(root,name),name)
+  finally:root.destroy()
+ def test_shift_flags_and_profile_outputs_are_translated(self):
+  # The complete editor is exercised by EnglishUI; check the previously hidden captions too.
+  for key in ('시프트 레이어에서 사용','전환 신호음','프로필 {0}번'):
+   self.assertFalse(kr.search(text(key)),key)

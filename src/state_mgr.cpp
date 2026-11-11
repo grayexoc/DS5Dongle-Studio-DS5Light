@@ -75,6 +75,7 @@ void state_report_sent(const uint8_t *data, bool lightbar_restore) {
     output_diagnostics.accepted(data);
     output_test.accepted(data);
     player_led_sent.accepted(data);
+    if ((data[1] & 8) || (data[38] & 2)) player_led_sent.release_pattern();
     rumble_sent.accepted(data);
     const auto &c = get_config();
     lightbar_fixed_policy.accepted(data, c.lightbar_off, c.lightbar_fixed, c.lightbar_r, c.lightbar_g, c.lightbar_b, lightbar_restore);

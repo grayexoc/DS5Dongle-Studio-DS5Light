@@ -14,17 +14,34 @@ int main() {
     assert(std::fabs(defaults.haptics_gain-1.2f)<0.0001f && defaults.haptics_aa==1);
     LightbarFixed p;
     uint8_t report[63]{}, original[63]{};
-    assert(p.pending(false,false,0,0,0));
-    p.apply(report,false,false,0,0,0);
-    assert((report[38]&2)&&report[41]==2&&!(report[1]&4));
-    assert(p.pending(false,false,0,0,0)); // enqueue/drop is not acceptance
-    uint8_t startup[63];memcpy(startup,report,63);
-    p.accepted(report,false,false,0,0,0);
-    memset(report,0,63);p.apply(report,false,false,0,0,0);
-    assert((report[1]&4)&&!(report[38]&2)&&!(report[44]|report[45]|report[46]));
-    p.accepted(report,false,false,0,0,0,p.is_restore_report(report));
+    // An unseen colour is not an explicit black/off command.
     assert(!p.pending(false,false,0,0,0));
-
+    p.apply(report,false,false,0,0,0);
+    assert(!(report[1]&12)&&!(report[38]&2));
+    p.apply(report,false,true,12,34,56);
+    assert((report[38]&2)&&report[41]==2);
+    uint8_t startup[63];memcpy(startup,report,63);
+    p.accepted(report,false,true,12,34,56);
+    memset(report,0,63);p.apply(report,false,true,12,34,56);
+    p.accepted(report,false,true,12,34,56);
+    memset(report,0,63);p.apply(report,false,false,0,0,0);
+    assert((report[1]&8)&&!(report[1]&4));
+    p.accepted(report,false,false,0,0,0);
+    assert(!p.pending(false,false,0,0,0));
+    // A queued old override arriving after release must trigger another release.
+    uint8_t late_override[63]{};late_override[1]=4;late_override[44]=12;
+    p.accepted(late_override,false,false,0,0,0);
+    assert(p.pending(false,false,0,0,0));
+    memset(report,0,63);p.apply(report,false,false,0,0,0);
+    assert((report[1]&8)&&!(report[1]&4));
+    p.accepted(report,false,false,0,0,0);
+    assert(!p.pending(false,false,0,0,0));
+    // A real host colour requests Bluetooth setup before RGB restoration.
+    uint8_t first[63]{};first[1]=4;first[44]=90;p.host_update(first,63);
+    memcpy(report,first,63);p.apply(report,false,false,0,0,0);
+    p.accepted(report,false,false,0,0,0);
+    memcpy(report,first,63);p.apply(report,false,false,0,0,0);
+    p.accepted(report,false,false,0,0,0,p.is_restore_report(report));
     memset(original,0x5a,63);memcpy(report,original,63);
     p.apply(report,false,true,12,34,56);
     assert((report[1]&12)==4&&!(report[38]&2));
@@ -83,7 +100,7 @@ int main() {
     // Repeated identical game colours must not create periodic control traffic.
     memset(host,0,63);host[1]=4;
     for(int i=0;i<1000;i++) { p.host_update(host,63);assert(!p.pending(false,false,0,0,0)); }
-    p.reset();assert(p.pending(false,false,0,0,0));
+    p.reset();assert(!p.pending(false,false,0,0,0));
 
     Config_body legacy;
     memset(&legacy, 0xff, sizeof(legacy));

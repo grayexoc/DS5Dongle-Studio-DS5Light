@@ -8,6 +8,24 @@ from studio_backup import backup_all,_SLOT_DEFAULTS
 from test_studio_settings import defaults
 
 class AuditRepairs(unittest.TestCase):
+ def test_legacy_slot_and_power_lock_timeout_never_opens_device(self):
+  from studio_slots import run_device
+  from studio_power import exchange
+  for module,operation in (('studio_slots',lambda:run_device(b'fake')),('studio_power',lambda:exchange(b'fake',1))):
+   lock=Mock();lock.acquire.return_value=False
+   with patch(module+'._DEVICE_LOCK',lock),patch('hid.device') as device:
+    with self.assertRaises(TimeoutError):operation()
+    lock.acquire.assert_called_once_with(timeout=3)
+    lock.release.assert_not_called();device.assert_not_called()
+ def test_legacy_slot_and_power_release_lock_on_open_failure(self):
+  from studio_slots import run_device
+  from studio_power import exchange
+  for module,operation in (('studio_slots',lambda:run_device(b'fake')),('studio_power',lambda:exchange(b'fake',1))):
+   lock=Mock();lock.acquire.return_value=True
+   with patch(module+'._DEVICE_LOCK',lock),patch('hid.device') as device:
+    device.return_value.open_path.side_effect=OSError('disconnected')
+    with self.assertRaises(OSError):operation()
+    lock.release.assert_called_once();device.return_value.close.assert_called_once()
  def test_cancelled_wait_never_opens_device(self):
   obj=SimpleNamespace(path=b'fake',app=SimpleNamespace(),cancel=threading.Event())
   errors=[]

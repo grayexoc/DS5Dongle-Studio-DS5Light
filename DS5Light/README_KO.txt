@@ -1,5 +1,5 @@
-DS5Light v1.0.4 — Modified
-통합 릴리즈 v1.0.4 / DS5Light v1.0.4 / Studio 펌웨어 v32.
+DS5Light v1.0.5 — Modified
+통합 릴리즈 v1.0.5 / DS5Light v1.0.5 / Studio 펌웨어 v33.
 SETUP_KO.md · RELEASE_NOTES.md
 
 실행

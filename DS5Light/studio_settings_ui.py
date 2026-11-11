@@ -1,4 +1,5 @@
 """Lazy native Studio editor. Local edits, explicit serialized HID jobs."""
+from thread_start import start_thread
 from studio_i18n import text as _ui_tr
 import copy,json,queue,threading,tkinter as tk
 from tkinter import ttk,filedialog
@@ -666,7 +667,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             except Exception as exc:
                 from studio_settings_protocol import PolicySaveError
                 self.results.put((kind,exc.current if isinstance(exc,PolicySaveError) else None,str(exc)))
-        try:threading.Thread(target=worker,name='DS5Light-Studio-settings',daemon=True).start()
+        try:start_thread(threading.Thread(target=worker,name='DS5Light-Studio-settings',daemon=True))
         except Exception:
             self.abort_task_setup()
             raise
@@ -703,7 +704,9 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         if power_blocked(self.app):return
         if self.busy or self.app.studio.busy:return
         self.resume=self.app.engine is not None
+        self._resume_token=None
         if self.app.engine:
+            route=self.app._run_route()
             self.cancel.clear();self.progress.clear()
             self.busy=True
             try:
@@ -721,6 +724,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                     return
                 self.task(kind,operation)
             self.app.stop(on_complete=begin)
+            self._resume_token=(self.app.run_intent.generation,route)
         else:self.task(kind,operation)
     def apply(self,persist=False,target=None,after=None):
         if self.invalid or not self.loaded or not self.write_ready or self.busy:return
@@ -945,7 +949,13 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             if callback:self.parent.after_idle(callback)
         if kind in ('read','entry_read','slots','macros'):self.schedule_entry()
         if resume and not error and not self.app._close_requested:
-            self.parent.after(700 if isinstance(result,dict) and result.get('reconnect') and not result.get('reloaded') else 0,self.app.start)
+            token=getattr(self,'_resume_token',None)
+            def resume_audio():
+                if (token is None or self.closed or self.busy or self.cancel.is_set()
+                        or self.app._close_requested
+                        or token!=(self.app.run_intent.generation,self.app._run_route())):return
+                self.app.start()
+            self.parent.after(700 if isinstance(result,dict) and result.get('reconnect') and not result.get('reloaded') else 0,resume_audio)
     def revert(self):
         self.doc.revert();self.invalid.clear();self.progress.clear();self.render_fields()
         if self.external_stale:self.begin_entry()

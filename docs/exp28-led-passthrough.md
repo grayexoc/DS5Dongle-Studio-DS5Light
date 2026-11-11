@@ -1,6 +1,6 @@
 # exp.28: LED passthrough and restoration
 
-- Run Bluetooth lightbar LIGHT_OUT setup once per connection, including passthrough profiles. Reapply cached host RGB (black when no host colour exists) after successful setup submission. No invented blue fallback.
+- Updated 2026-11-11: distinguish an unseen host colour from explicit black/off. Do not send startup LIGHT_OUT or RGB in an untouched passthrough profile. Run Bluetooth setup when a colour/override requires ownership. Restore actual host RGB, including black; when no host colour exists, release a previous override to the controller instead of inventing black. Controller-managed appearance after release requires physical validation. No invented blue fallback.
 - Capture release/setup commands only from original host reports, not synthesized cached ticks. Retry pending commands after queue failures, then stop replaying them after successful L2CAP submission.
 - Keep game RGB while a fixed/off profile owns the lightbar. On returning to passthrough, submit the latest game colour, including black/off, until a matching restore report succeeds.
 - Host release invalidates the cached player pattern, not RGB. Explicit LIGHT_OUT clears cached RGB before applying any RGB included in the same host report. Player patterns follow release/setup in a subsequent report.

@@ -13,14 +13,14 @@ Thank you to the original authors and contributors. This repository contains mod
 
 ## Download and quick start
 
-**Release v1.0.4 · DS5Light v1.0.4 · Studio firmware v32**
+**Release v1.0.5 · DS5Light v1.0.5 · Studio firmware v33**
 
 Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/latest):
 
 | File | Purpose |
 | --- | --- |
-| `ds5-studio-light_v32.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
-| `DS5Light-win-x64-v1.0.4.zip` | Complete Windows x64 app package. Python is not required. |
+| `ds5-studio-light_v33.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
+| `DS5Light-win-x64-v1.0.5.zip` | Complete Windows x64 app package. Python is not required. |
 
 1. Back up current dongle settings and slots. To install this firmware, enter BOOTSEL mode on the Pico 2 W and copy the UF2 to its USB drive. The app does not flash firmware automatically.
 2. Extract the entire app ZIP into a writable folder. Run `DS5Light.exe`, keeping `_internal` beside it. GitHub's automatic **Source code** archives are not the executable package.
@@ -33,16 +33,6 @@ Recommended presets change only the current audio-haptics fields, preserving oth
 DS5Light requires Windows 10/11 x64; selected-application capture requires build 20348 or later. Earlier Windows 10 builds can use whole-device capture. Additional settings and tests require firmware support; OLED features need the appropriate display and wiring.
 
 [Detailed setup](DS5Light/SETUP.md) · [App guide](DS5Light/README.txt) · [Versions and release notes](DS5Light/RELEASE_NOTES.md)
-
-## New in v1.0.4 / Studio v32
-
-- **High-DPI UI:** Per-monitor DPI awareness and a matching executable manifest, logical pixel scaling without scaling point fonts twice, DPI-aware shared controls and popup sizing, and window bounds constrained to the monitor work area. Popups share the main window scale; moving only a popup to another monitor does not select an independent scale.
-- **Shift layer:** Choose a controller button as a momentary Shift key, then edit Base and Shift mappings. Unassigned Shift bindings inherit Base. The Shift key is suppressed from game input and uses one of the 32 global mapping/macro records; enable states remain profile-specific.
-- **Profile-switch mapping:** Bind an action to profile 1–8, with an optional confirmation chime and a preview that does not change profiles. Empty/current slots do not trigger a switch. Source buttons must be released before another switch; chime volume follows the profile's speaker/headset settings.
-- **Settings and reliability:** Improved lighting/speaker setting layout and combobox wheel behavior; clearer fork firmware version display; cancellation checks while waiting for a device lock; backup of legacy settings without silently normalizing them. Studio v32 improves PS-shortcut key-up retry and keyboard ownership with wake/macro actions.
-- **Source and package cleanup:** Removed legacy web-profile exports, an outdated feature summary, an unused source-artwork duplicate and obsolete upstream firmware binaries from the current source tree. Current presets, tests, recovery firmware, attribution and licenses remain.
-
-See [mapping save order and compatibility](DS5Light/MAPPING_GUIDE_KO.md) and [DPI details](DS5Light/DPI_LAYOUT_KO.md). In the app: **stage edits → save Pico mappings/macros → save the current profile**. Clear or disable extended mapping records before downgrading to firmware that does not support them. Edge onboard Fn+face combinations can conflict with the controller's own profiles.
 
 ## DS5Light features in this version
 
@@ -64,6 +54,9 @@ The filter uses changes over time and energy levels across frequency bands. It d
 
 ### Integrated Studio configuration
 
+- Momentary Shift mappings: Choose a Shift button and edit Base/Shift layers; unspecified Shift inputs inherit Base. The Shift key is suppressed from game input and uses one of 32 global macro records, with per-profile enable states.
+- Profile-switch mapping: Assign profile 1–8, with an optional chime and preview. Empty/current profiles are not switched; release the source input before another activation. Chime volume follows the profile's speaker/headset settings.
+
 - Dongle settings: Read and edit Studio settings for audio haptics, triggers, gyro, buttons, macros, and LEDs directly in the app.
 - Profiles and slots: Load profiles stored on the dongle, manage settings and slots, and back up or restore configurations.
 - Trigger and macro editing: Edit trigger effects and button actions, then apply the settings to the dongle.
@@ -71,10 +64,15 @@ The filter uses changes over time and energy levels across frequency bands. It d
 
 ### Convenience and diagnostics
 
+- High-DPI layout: Per-monitor awareness, logical pixel scaling, DPI-aware shared controls and work-area bounds. Popups share the main window scale, including when the main window moves between monitors.
+- Task lifecycle: Device-lock waits are bounded, pending resume callbacks respect later stop/route changes, and thread startup avoids a Tk finalizer/startup-handshake deadlock.
+
 - Controller status: View connection and battery information.
 - Device diagnostics and output tests: Read dongle status and output statistics, and run individual tests for conventional rumble, adaptive triggers, and native haptics.
 - Microphone button shortcut: Assign a keyboard shortcut to the DualSense Mute button.
 - Korean and English UI: Switch languages and use setting descriptions to help adjust features in the app.
+
+Save mapping changes in this order: **stage edits → save Pico mappings/macros → save the current profile**. Back up before changing slots. Clear/disable extended records before downgrading to unsupported firmware; Edge onboard Fn+face combinations may conflict with onboard profile switching. [Mapping guide](DS5Light/MAPPING_GUIDE_KO.md) · [DPI details](DS5Light/DPI_LAYOUT_KO.md).
 
 Availability of additional settings and diagnostics depends on the connected firmware and device environment.
 
@@ -130,14 +128,14 @@ DS5Dongle-Studio 펌웨어와 DS5Light를 기반으로, 오디오 햅틱 처리�
 
 ## 다운로드와 시작
 
-**릴리즈 v1.0.4 · DS5Light v1.0.4 · Studio 펌웨어 v32**
+**릴리즈 v1.0.5 · DS5Light v1.0.5 · Studio 펌웨어 v33**
 
 [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/latest)에서 첨부 파일을 받으세요.
 
 | 파일 | 용도 |
 | --- | --- |
-| `ds5-studio-light_v32.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
-| `DS5Light-win-x64-v1.0.4.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
+| `ds5-studio-light_v33.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
+| `DS5Light-win-x64-v1.0.5.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
 
 1. 현재 동글 설정과 슬롯을 백업합니다. 펌웨어 설치 시 Pico 2 W를 BOOTSEL 모드로 연결하고 USB 드라이브에 UF2를 복사하세요. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
 2. 앱 ZIP 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행합니다. `_internal` 폴더를 함께 유지하세요. GitHub의 자동 **Source code** 압축 파일은 실행 배포본이 아닙니다.
@@ -150,16 +148,6 @@ DS5Dongle-Studio 펌웨어와 DS5Light를 기반으로, 오디오 햅틱 처리�
 DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 이상이 필요합니다. 이전 Windows 10에서는 장치 전체 캡처를 사용하세요. 추가 설정·테스트에는 펌웨어 지원이 필요하며 OLED는 해당 디스플레이와 배선이 필요합니다.
 
 [상세 설치 안내](DS5Light/SETUP_KO.md) · [앱 사용법](DS5Light/README_KO.txt) · [버전 및 릴리즈 안내](DS5Light/RELEASE_NOTES.md)
-
-## v1.0.4 / Studio v32 추가·개선
-
-- **고배율 DPI 최적화:** 모니터별 DPI 인식과 실행 파일 manifest, 포인트 글꼴의 이중 확대를 피하는 논리 픽셀 변환, 공통 컨트롤·팝업 크기 조절과 모니터 작업 영역 안의 창 배치를 적용했습니다. 팝업은 메인 창 배율을 공유하며 팝업만 다른 모니터로 옮겨도 독립 배율로 바뀌지는 않습니다.
-- **시프트 레이어:** 컨트롤러 버튼을 누르는 동안 기본/시프트 매핑을 전환합니다. 지정하지 않은 시프트 입력은 기본 매핑을 상속합니다. 시프트키 자체는 게임으로 보내지 않으며 공통 매핑·매크로 32칸 중 한 칸을 사용합니다. 사용 체크는 프로필별입니다.
-- **프로필 전환 매핑:** 동작에 프로필 1~8 전환을 지정하고 선택적으로 전환 신호음·미리듣기를 사용할 수 있습니다. 빈 슬롯·현재 슬롯은 전환하지 않으며 재전환 전 입력 버튼을 놓아야 합니다. 신호음은 프로필의 스피커 음량·헤드셋 경로를 따릅니다.
-- **설정·안정성:** 조명·스피커 설정 배치, 콤보박스 휠 동작, 포크 펌웨어 버전 표시, 장치 잠금 대기 중 취소와 기존 설정을 그대로 보존하는 백업 처리를 보완했습니다. Studio v32는 PS 단축키 해제 재시도와 깨우기·매크로 간 키보드 사용 처리를 개선했습니다.
-- **소스·패키지 정리:** 구형 웹 프로필, 오래된 기능 요약, 사용하지 않는 원본 그림 중복 파일과 과거 원본 UF2를 현재 소스에서 제거했습니다. 현재 프리셋·테스트·복구용 파일·출처·라이선스는 유지합니다.
-
-앱 저장 순서는 **편집에 반영 → Pico 매핑·매크로 저장 → 현재 프로필에 저장**입니다. [매핑 안내](DS5Light/MAPPING_GUIDE_KO.md)와 [DPI 안내](DS5Light/DPI_LAYOUT_KO.md)를 참고하세요. 구형 펌웨어로 내리기 전 확장 레코드를 제거하거나 사용 체크를 해제하세요. Edge 자체 Fn+도형 버튼은 컨트롤러 내장 프로필과 겹칠 수 있습니다.
 
 ## 이 버전의 DS5Light 주요 기능
 
@@ -175,6 +163,9 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 
 ### Studio 설정 통합
 
+- 시프트 매핑: 시프트 버튼을 누르는 동안 기본/시프트 레이어를 전환하고 미지정 입력은 기본 매핑을 상속합니다. 시프트키는 게임으로 보내지 않으며 공통 매크로 32칸 중 한 칸을 사용합니다. 사용 체크는 프로필별입니다.
+- 프로필 전환 매핑: 프로필 1~8을 동작에 지정하고 선택적으로 전환 신호음·미리듣기를 사용합니다. 빈 슬롯·현재 슬롯은 전환하지 않으며 재전환 전 입력을 놓아야 합니다. 신호음은 프로필의 스피커 음량·헤드셋 경로를 따릅니다.
+
 - 동글 설정 편집: 오디오 햅틱, 트리거, 자이로, 버튼·매크로, LED 등 Studio 설정을 앱에서 조회하고 수정합니다.
 - 프로필·슬롯 관리: 동글에 저장된 프로필을 불러오고, 설정과 슬롯을 관리하며 백업·복원 기능을 사용합니다.
 - 트리거·매크로 편집: 트리거 효과와 버튼 동작을 편집하고 관련 설정을 동글에 적용합니다.
@@ -182,10 +173,15 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 
 ### 사용 편의 및 진단
 
+- 고배율 UI: 모니터별 DPI 인식, 논리 픽셀 변환, 공통 컨트롤 배율과 작업 영역 안의 창 배치를 지원합니다. 팝업은 메인 창 배율을 공유하며 메인 창 이동 시 함께 갱신됩니다.
+- 작업 수명 관리: 장치 잠금 대기를 제한하고, 지연 재시작은 이후의 정지·경로 변경을 존중합니다. 스레드 시작 시 Tk 객체 정리와 시작 신호가 서로 기다리는 교착을 방지합니다.
+
 - 컨트롤러 상태 표시: 연결 상태와 배터리 정보를 확인할 수 있습니다.
 - 장치 진단과 출력 테스트: 동글 상태와 출력 통계를 조회하고 일반 진동·트리거·네이티브 햅틱을 개별 시험할 수 있습니다.
 - 마이크 버튼 단축키: DualSense의 Mute 버튼에 키보드 단축키를 지정할 수 있습니다.
 - 한국어·영어 UI: 언어 전환과 설정 항목 설명을 제공하여 앱에서 기능을 확인하며 조절할 수 있습니다.
+
+매핑 저장 순서는 **편집에 반영 → Pico 매핑·매크로 저장 → 현재 프로필에 저장**입니다. 슬롯 변경 전에 백업하고, 구형 펌웨어로 내리기 전 확장 레코드를 제거하거나 해제하세요. Edge 자체 Fn+도형 버튼은 내장 프로필 전환과 겹칠 수 있습니다. [매핑 안내](DS5Light/MAPPING_GUIDE_KO.md) · [DPI 안내](DS5Light/DPI_LAYOUT_KO.md).
 
 추가 설정과 진단 기능의 사용 가능 여부는 연결된 펌웨어와 장치 환경에 따라 달라집니다.
 

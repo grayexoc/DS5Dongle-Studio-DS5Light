@@ -98,8 +98,10 @@ int main() {
     memcpy(state.bytes,state_init_data,63);
     lightbar_fixed_policy.reset();player_led_sent.reset();
     state_set(data,63);
-    assert(!(data[1]&0x1d) && (data[38]&2) && data[41]==2); // one BT setup, no invented colour
-    send();send(); // setup then cached/default black, never repeated setup
+    assert(!(data[1]&0x0c) && !(data[38]&2)); // no host colour: no setup or black write
+    uint8_t explicit_black[63]{};explicit_black[1]=4;
+    state_host_led_update(explicit_black,63);
+    send();send(); // actual host black: setup then explicit off
     state_set(data,63);assert(!(data[38]&2));
     assert(!player_led_wants_report());
     state.bytes[1]=0x14;state.bytes[43]=4;
@@ -201,6 +203,12 @@ int main() {
     state.bytes[38]=1;state.bytes[42]=1;
     config.player_led_bright=2;send();config.player_led_bright=0;
     state_set(data,63);assert((data[38]&1)&&data[42]==1);send();
+    // A lightbar release may reset the player pattern; reapply the host pattern.
+    memset(state.bytes,0,63);state.bytes[1]=16;state.bytes[43]=4;
+    send();assert(!player_led_wants_report());
+    uint8_t release_only[63]{};release_only[1]=8;
+    state_report_sent(release_only,false);
+    assert(player_led_wants_report());send();assert(!player_led_wants_report());
     // Host release clears the player cache, not RGB. Explicit LIGHT_OUT clears RGB.
     memset(state.bytes,0,63);state.bytes[1]=0x14;state.bytes[43]=4;state.bytes[44]=90;
     uint8_t command[63]{};command[1]=8;

@@ -1,4 +1,5 @@
 """Native macro presentation, local recording and explicitly enabled diagnostics."""
+from thread_start import start_thread
 from studio_i18n import text as _ui_tr
 from ui_controls import widget_trace
 import json,threading,time,queue,tkinter as tk
@@ -58,7 +59,7 @@ class LiveMonitor:
     def __init__(self,path,diagnostics=True):
         self.path=path;self.diagnostics=diagnostics;self.stop=threading.Event();self.results=queue.Queue(maxsize=1);self.thread=None
     def start(self):
-        self.thread=threading.Thread(target=self.run,name='DS5Light-Studio-live',daemon=True);self.thread.start()
+        self.thread=threading.Thread(target=self.run,name='DS5Light-Studio-live',daemon=True);start_thread(self.thread)
     def publish(self,data):
         try:self.results.get_nowait()
         except queue.Empty:pass

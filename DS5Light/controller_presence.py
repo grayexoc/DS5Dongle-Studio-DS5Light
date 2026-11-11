@@ -1,4 +1,5 @@
 """Symptom-triggered USB checks, separate from the audio processing thread."""
+from thread_start import start_thread
 import queue
 import threading
 import time
@@ -73,7 +74,7 @@ class ControllerPresence:
             except Exception:
                 result=(None,serial)
             self.results.put((generation,*result))
-        threading.Thread(target=work,name='DS5Light-controller-presence',daemon=True).start()
+        start_thread(threading.Thread(target=work,name='DS5Light-controller-presence',daemon=True))
 
     def close(self):
         self.closed=True
@@ -121,6 +122,6 @@ class IdleControllerPresence:
             except Exception:value=(None,None)
             finally:_DEVICE_LOCK.release()
             self.results.put((generation,*value))
-        threading.Thread(target=work,name='DS5Light-idle-presence',daemon=True).start()
+        start_thread(threading.Thread(target=work,name='DS5Light-idle-presence',daemon=True))
         return result
     def close(self):self.closed=True;self.generation+=1

@@ -1,3 +1,4 @@
+from thread_start import start_thread
 from studio_i18n import text as _ui_tr
 import os
 
@@ -1971,7 +1972,7 @@ class App:
 
             self._refresh_results.put(("games",result,error,selected_pid,initial))
 
-        threading.Thread(target=collect,daemon=True).start()
+        start_thread(threading.Thread(target=collect,daemon=True))
 
     def _finish_game_refresh(self,rows,error,selected_pid,initial):
 
@@ -2035,7 +2036,7 @@ class App:
 
             self._refresh_results.put(("devices",result,error))
 
-        threading.Thread(target=collect,daemon=True).start()
+        start_thread(threading.Thread(target=collect,daemon=True))
 
     def _finish_device_refresh(self,rows,error):
 
@@ -2391,7 +2392,7 @@ class App:
                     if binding.snapshot()==identity and self.run_intent.requested and self.run_intent.generation==generation:
                         if refreshed is not None:self.ds=refreshed
                         self._start_after_profile_check(rows)
-                threading.Thread(target=collect_pair,daemon=True).start()
+                start_thread(threading.Thread(target=collect_pair,daemon=True))
                 self.root.after(50,finish_pair)
                 return
             if not eligible:
@@ -2481,7 +2482,7 @@ class App:
 
             except Exception as exc: self._stop_results.put((engine,False,str(exc)))
 
-        threading.Thread(target=shutdown,daemon=True).start()
+        start_thread(threading.Thread(target=shutdown,daemon=True))
 
         self.root.after(100,self._poll_stop)
 

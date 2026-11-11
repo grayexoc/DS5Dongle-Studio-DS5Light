@@ -170,7 +170,10 @@ def devices():
 def run_device(path,index=None,action=None):
     import hid
     if action not in (None,'read_profile','read_profile_state','read_usb_mode','read_battery','reconnect_usb'):raise ValueError('Unsupported Studio operation')
-    with _DEVICE_LOCK:
+    if not _DEVICE_LOCK.acquire(timeout=3):
+        from studio_i18n import text
+        raise TimeoutError(text('Studio 조회 대기 시간 초과'))
+    try:
         device=hid.device()
         try:
             device.open_path(path)
@@ -185,3 +188,4 @@ def run_device(path,index=None,action=None):
             if action=='reconnect_usb':return client.reconnect_usb()
             return client.slots() if index is None else client.activate(index)
         finally:device.close()
+    finally:_DEVICE_LOCK.release()

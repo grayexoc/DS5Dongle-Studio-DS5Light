@@ -1,4 +1,5 @@
 """Windows per-process loopback helper transport. Fail closed, never full-system fallback."""
+from thread_start import start_thread
 from studio_i18n import text as _ui_tr
 import csv
 import ctypes
@@ -146,8 +147,8 @@ class ProcessCaptureStream:
         self.prefill_discarded_frames=0; self.timestamp_errors=0; self.discontinuities=0
         self.child=subprocess.Popen([str(HELPER),str(pid),str(channels)],stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,stderr=subprocess.PIPE,bufsize=0,creationflags=0x08000000)
-        self.reader=threading.Thread(target=self._read,daemon=True); self.reader.start()
-        self.err_reader=threading.Thread(target=self._errors,daemon=True); self.err_reader.start()
+        self.reader=threading.Thread(target=self._read,daemon=True); start_thread(self.reader)
+        self.err_reader=threading.Thread(target=self._errors,daemon=True); start_thread(self.err_reader)
         if not self.ready.wait(7) or self.error:
             self.close()
             raise RuntimeError(_ui_tr('게임 캡처 시작 실패: ')+(self.error or _ui_tr('시간 초과'))+' / '+' '.join(self.messages))

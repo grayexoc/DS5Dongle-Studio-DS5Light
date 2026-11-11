@@ -63,7 +63,7 @@ STUDIO_MESSAGES={'Studio 연결 확인 중…':'Checking Studio connection…',
 
 def tr(text):
     if LANGUAGE=='en' and text in STUDIO_MESSAGES:return STUDIO_MESSAGES[text]
-    if text=='오디오햅틱 세기':return '오디오햅틱 세기' if LANGUAGE=='ko' else 'Audio haptic strength'
+    if text=='오디오햅틱 세기':return '오디오햅틱 세기' if LANGUAGE=='ko' else 'Audio haptics strength'
     if text=='햅틱 세기':return '햅틱 세기' if LANGUAGE=='ko' else 'Haptic strength'
     if text=='설정 및 진단':return '설정 및 진단' if LANGUAGE=='ko' else 'Settings & diagnostics'
     if text==AUTO_KO:return '자동 선택' if LANGUAGE=='ko' else 'Automatic'

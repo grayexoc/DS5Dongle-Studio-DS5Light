@@ -1,4 +1,5 @@
 """Low-rate upstream-compatible Studio battery reads, independent of audio."""
+from thread_start import start_thread
 import queue
 import threading
 import time
@@ -48,7 +49,7 @@ class BatteryMonitor:
                     if data is not None:device=next(item for item in rows if item['path']==path)
             except Exception:result=('unavailable',None)
             self.results.put((generation,*result,device))
-        threading.Thread(target=work,name='DS5Light-battery-read',daemon=True).start()
+        start_thread(threading.Thread(target=work,name='DS5Light-battery-read',daemon=True))
 
     def close(self):
         self.closed=True

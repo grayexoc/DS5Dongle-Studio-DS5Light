@@ -1,5 +1,6 @@
 """0.2: original bridge transport + optional output DSP. No recording/network."""
 
+from thread_start import start_thread
 from studio_i18n import text as _ui_tr
 import ast
 
@@ -316,7 +317,7 @@ class Engine:
 
             except Exception as exc: self.status=_ui_tr('오류: ')+str(exc); self.phase='error'; self.errors+=1
 
-        self.thread=threading.Thread(target=launch,daemon=True); self.thread.start()
+        self.thread=threading.Thread(target=launch,daemon=True); start_thread(self.thread)
 
     def stop(self):
 

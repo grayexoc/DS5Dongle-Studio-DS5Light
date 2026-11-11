@@ -6,17 +6,13 @@ A lightweight Windows audio-haptics preprocessor for **[DS5Dongle-Studio](https:
 
 DS5 Light adds adaptive filtering to the copy of game audio sent to your dongle. It aims to reduce unwanted vibration from music and dialogue while retaining the timing and texture of game effects. Your listening audio stays unchanged.
 
-## New in v1.0.4 / Studio v32
-
-- **High-DPI UI:** Per-monitor DPI awareness and a matching executable manifest, logical pixel scaling without scaling point fonts twice, DPI-aware shared controls and popup sizing, and window bounds constrained to the monitor work area. Popups share the main window scale; moving only a popup to another monitor does not select an independent scale.
-- **Shift layer:** Choose a controller button as a momentary Shift key, then edit Base and Shift mappings. Unassigned Shift bindings inherit Base. The Shift key is suppressed from game input and uses one of the 32 global mapping/macro records; enable states remain profile-specific.
-- **Profile-switch mapping:** Bind an action to profile 1–8, with an optional confirmation chime and a preview that does not change profiles. Empty/current slots do not trigger a switch. Source buttons must be released before another switch; chime volume follows the profile's speaker/headset settings.
-- **Settings and reliability:** Improved lighting/speaker setting layout and combobox wheel behavior; clearer fork firmware version display; cancellation checks while waiting for a device lock; backup of legacy settings without silently normalizing them. Studio v32 improves PS-shortcut key-up retry and keyboard ownership with wake/macro actions.
-- **Source and package cleanup:** Removed legacy web-profile exports, an outdated feature summary, an unused source-artwork duplicate and obsolete upstream firmware binaries from the current source tree. Current presets, tests, recovery firmware, attribution and licenses remain.
-
-See [mapping save order and compatibility](MAPPING_GUIDE_KO.md) and [DPI details](DPI_LAYOUT_KO.md). In the app: **stage edits → save Pico mappings/macros → save the current profile**. Clear or disable extended mapping records before downgrading to firmware that does not support them. Edge onboard Fn+face combinations can conflict with the controller's own profiles.
-
 ## Features
+
+- High-DPI controls and window bounds, retaining the dark/gold theme. Popups follow the main window's scale.
+- Integrated Studio settings, momentary Base/Shift mappings and profile 1–8 output actions with optional chime/preview.
+- Safer settings-task completion, bounded device-lock waits and guarded thread startup; Korean/English labels and controller-button icons.
+
+For mapping save order and compatibility, see [MAPPING_GUIDE_KO.md](MAPPING_GUIDE_KO.md); for scaling behavior, see [DPI_LAYOUT_KO.md](DPI_LAYOUT_KO.md).
 
 - Capture a selected game's audio or an entire output device.
 - Choose Detail, Balanced or Suppression, with adjustable suppression strength.
@@ -43,9 +39,9 @@ This is CPU-based signal processing, with no large AI model or GPU inference in 
 
 ## Download and start
 
-**Combined release v1.0.4 · DS5Light v1.0.4 · Studio firmware v32**
+**Combined release v1.0.5 · DS5Light v1.0.5 · Studio firmware v33**
 
-Download `DS5Light-win-x64-v1.0.4.zip` from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases). Extract the whole package and run `DS5Light.exe` with `_internal` beside it. Python is not required. The separate Pico 2 W firmware attachment is `ds5-studio-light_v32.uf2`.
+Download `DS5Light-win-x64-v1.0.5.zip` from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases). Extract the whole package and run `DS5Light.exe` with `_internal` beside it. Python is not required. The separate Pico 2 W firmware attachment is `ds5-studio-light_v33.uf2`.
 
 Use the app's **Studio settings → Recommended presets → Save and use** workflow. The files are `Studio Presert/DS_Native.json`, `Studio Presert/Audio_Haptic_01.json` and `Studio Presert/Audio_Haptic_02.json`. Recommended presets change current audio-haptics fields, preserve other current settings, and save that resulting configuration to the selected slot. Check before overwriting a slot.
 

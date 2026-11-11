@@ -1,4 +1,5 @@
 """Optional Studio power command. Never retry a power request or change profiles."""
+from thread_start import start_thread
 from studio_i18n import text as _ui_tr
 import queue
 import threading
@@ -39,7 +40,9 @@ def power_command(device,action,sleep=time.sleep):
 
 def exchange(path,action):
     import hid
-    with _DEVICE_LOCK:
+    if not _DEVICE_LOCK.acquire(timeout=3):
+        raise TimeoutError(_ui_tr('Studio 조회 대기 시간 초과'))
+    try:
         device=hid.device()
         try:
             device.open_path(path)
@@ -49,6 +52,7 @@ def exchange(path,action):
                     raise ValueError(_ui_tr('Pico 절전 기능을 사용할 수 없습니다.'))
             return power_command(device,action)
         finally:device.close()
+    finally:_DEVICE_LOCK.release()
 
 
 def blocked(app):
@@ -72,7 +76,7 @@ class StudioPower:
         def work():
             try:self.results.put((kind,operation(),None))
             except Exception as exc:self.results.put((kind,None,str(exc)))
-        threading.Thread(target=work,name='DS5Light-power',daemon=True).start()
+        start_thread(threading.Thread(target=work,name='DS5Light-power',daemon=True))
 
     def click(self,event=None):
         a=self.app

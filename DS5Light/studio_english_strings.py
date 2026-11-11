@@ -4691,3 +4691,20 @@ EN.update({
 })
 
 EN.update({'미리듣기':'Preview','듀얼센스 스피커 · 프로필 스피커 음량 적용':'DualSense speaker · Uses profile speaker volume'})
+
+# Match the current Korean editor, including the shift/profile extensions.
+EN.update({
+ '프로필 {0}번':'Profile {0}', '시프트 레이어에서 사용':'Use in shift layer',
+ '전환 신호음':'Profile switch chime', '시프트':'Shift layer',
+ '[시프트] ':'[Shift layer] ', '시프트키':'Shift layer key',
+ '햅틱및 진동 세기':'Haptics and rumble strength',
+ '선택:':'Select:', '마이크 버튼':'Microphone button',
+ '햅틱 파형 질감':'Haptic texture', '듀얼센스 스피커 음량':'DualSense speaker volume',
+ '프로필 전환':'Profile switch', '버튼 선택:':'Button:',
+ '시프트키는 컨트롤러 버튼 하나를 선택하세요.':'Select one gamepad button as the shift layer key.',
+ '시프트키를 저장하려면 매크로 한 칸이 필요합니다.':'The shift layer key needs one free macro slot.',
+ '시프트키 레코드 형식 오류':'Invalid shift layer key record.',
+ '신호음은 프로필 전환에서만 사용합니다.':'Chimes are available for profile switching only.',
+})
+FIELD_LABELS.update({'disable_inactive_disconnect':'Disable idle disconnect',
+ 'speaker_volume':'DualSense speaker volume','speaker_gain':'DualSense speaker gain'})
