@@ -336,7 +336,8 @@ void wake_task(void) {
     static uint64_t last_restore_us = 0;
     const bool identity_wrong = usb_is_idle_pid() || usb_served_idle_pid();
     const bool cooled_down    = (last_restore_us == 0) || (now - last_restore_us > 3000000);
-    if (!host_suspended && identity_wrong && cooled_down && bt_link_up && !tud_suspended()) {
+    if (!host_suspended && identity_wrong && cooled_down && bt_link_up && !tud_suspended() &&
+        !usb_reconnect_pending() && !bt_usb_features_pending()) {
         last_restore_us = now;
         usb_set_idle_pid(false);
         usb_schedule_reconnect();

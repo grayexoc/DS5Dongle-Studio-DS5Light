@@ -56,6 +56,7 @@ static inline bool macro_any_enabled(uint32_t disable_mask) {
 // mouse macro is actually saved to the device rather than while one is being
 // typed - editing must not re-enumerate the controller under the user.
 bool macro_any_mouse_output(uint32_t disable_mask);
+bool macro_any_keyboard_output(uint32_t disable_mask);
 
 static inline bool usb_mouse_iface_needed(const Config_body &c) {
     return c.gyro_output >= 1              // 1 = mouse, 2 = mouse + flick stick
@@ -78,7 +79,7 @@ static inline bool usb_mouse_iface_needed(const Config_body &c) {
 // interface; the benefit is that the mouse is always instance 2 and the trimming
 // stays a simple suffix.
 static inline bool usb_kbd_iface_needed(const Config_body &c) {
-    return c.enable_wake || c.ps_shortcut_enabled || macro_any_enabled(c.macro_disable)
+    return c.enable_wake || c.ps_shortcut_enabled || macro_any_keyboard_output(c.macro_disable)
            || usb_mouse_iface_needed(c);
 }
 

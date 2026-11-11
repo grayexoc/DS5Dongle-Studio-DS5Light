@@ -46,6 +46,8 @@ bool bt_signal_valid(){return true;}
 bool usb_xinput_active(){return true;}
 void bt_get_signal_strength(int8_t *p){*p=-42;}
 volatile uint16_t g_diag_ch01_peak=100,g_diag_ch23_peak=200;
+uint16_t g_diag_rear_left_peak=100,g_diag_rear_right_peak=200;
+uint32_t g_diag_usb_audio_blocks=0x12345678;
 volatile uint8_t g_diag_actual_ch=4;
 uint32_t get_absolute_time(){return 1234;}
 uint32_t to_ms_since_boot(uint32_t n){return n;}
@@ -62,6 +64,7 @@ int main(){
  assert(r.size()==63&&r[2]==0&&r[3]==1&&r[4]==0&&!memcmp(r.data()+5,payload+1,4));
  assert(r[9]==19&&r[10]==1&&r[12]==4&&r[13]==100&&r[15]==200&&r[17]==uint8_t(-42));
  assert(r[18]==3&&r[19]==3&&r[27]==1&&r[35]==1&&r[43]==uint8_t(1234));
+ assert(r[47]==1&&r[48]==100&&r[50]==200&&r[52]==0x78&&r[55]==0x12);
  assert(starts==0&&activity==0);
  g_audio_transport_stats.sent=0xffffffff;g_audio_transport_stats.retries=9;
  payload[0]=1;command(0x1e,payload,5);r=feature_data[0x84];

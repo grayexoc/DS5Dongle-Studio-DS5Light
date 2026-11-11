@@ -58,7 +58,7 @@ def decode_status(reply):
                       haptic_mute=bool(values['mute_power'] & 0x80),
                       haptic_power_save=bool(values['mute_power'] & 4))
         return values
-    return dict(connected=bool(flags & 1), ready=bool(flags & 2),
+    status = dict(connected=bool(flags & 1), ready=bool(flags & 2),
                 audio_processing=bool(flags & 4), audio_stream=bool(flags & 8),
                 usb_mode='XInput' if reply[10] else 'DualSense',
                 auto_haptics=reply[11], channels=reply[12],
@@ -68,6 +68,10 @@ def decode_status(reply):
                 last_host=control(19) if reply[18] & 1 else None,
                 current=control(27), last_accepted=control(35) if reply[18] & 2 else None,
                 uptime_ms=struct.unpack_from('<I', reply, 43)[0])
+    if reply[47] == 1:
+        left, right, blocks = struct.unpack_from('<HHI', reply, 48)
+        status.update(rear_left_peak=left, rear_right_peak=right, usb_audio_blocks=blocks)
+    return status
 
 
 def decode_transport(reply):

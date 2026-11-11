@@ -65,6 +65,7 @@ static_assert(MACRO_IMAGE_BYTES <= FLASH_SECTOR_SIZE);
 // ============================== state ======================================
 
 static MacroTable g_table;          // RAM working image
+static uint32_t committed_keyboard_mask = 0;
 static uint32_t mute_binding_mask = 0;
 static bool mute_binding_dirty = true;
 static bool       g_loaded    = false;
@@ -228,7 +229,27 @@ static void table_defaults(MacroTable &t) {
     t.crc32   = table_crc(t);
 }
 
+static void refresh_committed_keyboard_mask() {
+    committed_keyboard_mask = 0;
+    for (uint8_t i = 0; i < MACRO_COUNT; ++i) {
+        const auto &entry = g_table.rec[i].entry;
+        if (entry.out_btn != 0 || (!entry.chord && !entry.gesture)) continue;
+        for (uint8_t key : entry.keys) {
+            if (key == 0) continue;
+            committed_keyboard_mask |= 1u << i;
+            break;
+        }
+    }
+}
+
+bool macro_any_keyboard_output(uint32_t disable_mask) {
+    if (!macro_any_enabled(disable_mask)) return false;
+    if (!g_loaded) macro_load();
+    return (committed_keyboard_mask & ~disable_mask) != 0;
+}
+
 void macro_load() {
+    committed_keyboard_mask = 0;
     g_layer_dirty = true;
     mute_binding_dirty = true;
     const auto *flashed =
@@ -313,6 +334,7 @@ void macro_load() {
                (unsigned) rec_len, (unsigned) sizeof(MacroRecord));
     }
     g_table.crc32 = table_crc(g_table);
+    refresh_committed_keyboard_mask();
     g_loaded = true;
 }
 
@@ -362,6 +384,7 @@ bool macro_commit() {
         printf("[Macro] commit verify failed\n");
         return false;
     }
+    refresh_committed_keyboard_mask();
     return true;
 }
 

@@ -62,6 +62,8 @@ queue_t mic_decode_fifo;
 volatile uint16_t g_diag_bytes_read = 0;
 volatile uint16_t g_diag_ch01_peak = 0; // peak |sample| ch0-1 (DSP input)
 volatile uint16_t g_diag_ch23_peak = 0; // peak |sample| ch2-3 (native actuators)
+uint16_t g_diag_rear_left_peak = 0, g_diag_rear_right_peak = 0;
+uint32_t g_diag_usb_audio_blocks = 0;
 volatile uint8_t  g_diag_actual_ch  = 0;
 // Incoming DS4Windows rumble-emulation motor values (0-255), blended into the
 // actuator signal in Mix mode when auto-haptics is on.
@@ -311,6 +313,7 @@ void __not_in_flash_func(audio_loop)() {
         speaker_filters_reset = true;
         was_connected = connected;
         audio_input_seen = false;
+        g_diag_rear_left_peak = g_diag_rear_right_peak = 0;
         audio_buf_pos = 0;
         haptic_buf_pos = 0;
         usb_remainder_bytes = 0;
@@ -416,6 +419,7 @@ void __not_in_flash_func(audio_loop)() {
     if (!synthetic_chime) {
         last_audio_input_ms = to_ms_since_boot(get_absolute_time());
         audio_input_seen = true;
+        ++g_diag_usb_audio_blocks;
     }
     // Never join a pre-disable partial block to newly enabled speaker audio.
     if (!speaker_enabled || speaker_filters_reset) audio_buf_pos = 0;
@@ -700,7 +704,7 @@ void __not_in_flash_func(audio_loop)() {
     float ah_out_pk = 0.0f;   // peak derived-haptic magnitude this block (diag meter)
     // Fold the raw-input diagnostics into the existing per-sample DSP pass so
     // reading channel peaks does not require a second full scan of the packet.
-    int p01 = 0, p23 = 0;
+    int p01 = 0, rear_left = 0, rear_right = 0;
     for (int i = 0; i < nframes; i++) {
         int a0 = raw[i * actual_ch];     if (a0 < 0) a0 = -a0;
         int a1 = raw[i * actual_ch + 1]; if (a1 < 0) a1 = -a1;
@@ -709,8 +713,8 @@ void __not_in_flash_func(audio_loop)() {
         if (actual_ch == 4) {
             int a2 = raw[i * actual_ch + 2]; if (a2 < 0) a2 = -a2;
             int a3 = raw[i * actual_ch + 3]; if (a3 < 0) a3 = -a3;
-            if (a2 > p23) p23 = a2;
-            if (a3 > p23) p23 = a3;
+            if (a2 > rear_left) rear_left = a2;
+            if (a3 > rear_right) rear_right = a3;
         }
  #if !DISABLE_SPEAKER_PROC
         if (speaker_enabled) {
@@ -969,7 +973,11 @@ void __not_in_flash_func(audio_loop)() {
         extern volatile uint16_t g_ah_frames;
         extern volatile uint8_t g_ah_in_peak;
         g_diag_ch01_peak = (uint16_t)p01;
-        g_diag_ch23_peak = (uint16_t)p23;
+        g_diag_ch23_peak = (uint16_t)std::max(rear_left, rear_right);
+        if (!synthetic_chime) {
+            g_diag_rear_left_peak = (uint16_t)rear_left;
+            g_diag_rear_right_peak = (uint16_t)rear_right;
+        }
         const uint32_t f = (uint32_t)g_ah_frames + (uint32_t)frames;
         g_ah_frames = f > 0xFFFF ? 0xFFFF : (uint16_t)f;
         const uint8_t v = (uint8_t)(p01 >> 7);

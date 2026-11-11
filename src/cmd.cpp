@@ -1091,6 +1091,12 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     state_diagnostic_snapshot(reply + 18);
                     const uint32_t now = to_ms_since_boot(get_absolute_time());
                     memcpy(reply + 43, &now, 4);
+                    extern uint16_t g_diag_rear_left_peak, g_diag_rear_right_peak;
+                    extern uint32_t g_diag_usb_audio_blocks;
+                    reply[47] = 1; // optional USB-audio diagnostic fields
+                    memcpy(reply + 48, &g_diag_rear_left_peak, 2);
+                    memcpy(reply + 50, &g_diag_rear_right_peak, 2);
+                    memcpy(reply + 52, &g_diag_usb_audio_blocks, 4);
                 } else if (buffer[0] == 1) {
                     reply[2] = 0; bt_diagnostic_snapshot(reply + 9);
                 }

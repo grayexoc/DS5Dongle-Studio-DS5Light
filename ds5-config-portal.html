@@ -831,6 +831,7 @@ async function readField(fieldId, type){
 const BULK_READ_TRIES = 3;
 const BULK_READ_BACKOFF_MS = 150;
 async function readAll(){
+  window._macroKeyboardSaved = null;
   const prev = {...config};
   // Bulk fast path (fw >= 1.4.0): whole config in a few packets. Retry a few
   // times before falling back — right after a host wake the link is settling and
@@ -2228,6 +2229,7 @@ async function restoreAllSlots(file){
   if (!confirm(`Restore ${valid.length} slot(s) from this file? Each listed slot on the dongle will be overwritten.`)) { setS('Restore cancelled'); return; }
   const byKey = Object.fromEntries(FIELDS.map(f => [f[1], f]));
   let done = 0, failed = 0;
+  let keyboardBefore, keyboardAfterMask;
   try {
     await hidLocked(async () => {
       for (const s of valid){
@@ -2259,10 +2261,22 @@ async function restoreAllSlots(file){
     // macro_commit() is a single sector erase we only want to do once.
     if (restoreMacros){
       setS('Restoring macro definitions\u2026');
-      window._macroRows = macroTableFromJson(dump.macros);
-      await hidLocked(() => macroWriteAll());
+      await hidLocked(async () => {
+        await macroReadAll();
+        keyboardBefore = kbdIfaceNeeded(savedSnapshot);
+        window._macroRows = macroTableFromJson(dump.macros);
+        await macroWriteAll();
+        keyboardAfterMask = window._macroKeyboardSaved;
+        window._macroKeyboardReenum = false;
+      });
     }
-    await readAll(); render(); await refreshSlots();
+    await readAll();
+    if (restoreMacros && keyboardBefore !== kbdIfaceNeeded(config, keyboardAfterMask)){
+      try { await sendCmd(0x03); } catch (_) { /* device detaches */ }
+      if (!await reacquire()) { setS('Restored. Click Connect to refresh the device.'); return; }
+      await readAll();
+    }
+    render(); await refreshSlots();
     const mN = restoreMacros ? dump.macros.length : 0;
     setS(`Restored ${done} slot${done===1?'':'s'}` + (mN ? ` + ${mN} macro${mN===1?'':'s'}` : '') +
          `${failed?`, ${failed} failed`:''} \u2713`);
@@ -2577,10 +2591,17 @@ async function saveAll(){
     if (!needReconnect && kbdIfaceNeeded(savedSnapshot) !== kbdIfaceNeeded(config)) {
       needReconnect = true;
     }
+    // Older firmware exposes a keyboard for any enabled row.
+    if (!needReconnect && kbdIfaceNeeded(savedSnapshot, null) !== kbdIfaceNeeded(config, null)) {
+      needReconnect = true;
+    }
     // The macro TABLE decides whether a mouse interface exists too, and it is
     // not a config field, so saveAll cannot see it. macroSaveTable sets this
     // when the committed table gains or loses a mouse output.
-    if (window._macroMouseReenum) { needReconnect = true; window._macroMouseReenum = false; }
+    if (window._macroMouseReenum || window._macroKeyboardReenum) {
+      needReconnect = true;
+      window._macroMouseReenum = window._macroKeyboardReenum = false;
+    }
     // The mouse is its own interface, so losing it is a descriptor change even
     // though the keyboard test above stays true (macros or wake may still hold it).
     // >= 1, not === 1: gyro_output 2 (mouse + flick stick) needs the mouse
@@ -3704,14 +3725,21 @@ function macroPresentCount(){
 }
 // Mirror of usb_kbd_iface_needed() in src/macro.h. The keyboard interface is
 // shared, so a reconnect is needed only when its PRESENCE changes.
-function kbdIfaceNeeded(c){
+function kbdIfaceNeeded(c, keyboardMask = window._macroKeyboardSaved){
   if (!c) return false;
   // Mirrors usb_kbd_iface_needed() in src/macro.h, INCLUDING that selecting the
   // mouse brings the keyboard up with it (the descriptor is trimmed from the end,
   // so the mouse cannot be present without it).
   return !!(+c.enable_wake) || !!(+c.ps_shortcut_enabled) ||
-         ((+c.macro_disable>>>0) !== MACRO_NONE_ENABLED) ||
+         (keyboardMask == null ? ((+c.macro_disable>>>0) !== MACRO_NONE_ENABLED)
+                               : !!(keyboardMask & ~c.macro_disable)) ||
          (+c.gyro_output === 1);
+}
+function macroKeyboardMask(rows, motion = []){
+  return rows.reduce((mask, m, i) => (
+    m && (m.chord || m.gesture || motion[i]?.codes?.length) &&
+    !m.out_btn && m.keys.some(Boolean) ? mask | (1 << i) : mask
+  ), 0);
 }
 function macroSetLabel(i, v){
   const rows = window._macroRows || [];
@@ -3780,10 +3808,12 @@ async function macroReadAll(){
     row.present = !macroRowEmpty(row);
     rows.push(row);
   }
+  window._macroKeyboardSaved = macroKeyboardMask(rows);
   return rows;
 }
 async function macroWriteAll(){
   const rows = window._macroRows || [];
+  const keyboardBefore = kbdIfaceNeeded(savedSnapshot);
   for (let i=0;i<MACRO_COUNT;i++){
     const m = rows[i] || macroBlankRow();
     const a = new Array(1+MACRO_REC_LEN).fill(0);
@@ -3819,6 +3849,8 @@ async function macroWriteAll(){
   }
   await sendCmd(0x19, []);   // one erase for the whole table
   await new Promise(r => setTimeout(r, 60));
+  window._macroKeyboardSaved = macroKeyboardMask(rows, window._macroMotion);
+  if (keyboardBefore !== kbdIfaceNeeded(savedSnapshot)) window._macroKeyboardReenum = true;
 }
 // Serialise the macro table for a file. Definitions are DEVICE-GLOBAL, so they
 // only ever travel through paths a human initiated - never through ?autoapply,

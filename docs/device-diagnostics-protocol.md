@@ -26,6 +26,13 @@ Page 0, body offsets:
 | 18 | bit 0 last host valid, bit 1 last L2CAP-accepted state valid |
 | 19, 27, 35 | eight bytes each: last original host request, current normalized state, last accepted state |
 | 43 | LE32 monotonic uptime milliseconds |
+| 47 | Optional USB audio fields version, 1 when present, 0 on older firmware |
+| 48, 50 | LE16 raw rear-left and rear-right PCM peaks of the latest USB block, 0–32768 |
+| 52 | LE32 cumulative USB audio read blocks with at least one complete frame, since boot |
+
+The USB block count excludes internally generated profile chimes. Compare its
+delta with page 1 over the same sampling interval. A USB block and a Bluetooth
+audio packet have different durations.
 
 The eight control bytes use SetStateData offsets `0,1,2,3,9,36,38,39`:
 flags0, flags1, right/left rumble, mute/power, motor reduction, flags2, haptic filter.

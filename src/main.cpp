@@ -1568,6 +1568,7 @@ int main() {
         }
         cyw43_arch_poll();
         tud_task();
+        bt_usb_identity_task();
         wake_task();
         // Drives the ordered playback walk and the long-press threshold. Without
         // this the engine would assert the first key of a combo and never

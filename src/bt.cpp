@@ -77,6 +77,11 @@ static uint16_t hid_control_cid;
 static uint16_t hid_interrupt_cid;
 static bt_data_callback_t bt_data_callback = nullptr;
 static bool check_dse = false;
+#if !ENABLE_SERIAL
+static constexpr uint32_t usb_feature_wait_ms = 120;
+static uint32_t usb_feature_started_ms = 0;
+static bool usb_identity_pending = false;
+#endif
 static int8_t bt_rssi = 0;
 static bool bt_rssi_valid = false;
 unordered_map<uint8_t, vector<uint8_t> > feature_data;
@@ -463,6 +468,30 @@ static void restore_full_usb_identity(void) {
         tud_connect();
     }
 }
+
+bool bt_usb_features_pending() {
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    if (get_config().usb_gamepad_mode == 1) return false;
+#endif
+    if (!bt_is_connected() ||
+        to_ms_since_boot(get_absolute_time()) - usb_feature_started_ms >= usb_feature_wait_ms)
+        return false;
+    const auto ready = [](uint8_t id, size_t length) {
+        const auto report = feature_data.find(id);
+        return report != feature_data.end() && report->second.size() >= length;
+    };
+    return !(ready(0x05, 41) && ready(0x09, 20) && ready(0x20, 64));
+}
+
+void bt_usb_identity_task() {
+    if (!usb_identity_pending || !bt_is_connected() ||
+        tud_suspended() || wake_host_is_suspended() || bt_usb_features_pending()) return;
+    usb_identity_pending = false;
+    restore_full_usb_identity();
+}
+#else
+bool bt_usb_features_pending() { return false; }
+void bt_usb_identity_task() {}
 #endif
 
 static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
@@ -757,6 +786,9 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             acl_handle = HCI_CON_HANDLE_INVALID;
             link_encrypted = false;
             hid_control_open = hid_interrupt_open = false;
+#if !ENABLE_SERIAL
+            usb_identity_pending = false;
+#endif
             bt_rssi = 0;
             bt_rssi_valid = false;
             hid_control_cid = 0;
@@ -835,14 +867,14 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
 #if !ENABLE_SERIAL
                     // don't re-enumerate while the host is suspended -- it would wake a sleeping host
                     // (wake_task() performs the restore once the host is up again)
-                    if (!tud_suspended()) { restore_full_usb_identity(); }
+                    usb_identity_pending = true;
 #endif
                 } else if (packet[0] == 0x02) {
                     printf("Connected DS5 Controller\n");
                     check_dse = false;
                     is_dse = false;
 #if !ENABLE_SERIAL
-                    if (!tud_suspended()) { restore_full_usb_identity(); }
+                    usb_identity_pending = true;
 #endif
                 }
             }
@@ -1238,6 +1270,10 @@ void bt_power_off_controller() {
 
 void init_feature() {
     feature_data.clear();
+#if !ENABLE_SERIAL
+    usb_feature_started_ms = to_ms_since_boot(get_absolute_time());
+    usb_identity_pending = false;
+#endif
     get_feature_data(0x09, 20);
     get_feature_data(0x20, 64);
     get_feature_data(0x22, 64);

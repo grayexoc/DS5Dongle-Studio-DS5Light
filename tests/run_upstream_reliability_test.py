@@ -10,11 +10,15 @@ callback=main[main.index('void tud_hid_set_report_cb('):main.index('\nint main()
 auth=bt[bt.index('        case HCI_EVENT_AUTHENTICATION_COMPLETE:'):bt.index('        case HCI_EVENT_ENCRYPTION_CHANGE:')]
 start=main.index('    if (cyw43_arch_init()) {')
 failure=main[start:main.index('\n    cyw43_arch_gpio_put',start)]
+usb_wait=bt[bt.index('bool bt_usb_features_pending() {'):bt.index('\n#else\nbool bt_usb_features_pending()')]
 code=r'''
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <map>
+#include <vector>
+#define STUDIO_XINPUT_EXPERIMENT
 using hid_report_type_t=int;
 constexpr int HID_REPORT_TYPE_OUTPUT=2;
 struct SetStateData { uint8_t data[63]; };
@@ -24,7 +28,7 @@ uint32_t now=0;
 uint32_t get_absolute_time(){return now;}
 uint32_t to_ms_since_boot(uint32_t x){return x;}
 bool state_rumble_wants_report(){return false;}
-struct Config { int auto_haptics_enable=1; } config;
+struct Config { int auto_haptics_enable=1; int usb_gamepad_mode=0; } config;
 Config &get_config() {return config;}
 uint8_t captured[63]{}, sent[78]{};
 bool state_update(const uint8_t *p,uint8_t n) { ++updates; memset(captured,0,63);memcpy(captured,p,n);return changed; }
@@ -52,11 +56,36 @@ int cyw43_arch_init() {return init_error;}
 void sleep_ms(int n) {slept+=n;}
 void watchdog_reboot(int a,int b,int c) {assert(!a&&!b&&!c);++reboots;throw 1;}
 void tight_loop_contents() {assert(false);}
+static constexpr uint32_t usb_feature_wait_ms = 120;
+uint32_t usb_feature_started_ms=0;
+bool usb_identity_pending=false, link_connected=true, suspended=false, host_suspended=false;
+int restored=0;
+std::map<uint8_t, std::vector<uint8_t>> feature_data;
+bool bt_is_connected(){return link_connected;}
+bool tud_suspended(){return suspended;}
+bool wake_host_is_suspended(){return host_suspended;}
+void restore_full_usb_identity(){++restored;}
 '''
+code+=usb_wait+'\n'
 code+=callback+'\nvoid auth(uint8_t *packet) {switch(6) {\n'+auth+'}}\n'
 code+='void boot() {\n'+failure+'\n}\n'
 code+=r'''
 int main() {
+ usb_identity_pending=true;
+ usb_feature_started_ms=0xfffffff0u;now=3;
+ feature_data[0x05].resize(41);feature_data[0x09].resize(20);feature_data[0x20].resize(63);
+ bt_usb_identity_task();assert(usb_identity_pending&&!restored);
+ feature_data[0x20].resize(64);host_suspended=true;
+ bt_usb_identity_task();assert(!restored);
+ host_suspended=false;bt_usb_identity_task();bt_usb_identity_task();
+ assert(restored==1&&!usb_identity_pending);
+ feature_data.clear();usb_identity_pending=true;usb_feature_started_ms=0;now=119;
+ bt_usb_identity_task();assert(restored==1&&usb_identity_pending);
+ now=120;link_connected=false;bt_usb_identity_task();assert(restored==1);
+ link_connected=true;bt_usb_identity_task();assert(restored==2&&!usb_identity_pending);
+ config.usb_gamepad_mode=1;usb_identity_pending=true;now=0;
+ bt_usb_identity_task();assert(restored==3&&!usb_identity_pending);
+ config.usb_gamepad_mode=0;now=0;
  uint8_t p[65]{};p[0]=2;for(int i=1;i<64;++i)p[i]=i;
  tud_hid_set_report_cb(0,0,0,p,64);assert(sends==1&&updates==1);
  uint8_t first[63];memcpy(first,sent+3,63);
@@ -84,7 +113,7 @@ int main() {
  event[1]=8;event[0]=5;auth(event);assert(drops==2&&disconnects==3);
  boot();assert(!slept&&!reboots);init_error=1;try {boot();assert(false);}catch(int) {}
  assert(slept==500&&reboots==1);
- puts("PASS: USB paths, lengths, audio change gating, feature routing, auth key retention/rejection/handle guard, boot retry");
+ puts("PASS: USB paths, bounded initial feature wait, suspend and XInput gates, feature routing, auth and boot recovery");
 }
 '''
 (out/'test.cpp').write_text(code,encoding='utf-8')
@@ -97,9 +126,9 @@ from test_support import firmware_build
 build=firmware_build(root)
 entries=json.loads((build/'compile_commands.json').read_text())
 with (out/'syntax.txt').open('w',encoding='utf-8') as log:
- for name in ('main.cpp','bt.cpp'):
+ for name in ('main.cpp','bt.cpp','wake.cpp','macro.cpp','audio.cpp','cmd.cpp'):
   entry=next(e for e in entries if Path(e['file']).name==name)
   command,n=re.subn(r' -o \S+ -c ',' -fsyntax-only ',entry['command']);assert n==1
   command=command.replace(entry['file'],str(root/'src'/name))
   subprocess.run(command,cwd=entry['directory'],stdout=log,stderr=log,check=True)
-print('PASS: ARM syntax checks (main.cpp, bt.cpp); no firmware build')
+print('PASS: ARM syntax checks for changed firmware sources; no firmware build')

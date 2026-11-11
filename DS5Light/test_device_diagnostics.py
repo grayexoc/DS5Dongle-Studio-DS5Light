@@ -63,6 +63,12 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual((result['rssi'], result['front_peak'], result['rear_peak']), (-42, 100, 200))
         self.assertEqual(result['last_host']['mute_power'], 128)
         self.assertEqual(result['current']['left_rumble'], 0)
+        self.assertNotIn('usb_audio_blocks', result)
+        data[47] = 1
+        struct.pack_into('<HHI', data, 48, 100, 200, 0xffffffff)
+        result = decode_status(data)
+        self.assertEqual((result['rear_left_peak'], result['rear_right_peak'], result['usb_audio_blocks']),
+                         (100, 200, 0xffffffff))
         counters = response(1)
         struct.pack_into('<9IH', counters, 9, 0xffffffff, 2, 3, 4, 5, 6, 7, 8, 9, 10)
         self.assertEqual(decode_transport(counters)['sent'], 0xffffffff)
