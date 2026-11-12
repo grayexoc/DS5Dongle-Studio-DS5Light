@@ -1,8 +1,20 @@
 # DS5Dongle-Studio-DS5Light
 
-A modified Studio firmware and DS5Light app that bring audio haptics processing and dongle configuration together in one Windows application.
+This project extends the DS5Dongle-Studio firmware and DS5Light to bring audio haptics processing and dongle configuration together in one Windows app.
 
-Select audio from a game or application, adjust background suppression and impact preservation, and tune the audio haptics to your preference. Studio configuration features previously accessed through the web interface are integrated into the app, so you can manage audio processing, profiles, triggers, and macros in one place.
+DS5Light was developed to complement DS5Dongle-Studio's audio haptics with **background suppression and impact preservation**.
+
+The app later integrated features from the Studio web configurator, bringing audio processing, profiles, triggers, and macros together in one place.
+
+As the project grew, user requests and the developer's own needs led to new features and a fork of the original Studio firmware.
+
+The app was developed with upstream Studio compatibility in mind, but **full compatibility across all features is currently unverified.**
+
+**For the full DS5Light feature set, use the app and firmware provided together in this project's releases.**
+
+Both the firmware and the app aim to preserve their intended behavior while reducing unnecessary processing and keeping system resource usage low.
+
+The Windows package includes the runtime components it needs and requires no separate DLL or driver installation. Keeping resource use and additional dependencies low is a core development goal.
 
 This project is based on:
 
@@ -48,6 +60,7 @@ Left: **Audio haptics** — select the capture target, manage game presets and a
 - Background suppression and impact preservation: Reduce unwanted vibration from sustained background sounds while retaining the response of brief effects. Adjust suppression and impact preservation independently.
 - Haptic strength control: Adjust output gain separately from the filter settings to suit each game and your preference.
 - Multichannel audio: Support automatic, stereo, 5.1, and 7.1 capture, with controls for the contribution of center, LFE, rear, and side channels in multichannel input.
+- **Mix mode.** Blend game-native haptics with audio-generated haptics. The front-only option disables the rear channel pair independently of the PC filter.
 - Per-game presets: Store settings in 12 presets and associate them with games. The app also remembers the last-used options and window size.
 
 The filter uses changes over time and energy levels across frequency bands. It does not fully separate music, dialogue, and sound effects. Results depend on the game's audio mix and your settings.
@@ -59,7 +72,7 @@ The filter uses changes over time and energy levels across frequency bands. It d
 
 - Dongle settings: Read and edit Studio settings for audio haptics, triggers, gyro, buttons, macros, and LEDs directly in the app.
 - Profiles and slots: Load profiles stored on the dongle, manage settings and slots, and back up or restore configurations.
-- Trigger and macro editing: Edit trigger effects and button actions, then apply the settings to the dongle.
+- **Custom triggers and macros.** Use shortcuts to add trigger effects, edit button actions, and temporarily apply an effect to test it on the controller before saving the profile.
 - Power and connection settings: On supported firmware, manage sleep, dock behavior, USB gamepad mode, and other additional settings.
 
 ### Convenience and diagnostics
@@ -67,6 +80,7 @@ The filter uses changes over time and energy levels across frequency bands. It d
 - High-DPI layout: Per-monitor awareness, logical pixel scaling, DPI-aware shared controls and work-area bounds. Popups share the main window scale, including when the main window moves between monitors.
 - Task lifecycle: Device-lock waits are bounded, pending resume callbacks respect later stop/route changes, and thread startup avoids a Tk finalizer/startup-handshake deadlock.
 
+- **DualSense Edge reconnection.** If serial visibility changes, the app uses USB port information to find the same device and checks the new audio output before resuming.
 - Controller status: View connection and battery information.
 - Device diagnostics and output tests: Read dongle status and output statistics, and run individual tests for conventional rumble, adaptive triggers, and native haptics.
 - Microphone button shortcut: Assign a keyboard shortcut to the DualSense Mute button.
@@ -117,7 +131,19 @@ Original projects:
 
 DS5Dongle-Studio 펌웨어와 DS5Light를 기반으로, 오디오 햅틱 처리와 동글 설정을 하나의 Windows 앱에서 사용할 수 있도록 수정·확장한 프로젝트입니다.
 
-오디오 햅틱의 체감 향상을 위해 게임이나 프로그램의 오디오를 선택하고, 배경음 억제와 타격감 보존 정도를 조절할 수 있습니다. 기존 Studio 웹 설정에서 다루던 기능도 앱에 통합하여, 오디오 처리부터 프로필·트리거·매크로 설정까지 한곳에서 관리할 수 있도록 구성했습니다.
+DS5Light는 DS5Dongle-Studio 펌웨어의 오디오 햅틱 기능을 보완하기 위한 **배경음 억제와 타격감 보존** 용도로 개발되었습니다.
+
+이후 기존 Studio 웹 설정에서 다루던 기능도 앱에 통합하여, 오디오 처리부터 프로필·트리거·매크로 설정까지 한곳에서 관리할 수 있도록 구성했습니다.
+
+프로젝트가 진행됨에 따라 사용자 요청과 개인적인 필요에 의해 다양한 기능이 추가되었으며, 이 과정에서 기존 Studio 펌웨어 역시 Fork 되었습니다.
+
+원본 Studio 펌웨어와의 호환성도 고려하여 개발되었으나, **현재 모든 기능의 완전한 호환성을 보장하지는 않습니다.**
+
+따라서 **DS5LIGHT의 모든 기능을 정상적으로 활용하려면 함께 제공되는 전용 펌웨어와 앱을 사용하는 것을 권장합니다.**
+
+본 프로젝트는 펌웨어와 앱 모두 의도된 기능을 유지하면서 불필요한 연산을 최소화하고, 경량화 및 최적화를 통해 시스템 리소스 사용량을 줄이는 데 중점을 두고 있습니다.
+
+또한 별도의 DLL이나 드라이버 설치 없이 사용할 수 있도록 설계하여, 시스템 자원 소모와 추가적인 의존성을 최소화하는 것을 핵심 개발 방향으로 삼고 있습니다.
 
 이 프로젝트는 다음 두 원본을 바탕으로 합니다.
 
@@ -157,6 +183,7 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 - 배경음 억제와 타격 보존: 지속되는 배경음으로 인한 불필요한 진동을 줄이고 짧은 효과음의 반응을 살리는 필터를 제공합니다. 배경 억제량과 타격 보존량을 각각 조절할 수 있습니다.
 - 진동 세기 조절: 필터 설정과 별도로 햅틱 출력 게인을 조절하여 게임과 취향에 맞게 강도를 맞출 수 있습니다.
 - 다채널 오디오 처리: 자동·스테레오·5.1·7.1 캡처를 지원하며, 다채널 입력에서 센터·LFE·후방 및 측면 채널의 기여를 조절할 수 있습니다.
+- **Mix 모드.** 게임의 네이티브 햅틱과 오디오에서 생성한 햅틱을 혼합할 수 있습니다. 전면 채널만 사용하는 옵션은 PC 필터 설정과 관계없이 후방 채널 출력을 끕니다.
 - 게임별 프리셋: 12개 프리셋에 설정을 저장하고 게임별 연결에 활용할 수 있습니다. 마지막 사용 옵션과 창 크기도 저장합니다.
 
 필터는 소리의 시간적 변화와 대역별 에너지를 이용하는 방식입니다. 음악·대사·효과음을 완전히 분리하는 기능은 아니며, 체감 결과는 게임의 사운드 구성과 설정에 따라 달라집니다.
@@ -168,7 +195,7 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 
 - 동글 설정 편집: 오디오 햅틱, 트리거, 자이로, 버튼·매크로, LED 등 Studio 설정을 앱에서 조회하고 수정합니다.
 - 프로필·슬롯 관리: 동글에 저장된 프로필을 불러오고, 설정과 슬롯을 관리하며 백업·복원 기능을 사용합니다.
-- 트리거·매크로 편집: 트리거 효과와 버튼 동작을 편집하고 관련 설정을 동글에 적용합니다.
+- **커스텀 트리거·매크로.** 단축 옵션으로 트리거 효과를 추가하고 버튼 동작을 편집할 수 있습니다. 임시 적용으로 프로필에 저장하기 전에 컨트롤러에서 효과를 시험할 수 있습니다.
 - 전원·연결 설정: 지원 펌웨어에서 휴면, 도크 연결 시 동작 및 USB 게임패드 모드 등의 추가 설정을 관리합니다.
 
 ### 사용 편의 및 진단
@@ -176,6 +203,7 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 - 고배율 UI: 모니터별 DPI 인식, 논리 픽셀 변환, 공통 컨트롤 배율과 작업 영역 안의 창 배치를 지원합니다. 팝업은 메인 창 배율을 공유하며 메인 창 이동 시 함께 갱신됩니다.
 - 작업 수명 관리: 장치 잠금 대기를 제한하고, 지연 재시작은 이후의 정지·경로 변경을 존중합니다. 스레드 시작 시 Tk 객체 정리와 시작 신호가 서로 기다리는 교착을 방지합니다.
 
+- **DualSense Edge 재연결.** 일련번호 표시 설정을 바꾸면 USB 포트 정보로 같은 장치를 찾고, 새 오디오 출력을 확인한 뒤 전송을 재개합니다.
 - 컨트롤러 상태 표시: 연결 상태와 배터리 정보를 확인할 수 있습니다.
 - 장치 진단과 출력 테스트: 동글 상태와 출력 통계를 조회하고 일반 진동·트리거·네이티브 햅틱을 개별 시험할 수 있습니다.
 - 마이크 버튼 단축키: DualSense의 Mute 버튼에 키보드 단축키를 지정할 수 있습니다.
