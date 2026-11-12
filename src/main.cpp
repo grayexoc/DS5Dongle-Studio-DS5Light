@@ -2,6 +2,7 @@
 // Created by awalol on 2026/3/4.
 //
 
+#include <algorithm>
 #include <cstdio>
 #include <cmath>
 #include "bsp/board_api.h"
@@ -731,12 +732,23 @@ static volatile int32_t g_cal_remaining = 0;
 // game to see every count, and still only a few seconds for a full sweep.
 constexpr int32_t CAL_STEP = 8;
 
-void gyro_cal_emit(int32_t counts) { g_cal_remaining = counts; }
+static bool gyro_cal_available(const Config_body &cfg) {
+    return (cfg.gyro_output == 2 || (cfg.gyro_output == 1 && cfg.gyro_mode)) &&
+           bt_is_ready() && tud_mounted() && !tud_suspended() && !usb_reconnect_pending();
+}
+
+bool gyro_cal_emit(int32_t counts) {
+    if (!gyro_cal_available(get_config())) return false;
+    g_cal_remaining = counts;
+    return true;
+}
 bool gyro_cal_busy(void)           { return g_cal_remaining != 0; }
+void gyro_cal_cancel()             { g_cal_remaining = 0; }
 
 // Drained from the main loop, where touching TinyUSB is safe.
 void gyro_mouse_task() {
     const auto &cfg = get_config();
+    if (g_cal_remaining && !gyro_cal_available(cfg)) g_cal_remaining = 0;
     if (!usb_mouse_iface_needed(cfg)) return;
     // Macro mouse output shares this report. Clicks are a level, scroll a tick.
     const uint8_t mbtn = macro_mouse_buttons();
@@ -918,39 +930,36 @@ void gyro_mouse_task() {
         }
     }
 
-    // Feed the calibration burst into the same pending counters the gyro uses,
-    // so it goes out through exactly the path being calibrated.
-    if (g_cal_remaining != 0) {
-        const int32_t step = (g_cal_remaining > 0)
-                           ? (g_cal_remaining <  CAL_STEP ? g_cal_remaining :  CAL_STEP)
-                           : (g_cal_remaining > -CAL_STEP ? g_cal_remaining : -CAL_STEP);
-        g_gm_pend_x    += step;
-        g_cal_remaining -= step;
-    }
-
-    int32_t dx = g_gm_pend_x, dy = g_gm_pend_y;
+    // Keep calibration separate until a report is accepted so a busy endpoint
+    // cannot accumulate the entire sweep into one mouse delta.
+    const int32_t remaining = g_cal_remaining;
+    const int32_t pending_x = g_gm_pend_x, pending_y = g_gm_pend_y;
     const int8_t pending = macro_mouse_peek_scroll();
     // Send when anything changed: movement, a scroll tick, or a button going
     // down OR up. Returning early on "no movement" would strand a release and
     // leave the click held at the host.
-    if (dx == 0 && dy == 0 && pending == 0 && mbtn == s_mbtn_sent) return;
+    if (!pending_x && !pending_y && !remaining && !pending && mbtn == s_mbtn_sent) return;
     const uint8_t inst = usb_mouse_instance(cfg);
     if (!tud_hid_n_ready(inst)) return;      // busy: keep it pending, lose nothing
+    const int32_t step = std::clamp(remaining, -CAL_STEP, CAL_STEP);
+    const int32_t dx = std::clamp(pending_x, std::max<int32_t>(-32767, -32767 - step),
+                                           std::min<int32_t>(32767, 32767 - step));
+    const int32_t dy = std::clamp<int32_t>(pending_y, -32767, 32767);
     // Consume the scroll only now that the report is definitely going out. Taking
     // it before the readiness check dropped the tick whenever the endpoint was
     // busy - a scroll that silently does nothing under load.
-    const int8_t wheel = macro_mouse_take_scroll();
-    g_gm_pend_x -= dx;
-    g_gm_pend_y -= dy;
-    if (dx >  32767) dx =  32767; if (dx < -32767) dx = -32767;
-    if (dy >  32767) dy =  32767; if (dy < -32767) dy = -32767;
+
     // dy already carries the stick path's sign convention, where aim-up is
     // NEGATIVE (stick Y: 0 = up, 255 = down). Screen Y also grows downward, so
     // the two agree and dy passes through unchanged. Negating it here - which the
     // first version did, reasoning about screen coordinates alone - inverted the
     // vertical axis relative to stick mode and to the Invert gyro aim setting.
-    GyroMouseReport r{mbtn, (int16_t) dx, (int16_t) dy, wheel};
-    tud_hid_n_report(inst, 0, &r, sizeof(r));
+    GyroMouseReport r{mbtn, static_cast<int16_t>(dx + step), static_cast<int16_t>(dy), pending};
+    if (!tud_hid_n_report(inst, 0, &r, sizeof(r))) return;
+    macro_mouse_take_scroll();
+    g_gm_pend_x -= dx;
+    g_gm_pend_y -= dy;
+    g_cal_remaining -= step;
     s_mbtn_sent = mbtn;
 }
 

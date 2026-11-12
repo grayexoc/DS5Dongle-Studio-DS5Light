@@ -55,6 +55,24 @@ def _usb_ancestor(node, parent, instance):
     return None
 
 
+def usb_port_paths(parent_id):
+    """Location of the physical USB node, stable across a serial descriptor change."""
+    if os.name!='nt' or not parent_id:return ()
+    try:
+        cm=C.WinDLL('cfgmgr32')
+        locate=cm.CM_Locate_DevNodeW
+        locate.argtypes=[C.POINTER(W.ULONG),W.LPWSTR,W.ULONG];locate.restype=W.ULONG
+        node=W.ULONG()
+        if locate(C.byref(node),C.create_unicode_buffer(parent_id),0):return ()
+        get=cm.CM_Get_DevNode_PropertyW
+        get.argtypes=[W.ULONG,C.POINTER(Key),C.POINTER(W.ULONG),C.c_void_p,C.POINTER(W.ULONG),W.ULONG];get.restype=W.ULONG
+        prop=Key('a45c254e-df1c-4efd-8020-67d146a850e0',37)
+        kind=W.ULONG();buffer=C.create_unicode_buffer(2048);size=W.ULONG(C.sizeof(buffer))
+        if get(node, C.byref(prop),C.byref(kind),buffer,C.byref(size),0) or kind.value!=0x2012:return ()
+        return tuple(path.casefold() for path in buffer[:size.value//C.sizeof(W.WCHAR)].split('\0') if path)
+    except (OSError,ValueError,AttributeError):return ()
+
+
 def usb_parent_id(path, endpoint=False):
     """Physical USB instance identity, not a port-derived substring or device name."""
     if os.name!='nt' or not path:return None

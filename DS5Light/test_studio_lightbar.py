@@ -88,6 +88,9 @@ class DocumentTests(unittest.TestCase):
                 self.values=dict(lightbar_fixed=1,lightbar_rgb=0x123456,lightbar_off=0,auto_haptics_gain=80,audio_buffer_length=48)
                 self.saved={}
             def read_fields(self):return dict(self.values),[]
+            def read_one(self,field):
+                from studio_settings_protocol import EdgeSerialUnsupported
+                raise EdgeSerialUnsupported('Unsupported')
             def read_macros(self):return {}
             def command(self,*args):return b'\x66\x1a\x00'
             def write_fields(self,values,current,**kwargs):self.values.update(values)

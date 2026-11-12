@@ -15,21 +15,28 @@ class SettingsDocument:
         self._companions={};self._gain_before_policy=None;self.baseline=baseline;self.values=dict(self.baseline)
         self.normalize_haptic_gain()
     def companion_edit(self,key,previous,value):
-        links={'auto_haptics_enable':('disable_speaker',int(value in (1,2))),
-               'lightbar_fixed':('lightbar_off',0)}
-        for parent,state in self._companions.items():
+        for state in self._companions.values():
             if key==state[0]:state[3]=True
-        if key not in links or previous==value:return
-        child,target=links[key]
-        if child not in self.values:return
-        if key not in self._companions:
-            if key=='lightbar_fixed' and value!=1:return
-            self._companions[key]=[child,previous,self.values[child],False]
-        state=self._companions[key]
-        if value==state[1]:
-            if not state[3]:self.values[child]=state[2]
-            del self._companions[key]
-        elif not state[3]:self.values[child]=target
+        links=[]
+        if key=='auto_haptics_enable':links.append(('disable_speaker',previous,value,int(value in (1,2)),True))
+        if key=='lightbar_fixed':links.append(('lightbar_off',previous,value,0,value==1))
+        if key=='mix_native_level':links.append(('mix_native_filter',bool(previous),bool(value),0,bool(value)))
+        if key in ('auto_haptics_enable','mix_native_level'):
+            old_mix=(previous==1 and bool(self.values.get('mix_native_level'))) if key=='auto_haptics_enable' else (
+                self.values.get('auto_haptics_enable')==1 and bool(previous))
+            new_mix=self.values.get('auto_haptics_enable')==1 and bool(self.values.get('mix_native_level'))
+            links.append(('ah_dsp_source',old_mix,new_mix,0,new_mix))
+        for child,old,new,target,can_start in links:
+            if old==new:continue
+            if child not in self.values:continue
+            if child not in self._companions:
+                if not can_start:continue
+                self._companions[child]=[child,old,self.values[child],False]
+            state=self._companions[child]
+            if new==state[1]:
+                if not state[3]:self.values[child]=state[2]
+                del self._companions[child]
+            elif not state[3]:self.values[child]=target
 
     def normalize_haptic_gain(self,stage=False):
         # Stage the policy locally; preserve the true device baseline for Apply.

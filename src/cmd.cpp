@@ -141,9 +141,13 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
             new_config.lock_volume = value;
             break;
         }
+        case 0xc7: // Edge-only editor capability; shares the legacy profile byte.
+            if (!usb_edge_serial_available()) return false;
+            [[fallthrough]];
+        case 0xc8: // Profile backup/restore access, including when Edge is not connected.
         case 0x0d: {
             uint8_t value{};
-            if (!read_config_value(value, buffer, bufsize)) return false;
+            if (!read_config_value(value, buffer, bufsize) || value > 1) return false;
             new_config.disable_usb_sn = value;
             break;
         }
@@ -295,10 +299,6 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0x81: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_natural_x10=v; break; }
         case 0x82: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_natural_y_x10=v; break; }
         case 0x84: { uint16_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.gyro_scale_trim_x100=v; break; }
-        // Not a setting: writing this EMITS that many mouse counts to the right,
-        // for measuring the game's counts per 360. Nothing is stored.
-        case 0x86: { uint16_t v{}; if(!read_config_value(v,buffer,bufsize))return false;
-                     extern void gyro_cal_emit(int32_t); gyro_cal_emit((int32_t) v); break; }
         case 0x65: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.rstick_invert=v; break; }
         // Macro enable bitmap, stored INVERTED (set bit = disabled) so an old
         // slot's 0xFF tail fill defaults to "no macros". See config.h.
@@ -337,6 +337,12 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
 }
 
 static bool set_config_field(uint8_t field_id, uint8_t const *buffer, uint16_t bufsize) {
+    // Calibration is a command with a side effect, never part of a bulk profile write.
+    if (field_id == 0x86) {
+        uint16_t counts{};
+        extern bool gyro_cal_emit(int32_t);
+        return read_config_value(counts, buffer, bufsize) && gyro_cal_emit(counts);
+    }
     Config_body new_config = get_config();
     if (!set_field_in(new_config, field_id, buffer, bufsize)) return false;
     set_config(reinterpret_cast<const uint8_t *>(&new_config), sizeof(new_config));
@@ -371,6 +377,8 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
             return write_config_value(buffer, bufsize, config.controller_mode);
         case 0x0c:
             return write_config_value(buffer, bufsize, config.lock_volume);
+        case 0xc8:
+        case 0xc7:
         case 0x0d:
             return write_config_value(buffer, bufsize, config.disable_usb_sn);
         case 0x0e:
@@ -617,6 +625,7 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
 }
 
 static bool get_config_field(uint8_t field_id, uint8_t *buffer, uint16_t bufsize) {
+    if (field_id == 0xc7 && !usb_edge_serial_available()) return false;
     return get_config_field_from(get_config(), field_id, buffer, bufsize);
 }
 

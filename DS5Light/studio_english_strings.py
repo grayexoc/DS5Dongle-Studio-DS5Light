@@ -4278,6 +4278,17 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
                                                                                                            'may '
                                                                                                            'clip.'}
 
+EN.update({
+    '듀얼센스를 연결하고 자이로 작동 조건과 마우스 출력을 적용하세요. 측정하는 동안 설정한 작동 조건을 유지하세요.': 'Connect a DualSense, then apply a gyro activation condition and mouse output. Keep that activation condition satisfied while measuring.',
+    'Flick Stick 또는 자이로 마우스의 자연 감도를 적용해야 합니다. 전송 후 3초 안에 게임으로 전환하세요.': 'Apply Flick Stick or natural sensitivity with gyro mouse. Switch to the game within three seconds after sending.',
+    'Edge USB 재연결 후 같은 Pico의 4채널 출력을 선택하세요.': 'After Edge USB reconnects, select the four-channel output for the same Pico.',
+    'Edge USB 시리얼 설정은 DualSense Edge USB 모드에서 적용하세요.': 'Apply the Edge USB serial setting in DualSense Edge USB mode.',
+    'Edge 재연결 후 Pico를 확인하지 못했습니다. 장치 목록에서 같은 Pico를 선택하세요.': 'The Pico could not be verified after reconnecting Edge. Select the same Pico from the device list.',
+    '복원 대상 펌웨어에서 Edge USB 시리얼 저장을 지원하지 않습니다.': 'The target firmware does not support storing the Edge USB serial setting.',
+    'Edge USB 시리얼 숨기기': 'Hide Edge USB serial number',
+    'DualSense Edge의 Windows 햅틱·스피커 호환 옵션입니다. 적용하면 USB가 재연결되며 4채널 출력을 다시 선택해야 할 수 있습니다.': 'Windows haptics and speaker compatibility option for DualSense Edge. Applying it reconnects USB and may require selecting the four-channel output again.',
+    '게임이 보낸 볼륨 설정을 무시하고 지정한 듀얼센스 스피커·헤드셋 음량을 유지합니다.': 'Keeps the configured DualSense speaker and headset volume by ignoring volume settings sent by the game.',
+})
 EN.update({'4채널 오디오 출력 없음 · 듀얼센스 연결과 Windows 출력 장치를 확인하세요': 'No 4-channel audio output · Check DualSense connection and Windows output devices', '오디오 출력 이름 중복 · 장치 이름을 구분한 뒤 다시 선택하세요': 'Duplicate audio output names · Rename devices distinctly and select again', '선택한 Pico의 오디오 출력을 식별하지 못했습니다 · 출력 장치를 다시 선택하세요': 'Cannot identify the selected Pico audio output · Select the output again', '오디오 출력 열기 실패 · 다른 앱의 독점 사용과 장치 상태를 확인하세요': 'Cannot open audio output · Check exclusive use by other apps and device status', '최초 오디오 연결 대기 8초 초과 · 자동 정지': 'Initial audio connection exceeded 8 seconds · Automatically stopped'})
 
 EN['오디오 전송 실패 · 출력 장치 연결 상태를 확인하세요']='Audio transmission failed · Check the output device connection'
@@ -4483,7 +4494,7 @@ EN['장치가 변경되었습니다. 상태를 새로 고침하세요.'] = 'Devi
 FIELD_LABELS = {
  'auto_haptics_enable':'Audio haptics mode', 'auto_haptics_gain':'Audio haptics strength',
  'auto_haptics_smooth':'Envelope smoothing', 'auto_haptics_gate':'Noise gate',
- 'mix_native_level':'Mix native haptic level', 'mix_native_filter':'Filter native haptics',
+ 'mix_native_level':'Mix native haptics', 'mix_native_filter':'Leak suppression',
  'ah_dsp_source':'Audio source channels', 'auto_haptics_lowpass_hz':'Low-pass cutoff',
  'ah_xover_hz':'Crossover frequency', 'ah_low_gain':'Low-band gain', 'ah_high_gain':'High-band gain',
  'auto_haptics_slope':'Filter slope', 'auto_mute_replace':'Mute speaker in Replace',
@@ -4492,6 +4503,10 @@ FIELD_LABELS = {
  'speaker_volume':'Speaker volume', 'headset_volume':'Headset volume', 'speaker_gain':'Speaker gain',
  'sync_spk_headset_volume':'Link speaker and headset volume', 'lock_volume':'Lock volume',
  'disable_mic':'Disable microphone', 'disable_speaker':'Disable speaker audio',
+ 'disable_usb_sn':'Hide Edge USB serial number',
+ 't2_mode':'R2 input mode', 't2_l2_mode':'L2 input mode',
+ 't2_pos':'R2 depth for full input', 't2_l2_pos':'L2 depth for full input',
+ 't2_button':'R2 output button', 't2_l2_button':'L2 output button',
  'macro_disable':'Enabled mappings and macros', 'usb_gamepad_mode':'Xbox mode',
  'controller_mode':'DualSense model', 'polling_rate_mode':'Polling rate',
  'audio_buffer_length':'Audio buffer', 'inactive_time':'Idle disconnect timeout',
@@ -4517,7 +4532,7 @@ FIELD_HELP = {
  'auto_haptics_gain':'Scales audio-generated haptics. Combines with the main window strength control; raising both can cause saturation.',
  'auto_haptics_smooth':'Higher values give smoother decay. Lower values keep brief impacts more distinct.',
  'auto_haptics_gate':'Suppresses quiet audio. High values can also remove subtle effects and footsteps.',
- 'mix_native_level':'Native haptics level in Mix. 0 excludes native haptics.',
+ 'mix_native_level':'Mix in the game’s native haptics. Once applied, DS5Light sends captured audio to the front channels.',
  'mix_native_filter':'Filters mirrored audio from native haptics. Turn off to preserve the original native waveform.',
  'ah_dsp_source':'USB channels used by Pico: 0/1 for front audio, 2/3 for rear audio. Separate from capture channel selection.',
  'auto_haptics_lowpass_hz':'Reduces audio above this frequency. Lower values favor bass but can weaken brief effects.',
@@ -4533,8 +4548,15 @@ FIELD_HELP = {
  'headset_volume':'Volume of a headset connected to the DualSense audio jack.',
  'speaker_gain':'Extra speaker amplification. High values can distort.',
  'sync_spk_headset_volume':'Changing either volume also changes the other.',
- 'lock_volume':'Prevents volume changes from the DualSense volume controls.',
+ 'lock_volume':'Keeps the configured DualSense speaker and headset volume by ignoring volume settings sent by the game.',
  'disable_mic':'Disables the DualSense microphone. USB may reconnect when applied.',
+ 'disable_usb_sn':'Windows haptics and speaker compatibility option for DualSense Edge. Applying it reconnects USB and may require selecting the four-channel output again.',
+ 't2_mode':'Determines how the R2 second stage reports input.',
+ 't2_l2_mode':'Determines how the L2 second stage reports input.',
+ 't2_pos':'R2 input depth that triggers the configured second-stage action. The resistance diagram shows mechanical resistance.',
+ 't2_l2_pos':'L2 input depth that triggers the configured second-stage action. The resistance diagram shows mechanical resistance.',
+ 't2_button':'Button sent when R2 reaches the configured input depth.',
+ 't2_l2_button':'Button sent when L2 reaches the configured input depth.',
  'disable_speaker':'Disables DualSense speaker audio and the headset connected to its jack.',
  'macro_disable':'Select shared mappings and macros to enable in this profile.',
  'usb_gamepad_mode':'On: XInput gamepad. Off: DualSense or DualSense Edge. Applying a change reconnects USB.',
@@ -4719,8 +4741,18 @@ FIELD_LABELS.update({'disable_inactive_disconnect':'Disable idle disconnect',
 FIELD_LABELS['ps_shortcut_enabled']='PS default shortcuts'
 FIELD_HELP['ps_shortcut_enabled']='Short press sends Win+G; long press sends Win+Tab. Turn this off to use PS in Pico mappings or Shift combinations.'
 EN.update({
+ 'PS 기본 단축키': 'PS default shortcuts',
+ '짧게 Win+G · 길게 Win+Tab. PS를 매핑에 쓰려면 끄세요. 변경값은 현재 프로필에 편집되고 임시 적용 또는 저장할 때 Pico에 전송됩니다.':
+     'Tap: Win+G. Hold: Win+Tab. Turn off to map PS. The change is staged in the current profile and sent when you apply or save.',
  '현재 프로필·레이어에서 이 스와이프가 활성인 동안 클릭만 차단합니다. 스와이프 성공 여부와 관계없이 적용하며, 터치 위치와 이동은 유지합니다.':
      'Blocks only the click while this swipe mapping is enabled in the current profile and layer. Touch position and movement still reach the game.',
  '마이크 버튼을 Pico 매핑·시프트로 사용하면 PC로 보내는 기본 음소거 입력과 마이크 LED 표시를 억제합니다. Edge FN 기본 조합과 PS + Create는 사용할 수 없습니다.':
      'Using the microphone button in a Pico mapping or as Shift suppresses its default mute input and LED. Reserved Edge Fn combinations and PS + Create are unavailable.',
+})
+
+EN.update({
+    'Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널로 변경하세요.':
+        'Select the front channels as the haptic input to mix in native haptics.',
+    '네이티브 햅틱을 혼합하려면 햅틱 입력 채널을 앞 채널로 선택하세요.':
+        'Select the front channels as the haptic input to mix in native haptics.',
 })

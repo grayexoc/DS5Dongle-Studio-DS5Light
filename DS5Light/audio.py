@@ -170,7 +170,7 @@ class OutputProcessor:
 
             self._pcm=np.empty((self._capacity,4),dtype="<i2")
 
-    def process(self, data, controls):
+    def process(self, data, controls, *, front_only=False):
 
         if controls.mode=='pure':
 
@@ -184,6 +184,12 @@ class OutputProcessor:
 
             self.last_policy='bypass'
 
+            if front_only and data:
+                source=np.frombuffer(data,'<i2').reshape(-1,4)
+                self._buffers(len(source))
+                pcm=self._pcm[:len(source)]
+                pcm[:,:2]=source[:,:2];pcm[:,2:]=0
+                data=pcm.tobytes()
             return self.level.process(data,controls.gain)  # Exact original bytes at steady 100%.
 
         if self.last_policy in ('bypass','pure'):
@@ -210,7 +216,8 @@ class OutputProcessor:
 
         np.multiply(out,32768,out=out);np.rint(out,out=out);np.clip(out,-32768,32767,out=out)
 
-        pcm[:,:2]=out;pcm[:,2:]=pcm[:,:2]
+        pcm[:,:2]=out
+        pcm[:,2:]=0 if front_only else pcm[:,:2]
 
         return self.level.process(pcm.tobytes(),controls.gain)
 
@@ -271,6 +278,7 @@ class Engine:
         self.input_name,self.output_name=input_name,output_name
 
         self.controls,self.silent=controls,silent
+        self.front_only=False
 
         self.provider=RumbleStateProvider()
 
@@ -474,7 +482,7 @@ class Engine:
 
                 engine._check(); diagnose=engine.diagnostics_enabled; start=time.perf_counter() if diagnose else 0.
 
-                try: out=engine.output_processor.process(data,engine.controls)
+                try: out=engine.output_processor.process(data,engine.controls,front_only=engine.front_only)
 
                 except Exception as exc:
 

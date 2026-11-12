@@ -405,3 +405,64 @@ class SectionTitle(tk.Canvas):
             for character in text:
                 self.create_text(x,px(self,1),text=character,anchor='nw',font=self.font,fill=color)
                 x+=advance(character)
+
+_SWITCH_CARD='#151515'
+_SWITCH_ACCENT='#d6ad52'
+
+class Switch(tk.Canvas):
+
+    """Static native Tk switch: no animation, web engine or polling."""
+
+    def __init__(self,parent,variable,command):
+
+        super().__init__(parent,width=px(parent,44),height=px(parent,26),bg=_SWITCH_CARD,highlightthickness=1,
+
+                         highlightbackground=_SWITCH_CARD,highlightcolor=_SWITCH_ACCENT,takefocus=1,cursor='hand2')
+
+        self.variable=variable; self.command=command; self.enabled=True
+
+        self.bind('<Button-1>',lambda e:self.invoke())
+
+        self.bind('<space>',lambda e:self.invoke())
+
+        self.bind('<Return>',lambda e:self.invoke())
+
+        widget_trace(self,variable,lambda *args:self.draw())
+
+        watch_scale(self,self._scale_switch)
+        self.draw()
+
+    def _scale_switch(self):
+        self.configure(width=px(self,44),height=px(self,26));self.draw()
+
+    def invoke(self):
+
+        if self.enabled:
+
+            self.variable.set(not self.variable.get()); self.command()
+
+        return 'break'
+
+    def set_enabled(self,enabled):
+
+        if self.enabled==enabled: return
+
+        self.enabled=enabled; self.configure(takefocus=int(enabled),cursor='hand2' if enabled else 'arrow'); self.draw()
+
+    def draw(self):
+
+        self.delete('all')
+
+        on=self.variable.get(); color=_SWITCH_ACCENT if on and self.enabled else '#3a3832'
+
+        self.create_oval(*(px(self,v) for v in (2,3,22,23)),fill=color,outline=color)
+
+        self.create_oval(*(px(self,v) for v in (22,3,42,23)),fill=color,outline=color)
+
+        self.create_rectangle(*(px(self,v) for v in (12,3,32,23)),fill=color,outline=color)
+
+        x=25 if on else 5
+
+        knob='#2b2110' if on and self.enabled else '#c4c0b6' if self.enabled else '#77736b'
+
+        self.create_oval(*(px(self,v) for v in (x,6,x+14,20)),fill=knob,outline=knob)

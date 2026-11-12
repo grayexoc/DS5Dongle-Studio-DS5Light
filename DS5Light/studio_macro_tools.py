@@ -197,16 +197,13 @@ class MacroTools:
         from studio_html_export import profile_html
         name=filedialog.asksaveasfilename(parent=self.parent,defaultextension='.html',initialfile='DS5Light-profile.html',filetypes=[('HTML','*.html')])
         if name:Path(name).write_text(profile_html(self.doc.export_json()),encoding='utf-8')
-    def range_row(self,parent,row,f,value,valid):
+    def range_row(self,parent,row,f,value,valid,default=None):
         from studio_range import RangeSlider
         from studio_help import label,help_text,reference_point
         from studio_settings_ui import FieldTip
         key=f[1];box=tk.Frame(parent,bg=BG);box.grid(row=row,column=0,columnspan=2,sticky='ew',pady=(4,12));box.columnconfigure(0,weight=1)
-        title=self.option_title(box,key,text=_ui_tr('1 가장 약함 · 10 기본') if key=='trigger_reduce' else f[3] if key.startswith('at_') else label(key),foreground=FG if valid else MUTED,wraplength=320)
+        title=self.option_title(box,key,text=_ui_tr('1 가장 약함 · 10 기본') if key=='trigger_reduce' else f[3] if key.startswith(('at_','t2_')) else label(key),foreground=FG if valid else MUTED,wraplength=320)
         title.grid(row=0,column=0,sticky='w',padx=(0,10))
-        if key=='rumble_gain':
-            tk.Label(title,text=_ui_tr('오디오햅틱 끔에서만 작동'),bg=title.cget('bg'),fg=GOLD,
-                     font=(_ui_tr('맑은 고딕'),9)).pack(side='left',padx=(10,0))
         variable=tk.StringVar(value='' if value is None else format(value,'.5g'));self.vars[key]=variable
         lo,hi=(0,10) if key=='trigger_reduce' else f[5]
         varentry=variable
@@ -227,7 +224,10 @@ class MacroTools:
         if key=='inactive_time':tk.Label(valuebox,text=_ui_tr('분'),bg=BG,fg=MUTED).pack(side='left',padx=(5,0))
         if f[2]=='f32':lo=float(lo);hi=float(hi)
         marker,kind=reference_point(key)
-        slider=RangeSlider(box,variable,lo,hi,enabled=valid and not self.busy,marker=marker,marker_label=kind,trigger=key=='trigger_reduce',display_scale=100 if key=='rumble_gain' else 1)
+        if default is not None:marker,kind=default,_ui_tr('기본')
+        slider=RangeSlider(box,variable,lo,hi,enabled=valid and not self.busy,marker=marker,marker_label=kind,
+                           trigger=key=='trigger_reduce',display_scale=100 if key=='rumble_gain' else 1,
+                           reset_to_marker=key.startswith(('at_','t2_')) and marker is not None and lo<=marker<=hi)
         self.range_controls[key]=(entry,slider,title)
         self.field_views[key]=(title,[entry,slider],[])
         slider.grid(row=1,column=0,columnspan=2,sticky='ew',pady=(4,0))

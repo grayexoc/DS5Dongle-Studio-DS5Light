@@ -97,8 +97,26 @@ class StudioClient:
                 if raw[4] not in (0,1,2):raise RuntimeError('Invalid Studio autohaptics mode')
                 mode=raw[4];break
             if mode is None:raise TimeoutError('Studio autohaptics state unavailable')
+            def optional_field(field, maximum):
+                self.check_cancel()
+                try:
+                    if self.device.send_feature_report(bytes((0x80,0x66,4,field))+bytes(60))==64:
+                        for _attempt in range(4):
+                            self.sleep(.06);self.check_cancel()
+                            try:raw=bytes(self.device.get_feature_report(0x81,64))
+                            except OSError:continue
+                            if len(raw)>=5 and raw[:4]==bytes((0x81,0x66,4,field)) and raw[4]<=maximum:
+                                return raw[4]
+                except OSError:pass
+                return None
+            mix_level=optional_field(0x55,100) if mode==1 else None
+            dsp_source=optional_field(0x64,1) if mix_level else None
             after=self.profile()
-            if before==after:return dict(after,auto_haptics_enable=mode)
+            if before==after:
+                state=dict(after,auto_haptics_enable=mode)
+                if mix_level is not None:state['mix_native_level']=mix_level
+                if dsp_source is not None:state['ah_dsp_source']=dsp_source
+                return state
         raise RuntimeError('Studio profile changed during read; refresh again')
 
     def battery(self):

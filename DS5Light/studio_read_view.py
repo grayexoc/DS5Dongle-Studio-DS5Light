@@ -51,11 +51,12 @@ class StableReadView:
                 if keys is not None and key not in keys:continue
                 title,controls,bits=view
                 f=getattr(self,'_display_fields',{}).get(key,FIELDS[key]);value=self.doc.values.get(key);variable=self.vars[key]
-                if f[4]=='bool':text=bool(value)
+                if f[4] in ('bool','mix_toggle'):text=bool(value)
                 elif f[4]=='select':text=dict(options(f)).get(value,_ui_tr('밝기 선택') if key=='player_led_bright' and value==3 else _ui_tr('미지원') if value is None else str(value))
                 elif f[4]=='color':text='' if value is None else str(value)
                 else:text='' if value is None else format(value,'.5g')
                 if key not in self.invalid and variable.get()!=text:variable.set(text)
+                if f[4]=='mix_toggle':self.update_mix_toggle_text(controls[0],value)
                 for bitvar,index in bits:
                     selected=bool(int(value or 0)&(1<<index))
                     if bitvar.get()!=selected:bitvar.set(selected)
@@ -77,7 +78,6 @@ class StableReadView:
                     if hasattr(control,'_paint_colour'):control._paint_colour()
                 for child in title.winfo_children():
                     if isinstance(child,tk.Label):
-                        if child.cget('text')==_ui_tr('오디오햅틱 끔에서만 작동'):continue
                         colour='#eee9df' if valid else '#aaa393'
                         if str(child.cget('fg'))!=colour:child.configure(fg=colour)
         finally:self._syncing_fields=False
@@ -94,8 +94,10 @@ class StableReadView:
         if self.category==5:return common+(tuple(sorted((self.profile_stamp or {}).items())),tuple((slot.index,slot.state,slot.name) for slot in self.slots))
         if self.category==2:
             from studio_scope import TRIGGER_FIELDS
-            return common + (self.busy, tuple((k,self.doc.values.get(k)) for k in sorted(TRIGGER_FIELDS)))
-        if self.category==3:return common
+            return common + (self.busy, getattr(self,'_trigger_side','L2'),
+                             frozenset(self._open_option_groups),
+                             tuple((k,self.doc.values.get(k)) for k in sorted(TRIGGER_FIELDS)))
+        if self.category==3:return common+(self.busy,*(self.doc.values.get(k) for k in ('gyro_mode','gyro_output','gyro_sens_mode')),*self.gyro_calibration_ready())
         return (self.category,)
 
     def refresh_read_extras(self):
@@ -103,6 +105,8 @@ class StableReadView:
         if box is None or not box.winfo_exists():return
         signature=self.extras_signature()
         if signature==getattr(self,'_extra_signature',None):return
+        restoring_trigger_scroll=self.category==2 and self._extra_signature is not None
+        offset=self.canvas.canvasy(0) if restoring_trigger_scroll else 0
         if self.category == 2:
             from studio_scope import TRIGGER_FIELDS
             for key in TRIGGER_FIELDS:
@@ -120,4 +124,5 @@ class StableReadView:
             elif self.category==3:self.render_calibration()
         finally:self.body=body
         self._extra_signature=signature
-        self.sync_scrollregion()
+        if restoring_trigger_scroll:self.restore_scroll_offset(offset)
+        else:self.sync_scrollregion()

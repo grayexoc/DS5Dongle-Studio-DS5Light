@@ -14,6 +14,7 @@
 #include <cstring>
 
 #include "state_mgr.h"
+#include "usb.h"
 #include "utils.h"
 #include "hardware/flash.h"
 #include "hardware/sync.h"
@@ -921,6 +922,8 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
     set_config(reinterpret_cast<const uint8_t *>(&slot_body), sizeof(slot_body));
     macro_reset();
     state_rumble_reset();            // never carry a release across profile boundaries
+    extern void gyro_cal_cancel();
+    gyro_cal_cancel();
     const Config_body &o = prev_body;
     const Config_body &n = config.body;
     needs_reenum =
@@ -932,7 +935,7 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
                    (o.disable_mic          != n.disable_mic)          ||
                    (o.disable_speaker      != n.disable_speaker)      ||
                    (o.enable_wake          != n.enable_wake)          ||
-                   (o.disable_usb_sn       != n.disable_usb_sn)       ||
+                   (usb_edge_serial_hidden(o) != usb_edge_serial_hidden(n))       ||
                    // The keyboard interface is shared by wake, the PS shortcut
                    // and macros, so what matters is whether it is PRESENT - not
                    // which of the three asked for it. Testing them separately

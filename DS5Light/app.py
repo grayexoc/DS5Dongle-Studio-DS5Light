@@ -51,7 +51,7 @@ from studio_settings_ui import FieldTip, StudioSettings, ui_text
 
 from localization import tr, LANGUAGE, save_language, canonical_device, display_device
 
-from ui_controls import circle_image, RadioChoice, CircleCheck, SectionTitle, AutoScrollbar, install_combobox_selection_cleanup
+from ui_controls import Switch, circle_image, RadioChoice, CircleCheck, SectionTitle, AutoScrollbar, install_combobox_selection_cleanup
 
 from mute_shortcut import MuteShortcut, KEYS, MODIFIERS, binding_label, validate_binding
 
@@ -156,66 +156,6 @@ def apply_windows_titlebar_theme(root):
     except Exception:
 
         pass
-
-
-
-class Switch(tk.Canvas):
-
-    """Static native Tk switch: no animation, web engine or polling."""
-
-    def __init__(self,parent,variable,command):
-
-        super().__init__(parent,width=px(parent,44),height=px(parent,26),bg=CARD,highlightthickness=1,
-
-                         highlightbackground=CARD,highlightcolor=ACCENT,takefocus=1,cursor='hand2')
-
-        self.variable=variable; self.command=command; self.enabled=True
-
-        self.bind('<Button-1>',lambda e:self.invoke())
-
-        self.bind('<space>',lambda e:self.invoke())
-
-        self.bind('<Return>',lambda e:self.invoke())
-
-        variable.trace_add('write',lambda *args:self.draw())
-
-        watch_scale(self,self._scale_switch)
-        self.draw()
-
-    def _scale_switch(self):
-        self.configure(width=px(self,44),height=px(self,26));self.draw()
-
-    def invoke(self):
-
-        if self.enabled:
-
-            self.variable.set(not self.variable.get()); self.command()
-
-        return 'break'
-
-    def set_enabled(self,enabled):
-
-        if self.enabled==enabled: return
-
-        self.enabled=enabled; self.configure(takefocus=int(enabled),cursor='hand2' if enabled else 'arrow'); self.draw()
-
-    def draw(self):
-
-        self.delete('all')
-
-        on=self.variable.get(); color=ACCENT if on and self.enabled else '#3a3832'
-
-        self.create_oval(*(px(self,v) for v in (2,3,22,23)),fill=color,outline=color)
-
-        self.create_oval(*(px(self,v) for v in (22,3,42,23)),fill=color,outline=color)
-
-        self.create_rectangle(*(px(self,v) for v in (12,3,32,23)),fill=color,outline=color)
-
-        x=25 if on else 5
-
-        knob='#2b2110' if on and self.enabled else '#c4c0b6' if self.enabled else '#77736b'
-
-        self.create_oval(*(px(self,v) for v in (x,6,x+14,20)),fill=knob,outline=knob)
 
 
 
@@ -2068,6 +2008,12 @@ class App:
                 if 'output' in self.conn_widgets: self.conn_widgets['output'].configure(values=self.outputs)
 
             self.status.set(_ui_tr('장치 목록을 갱신했습니다.'))
+            if getattr(self,'_edge_audio_recheck',False):
+                self._edge_audio_recheck=False
+                requested=None if self.destination.get()==AUTO else self.destination.get()
+                if self.studio.binding.output(rows,requested) is None:
+                    self.open_connection()
+                    self.status.set(_ui_tr('Edge USB 재연결 후 같은 Pico의 4채널 출력을 선택하세요.'))
 
         for button in getattr(self,'device_refresh_buttons',[]):
 
@@ -2310,6 +2256,11 @@ class App:
         if (self.engine or self._closing or self._close_requested or self.studio_settings.busy
                 or self.studio.busy or not self.run_intent.requested):return
 
+        if self.studio.native_mix_conflict():
+            self.run_intent.stop('invalid_route')
+            self.status.set(tr('Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널로 변경하세요.'))
+            self.last_render=None;self.render();return
+
         pinned_resume=(self.run_intent.profile_paused and self.run_intent.can_resume(self._run_route())
 
                        and self.studio.binding.snapshot().endpoint_id is not None)
@@ -2343,6 +2294,11 @@ class App:
         requested=None if self.destination.get()==AUTO else self.destination.get()
         binding=self.studio.binding
         if binding.output(self.ds,requested) is None:
+            if requested is None and binding.snapshot().require_output_identity:
+                self.run_intent.stop('invalid_route')
+                self.open_connection()
+                self.status.set(_ui_tr('Edge USB 재연결 후 같은 Pico의 4채널 출력을 선택하세요.'))
+                return
             matches=[d for d in self.ds if (d.get('name')==requested if requested is not None else 'dualsense' in d.get('name','').lower()) and d.get('maxOutputChannels',0)>=4 and not d.get('isLoopbackDevice')]
             identity=binding.snapshot()
             eligible=(len(matches)==1 and matches[0].get('endpoint_id') and identity.hid_path)
@@ -2411,6 +2367,7 @@ class App:
         self.update_controls()
 
         candidate=Engine(None if self.source.get()==AUTO else self.source.get(),None if self.destination.get()==AUTO else self.destination.get(),self.controls,process_pid=pid,process_channels=CHANNELS[self.channel.get()],binding=self.studio.binding)
+        candidate.front_only=self.studio.native_mix_front_only()
 
         try:
 
@@ -2516,6 +2473,8 @@ class App:
         profile=result['profile'];path=result['path'];old=self.studio.observed_profile
 
         current={k:profile.get(k) for k in ('index','name','edited','auto_haptics_enable')}
+        if profile.get('auto_haptics_enable')==1:
+            current.update({key:profile[key] for key in ('mix_native_level','ah_dsp_source') if key in profile})
 
         if result.get('row'):
 
@@ -2531,7 +2490,9 @@ class App:
 
             stamp={k:profile.get(k) for k in ('index','name','edited')}
 
-            if editor.profile_stamp!=stamp or editor.doc.values.get('auto_haptics_enable')!=profile.get('auto_haptics_enable'):
+            if (editor.profile_stamp!=stamp or editor.doc.baseline.get('auto_haptics_enable')!=profile.get('auto_haptics_enable')
+                    or any(key in current and editor.doc.baseline.get(key)!=current[key]
+                           for key in ('mix_native_level','ah_dsp_source'))):
 
                 editor.write_ready=False;editor.external_stale=True
 
@@ -2554,6 +2515,8 @@ class App:
                     editor.task('entry_read',editor.entry_snapshot)
 
         self.studio._observe_profile(path,profile);self.studio._sync_current_profile(path,profile)
+        if self.engine and self.studio.native_mix_conflict():
+            self.stop(message=tr('Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널로 변경하세요.'),reason='invalid_route')
 
         self.studio.enforce_haptics_policy();self.studio.render();self.last_render=None;self.render()
 

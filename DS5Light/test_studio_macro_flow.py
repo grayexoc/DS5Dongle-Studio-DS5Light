@@ -68,6 +68,25 @@ class MacroFlowUITests(unittest.TestCase):
         ui,e=self.macro(record(chord=1,keys=[4]))
         e.kind.set('스틱 방향');self.assertEqual(e.mode.get(),'누르는 동안 유지');self.assertEqual(e.output_kind.get(),'키보드');self.assertIn('disabled',e.mode_control.state())
         e.kind.set('터치패드 스와이프');self.assertEqual(e.mode.get(),'짧게 누르기');self.assertEqual(e.draft.build(e.state())[4],128);e.close()
+    def test_ps_shortcut_only_appears_for_ps_and_stages_profile_change(self):
+        ui,e=self.macro(record(chord=1,keys=[4]))
+        ui.doc.values['ps_shortcut_enabled']=ui.doc.baseline['ps_shortcut_enabled']=0
+        ui.select_category(0)
+        self.assertNotIn('ps_shortcut_enabled',ui.field_views)
+        self.assertEqual(e.ps_shortcut_row.winfo_manager(),'')
+        e.buttons[16].set(True)
+        self.assertEqual(e.ps_shortcut_row.winfo_manager(),'pack')
+        with patch.object(ui,'with_client') as wire:
+            e.ps_shortcut_control.invoke()
+            wire.assert_not_called()
+        self.assertEqual(ui.doc.changes['ps_shortcut_enabled'],1)
+        ui.write_ready=False
+        e.ps_shortcut.set(False);e.change_ps_shortcut()
+        self.assertTrue(e.ps_shortcut.get())
+        self.assertEqual(ui.doc.values['ps_shortcut_enabled'],1)
+        e.buttons[16].set(False)
+        self.assertEqual(e.ps_shortcut_row.winfo_manager(),'')
+        e.close()
     def test_unchanged_save_preserves_existing_record(self):
         raw=record(chord=1,keys=[224,4],flags=0x80,rel_order=0);raw[12:17]=[9,8,0,6,5]
         ui,e=self.macro(raw);e.commit();self.assertEqual(ui.doc.macros['0'],raw)

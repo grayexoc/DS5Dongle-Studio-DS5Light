@@ -84,6 +84,17 @@ class RecoveryUITests(unittest.TestCase):
         c.write_macro.assert_not_called();c.commit_macros.assert_not_called();c.save_flash.assert_called_once();c.save_slot.assert_called_once()
         refresh.assert_called_once();self.finish(e,'apply',answer)
         self.assertTrue(e.doc.macro_changes);self.assertEqual(e.doc.macros,new);self.assertFalse(e.doc.unsaved)
+    def test_trigger_edits_are_sent_again_after_temporary_apply(self):
+        e,c,_=self.prepare()
+        for strength in (25,90):
+            e.changed('at_l2_strength',strength)
+            c.read_fields.return_value=(dict(e.doc.baseline),[])
+            result,_=self.transaction(e,c,fresh())
+            self.assertTrue(result['trigger_changed'])
+            self.assertEqual(c.write_fields.call_args.args[0],{'at_l2_strength':strength})
+            self.finish(e,'apply',result)
+            self.assertEqual(e.doc.baseline['at_l2_strength'],strength)
+        c.save_flash.assert_not_called()
     def test_enabling_existing_macro_refreshes_after_interface_reconnect(self):
         e,c,_=self.prepare(pending=True);e.doc.macros_pending_flash=False
         e.doc.values['macro_disable']=0xfffffffe

@@ -69,6 +69,9 @@ def options(f):
 
     from localization import LANGUAGE
 
+    if f[1]=='mix_native_filter':
+        return [(1,'Filtered'),(0,'Raw')] if LANGUAGE=='en' else [(1,'억제'),(0,'원본')]
+
     from studio_english_strings import OPTION_TEXT
     translated={**OPTION_TEXT, _ui_tr('끔'):'Off',_ui_tr('짧게 · 20ms'):'Short · 20ms',_ui_tr('보통 · 40ms'):'Medium · 40ms'}
 
@@ -207,7 +210,8 @@ DESCRIPTIONS.update({
 
  'sync_spk_headset_volume':_ui_tr('스피커와 헤드셋 음량을 함께 조절합니다.'),
 
- 'lock_volume':_ui_tr('게임이 음량을 바꾸지 못하도록 지정한 듀얼센스 음량을 유지합니다.'),
+ 'lock_volume':_ui_tr('게임이 보낸 볼륨 설정을 무시하고 지정한 듀얼센스 스피커·헤드셋 음량을 유지합니다.'),
+ 'disable_usb_sn':_ui_tr('DualSense Edge의 Windows 햅틱·스피커 호환 옵션입니다. 적용하면 USB가 재연결되며 4채널 출력을 다시 선택해야 할 수 있습니다.'),
 
  'disable_mic':_ui_tr('듀얼센스 마이크 입력을 끕니다. USB 재연결이 필요할 수 있습니다.'),
 
@@ -339,7 +343,7 @@ LABELS.update({'auto_haptics_enable':_ui_tr('오디오햅틱 모드'),'auto_hapt
 
  'synth_force':_ui_tr('게임 적응형 트리거 효과 대체')})
 
-CHOICES['Replace (audio only)']=_ui_tr('Replace 완전히 대체')
+CHOICES['Replace (audio only)']=_ui_tr('Replace · 완전히 대체')
 
 for _k in LABELS:LABELS[_k]=LABELS[_k].replace(_ui_tr('동글'),'Pico').replace(_ui_tr('오토햅틱'),_ui_tr('오디오햅틱')).replace(_ui_tr('오토 햅틱'),_ui_tr('오디오햅틱'))
 
@@ -456,7 +460,7 @@ def help_text(key):
 
 
 
-LABELS.update({'mix_native_filter':_ui_tr('네이티브 햅틱 누설 억제'),'mix_native_level':_ui_tr('Mix 네이티브 햅틱 혼합량')})
+LABELS.update({'mix_native_filter':_ui_tr('네이티브 햅틱 누설 억제'),'mix_native_level':_ui_tr('Mix 네이티브 햅틱 혼합')})
 
 LABELS.update({'lightbar_fixed':_ui_tr('듀얼센스 라이트바 색상 고정'),'lightbar_rgb':_ui_tr('라이트바 색상')})
 
@@ -486,8 +490,10 @@ DESCRIPTIONS.update({
 
 
 DEFAULTS.update({'rumble_gain':100,'rumble_release':0,'rumble_haptic_strength':100,
+                 'at_strength':70,'at_strength_b':70,'at_pushback':0,'at_pushback_freq':35,
                  'mix_native_filter':1,'mix_native_level':0,'haptics_gain':1.0})
 REFERENCE['rumble_haptic_strength'] = 100
+REFERENCE['disable_mic'] = 1
 
 
 
@@ -501,6 +507,8 @@ DESCRIPTIONS['haptics_gain']+=_ui_tr(' 기존 프로필의 증폭값은 유지�
 from localization import LANGUAGE as _USB_MODE_LANGUAGE
 LABELS['usb_gamepad_mode'] = 'XBOX Mode' if _USB_MODE_LANGUAGE=='en' else 'XBOX 모드'
 DEFAULTS['usb_gamepad_mode'] = 0
+LABELS['disable_usb_sn'] = _ui_tr('Edge USB 시리얼 숨기기')
+DEFAULTS['disable_usb_sn'] = 0
 DESCRIPTIONS['usb_gamepad_mode'] = ('On presents an XInput gamepad. Off uses DualSense or Edge. Applying a mode change reconnects USB. Save it to the profile to retain it.' if _USB_MODE_LANGUAGE=='en' else '켜면 XInput, 끄면 DualSense 또는 Edge로 연결됩니다. 모드를 적용하면 USB가 재연결됩니다. 유지하려면 프로필에 저장하세요.')
 
 
@@ -518,6 +526,7 @@ if _USB_MODE_LANGUAGE != 'en':
         'ah_xover_hz': '저음·고음 세기를 따로 조절할 분리 주파수\n0 · 대역 분리 끔\n저역 통과 기준보다 낮게 설정',
         'auto_haptics_slope': '저역 통과 기준보다 높은 소리의 감쇠 기울기\n높을수록 고음 억제 증가',
         'disable_mic': '듀얼센스 마이크 입력 차단\nUSB 장치 구성이 바뀌면 재연결 필요',
+        'lock_volume': '게임이 보낸 볼륨 설정을 무시하고 지정한 듀얼센스 스피커·헤드셋 음량을 유지합니다.',
         'disable_speaker': '듀얼센스 스피커와 본체 단자에 연결한 헤드셋 끄기\nMix·Replace 선택 시 자동 켜짐, 끔 선택 시 자동 해제\n수동 변경 가능 · 켜진 동안 모드별 음소거 미적용',
         'controller_mode': 'PC에 표시할 듀얼센스 유형\n자동 · 듀얼센스 또는 Edge 감지\nXBOX 모드에서도 USB 오디오 구성에 적용',
         'polling_rate_mode': 'PC에 입력을 보고하는 빈도\n높을수록 보고 간격 감소, USB·무선 처리량 증가',
@@ -549,6 +558,7 @@ TITLES['Native Haptics Filter']=_ui_tr('햅틱 질감')
 DESCRIPTIONS['speaker_gain']=_ui_tr('음량이 부족할 때 조절\n높이면 왜곡될 수 있음')
 
 LABELS['disable_inactive_disconnect']=_ui_tr('자동 연결 해제 안함')
+DESCRIPTIONS['mix_native_level']=_ui_tr('게임이 보낸 네이티브 햅틱을 함께 출력\n적용하면 DS5Light의 오디오를 앞 채널로 전송')
 
 DESCRIPTIONS['ps_shortcut_enabled']=_ui_tr('PS 기본 단축키: 짧게 Win+G, 길게 Win+Tab. 켜져 있으면 PS를 포함한 Pico 매핑·시프트 조합은 비활성화됩니다. 해당 매핑을 사용하려면 기본 단축키를 끄세요.')
 

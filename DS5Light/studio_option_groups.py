@@ -20,7 +20,7 @@ PLANS = {
     'Auto-Haptics & Speaker Effect Leak': [
         ('오디오햅틱 모드', 'Audio haptics mode', 'auto_haptics_enable', False, False),
         ('오디오햅틱 세기', 'Audio haptics strength', 'auto_haptics_gain', False, True),
-        ('Mix 혼합', 'Mix blending', 'rumble_haptic_strength mix_native_level mix_native_filter', False, True),
+        ('Mix 혼합', 'Mix blending', 'mix_native_level mix_native_filter rumble_haptic_strength', False, True),
         ('주파수·반응 세부 조정', 'Frequency & response tuning', 'ah_dsp_source auto_haptics_smooth auto_haptics_gate auto_haptics_lowpass_hz auto_haptics_slope ah_xover_hz ah_low_gain ah_high_gain', True, True)],
     'General Haptics & Audio': [
         ('햅틱및 진동 세기', 'Haptics and rumble strength', 'haptics_gain rumble_gain rumble_mode rumble_release', False, False),
@@ -65,18 +65,22 @@ class OptionGroups:
                 tk.Label(box, text=title(ko, en), bg='#151515', fg='#aaa393',
                          anchor='w').grid(row=0, column=0, columnspan=2, sticky='w', pady=(0,4))
             for n, key in enumerate(keys, 2):
+                if key == 'mix_native_filter' and 'mix_native_level' in keys:
+                    continue
                 row = tk.Frame(box, bg='#151515')
                 row.columnconfigure(0, weight=1)
                 row.grid(row=n, column=0, columnspan=2, sticky='ew')
                 self.field_row(row, 0, available.pop(key))
                 rows.append((key, row))
+                if key == 'mix_native_level' and 'mix_native_filter' in available:
+                    leak = tk.Frame(row, bg='#151515')
+                    leak.grid(row=0,column=2,padx=(12,0),sticky='e')
+                    self.field_row(leak,0,available.pop('mix_native_filter'),
+                                   title_text=title('누설 억제','Leak suppression'),dropdown_width=6)
             self._option_groups.append((group_id, rows, button, conditional, box))
         # New firmware fields must remain accessible without changing this plan.
-        if available:
-            if section == 'Rumble → Trigger':
-                self._trigger_additional_fields = tuple(available.values())
-            else:
-                self.render_additional_fields(available.values())
+        if available and section != 'Rumble → Trigger':
+            self.render_additional_fields(available.values())
         return True
 
     def render_additional_fields(self, fields):

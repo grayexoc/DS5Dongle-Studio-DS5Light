@@ -36,7 +36,7 @@ class EntryTests(unittest.TestCase):
         self.assertEqual(n,13000);self.assertIsNone(ratio)
         n,rows,ratio=counts_result(3250,90,rows)
         self.assertEqual((n,ratio),(13000,2))
-        for angle in (0,-1,'nan','inf',.1):
+        for angle in (0,-1,'nan','inf',.1,'1e-310'):
             with self.assertRaises(ValueError):counts_result(6500,angle,rows)
         self.assertEqual(rows,{6500:180,3250:90})
 
@@ -60,6 +60,17 @@ class RevisionUITests(unittest.TestCase):
         self.assertLess(keys.index('auto_mute_mix'),keys.index('auto_mute_replace'))
         e.select_category(3)
         self.assertTrue(hasattr(e,'gyro_angle'))
+        e.path=b'device';e.app.studio.controller_connected=True
+        e.doc.baseline.update(gyro_mode=0,gyro_output=1,gyro_sens_mode=1)
+        self.assertEqual(e.gyro_calibration_ready(),(False,False))
+        e.doc.baseline.update(gyro_mode=2,gyro_output=1,gyro_sens_mode=1)
+        e.doc.values.update(gyro_mode=2,gyro_output=1,gyro_sens_mode=1)
+        self.assertEqual(e.gyro_calibration_ready(),(True,True))
+        e.write_ready=False;e.uncertain=True
+        with patch.object(e,'task') as task:
+            e.send_calibration(6500)
+            task.assert_not_called()
+        e.write_ready=True;e.uncertain=False
         with patch.object(e,'with_client') as hid:
             e.gyro_angle.set('180');e.compute_calibration();e.apply_calibration()
             self.assertEqual(e.doc.values['flick_counts_360'],13000);hid.assert_not_called()

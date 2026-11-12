@@ -47,6 +47,7 @@ def snapshot(preferred,cancel=lambda:False,binding=None,deadline=None):
         after=client.profile()
         if before!=after:raise RuntimeError(_ui_tr('조회 중 프로필이 변경되었습니다. 새로 고침을 누르세요.'))
         profile=dict(after,auto_haptics_enable=values.get('auto_haptics_enable'),device_serial=target.get('serial_number'),device_row=target)
+        profile.update({key:values[key] for key in ('mix_native_level','ah_dsp_source') if key in values})
         client.check_cancel()
         standby=None
         if client.deadline-time.monotonic()>=1:

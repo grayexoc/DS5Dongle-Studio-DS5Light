@@ -11,6 +11,10 @@ class DeviceIdentity:
     endpoint_name:str|None=None
     confirmed_container_id:str|None=None
     usb_parent_id:str|None=None
+    edge_serial_present:bool|None=None
+    require_output_identity:bool=False
+    expected_edge_serial:bool|None=None
+    edge_port_paths:tuple[str,...]=()
 
 
 def resolve_hid(rows,path=None,serial=None,container_id=None,allow_unique=False):
@@ -38,17 +42,32 @@ class DeviceBinding:
     def snapshot(self):
         with self._lock:return self._identity
     def bind_hid(self,row):
-        from windows_device_identity import hid_container,usb_parent_id
+        from windows_device_identity import hid_container,usb_parent_id,usb_port_paths
         parent=row.get('usb_parent_id') or usb_parent_id(row['path'])
         container=row.get('container_id') or hid_container(row['path'])
         with self._lock:
             old=self._identity
             conflict=bool(old.serial and row.get('serial_number') and row['serial_number']!=old.serial)
-            same=not conflict and ((old.serial and row.get('serial_number')==old.serial) or old.hid_path==row['path'] or (parent and parent==old.usb_parent_id))
+            same_port=(old.edge_port_paths and old.expected_edge_serial is not None and row.get('product_id')==0x0df2 and
+                       bool(row.get('serial_number'))==old.expected_edge_serial and
+                       bool(set(old.edge_port_paths).intersection(usb_port_paths(parent))))
+            same=not conflict and ((old.serial and row.get('serial_number')==old.serial) or old.hid_path==row['path'] or
+                                   (parent and parent==old.usb_parent_id) or same_port)
+            edge_serial=(bool(row.get('serial_number')) if row.get('product_id')==0x0df2 else
+                         old.edge_serial_present if same and 'product_id' not in row else None)
+            changed=(edge_serial is not None and old.edge_serial_present is not None and
+                     edge_serial!=old.edge_serial_present)
+            expected=old.expected_edge_serial
+            if (edge_serial is not None and edge_serial==expected) or ('product_id' in row and edge_serial is None):
+                expected=None
+            strict=changed or (old.require_output_identity and
+                               (edge_serial is not None or ('product_id' not in row and same)))
+            keep_endpoint=same and not strict
             self._identity=DeviceIdentity(row['path'],row.get('serial_number') or (old.serial if same else None),
-                container or (old.container_id if same else None),old.endpoint_id if same else None,
-                old.endpoint_name if same else None,old.confirmed_container_id if same else None,
-                parent or (old.usb_parent_id if same else None))
+                container or (old.container_id if same and not strict else None),old.endpoint_id if keep_endpoint else None,
+                old.endpoint_name if keep_endpoint else None,old.confirmed_container_id if keep_endpoint else None,
+                parent or (old.usb_parent_id if same else None),edge_serial,strict,expected,
+                old.edge_port_paths if expected is not None else ())
         return self.snapshot()
     def resolve_hid(self,rows,allow_unique=False):
         value=self.snapshot();rows=list(rows)
@@ -61,8 +80,30 @@ class DeviceBinding:
         same=[row for row in rows if not (value.serial and row.get('serial_number') and row['serial_number']!=value.serial)
               and (row.get('usb_parent_id') or usb_parent_id(row['path']))==value.usb_parent_id]
         return same[0] if len(same)==1 else None
+
+    def resolve_edge_reconnect(self,rows,serial_present):
+        from windows_device_identity import usb_parent_id,usb_port_paths
+        value=self.snapshot()
+        rows=[row for row in rows if row.get('product_id')==0x0df2 and
+              bool(row.get('serial_number'))==serial_present]
+        match=self.resolve_hid(rows)
+        if match is not None or value.expected_edge_serial!=serial_present or not value.edge_port_paths:return match
+        ports=set(value.edge_port_paths)
+        matches=[row for row in rows if not (value.serial and row.get('serial_number') and row['serial_number']!=value.serial)
+                 and ports.intersection(usb_port_paths(row.get('usb_parent_id') or usb_parent_id(row['path'])))]
+        return matches[0] if len(matches)==1 else None
+
+    def expect_edge_serial_reconnect(self,*,hidden):
+        from windows_device_identity import usb_port_paths
+        # Windows can assign a new container and endpoint to the same Pico.
+        with self._lock:
+            self._identity=replace(self._identity,endpoint_id=None,endpoint_name=None,
+                                   confirmed_container_id=None,require_output_identity=True,expected_edge_serial=not hidden,
+                                   edge_port_paths=usb_port_paths(self._identity.usb_parent_id))
+
     def output(self,rows,name=None):
         value=self.snapshot();rows=list(rows)
+        if value.expected_edge_serial is not None:return None
         candidates=[r for r in rows if r.get('maxOutputChannels',0)>=4 and not r.get('isLoopbackDevice')]
         if value.usb_parent_id:
             from windows_device_identity import usb_parent_id
@@ -70,6 +111,10 @@ class DeviceBinding:
             candidates=[r for r in candidates if not r.get('usb_parent_id') or r['usb_parent_id']==value.usb_parent_id]
             same=[r for r in candidates if r.get('usb_parent_id')==value.usb_parent_id]
             if len(same)==1 and (name is None or same[0].get('name')==name or value.endpoint_name==name):return same[0]
+        if value.require_output_identity:
+            matches=[r for r in candidates if value.container_id and r.get('container_id')==value.container_id
+                     and (name is None or r.get('name')==name)]
+            return matches[0] if len(matches)==1 else None
         # Exact endpoint identity survives a missing container property, but
         # never overrides positive evidence that this is another device.
         exact=[r for r in candidates if value.endpoint_id and r.get('endpoint_id')==value.endpoint_id
@@ -112,7 +157,7 @@ class DeviceBinding:
         """Compatibility pairing for one Studio device and one DualSense output."""
         hid_rows = list(hid_rows)
         identity = self.snapshot()
-        if len(hid_rows) != 1 or self.resolve_hid(hid_rows) is None:
+        if identity.require_output_identity or len(hid_rows) != 1 or self.resolve_hid(hid_rows) is None:
             return False
         candidates = [row for row in rows
                       if row.get('maxOutputChannels', 0) >= 4
@@ -131,7 +176,7 @@ class DeviceBinding:
         with self._lock:
             if expected_identity is not None and self._identity!=expected_identity:return False
             value=self.snapshot()
-            if not value.hid_path or not row.get('endpoint_id') or row.get('maxOutputChannels',0)<4 or row.get('isLoopbackDevice'):
+            if value.expected_edge_serial is not None or not value.hid_path or not row.get('endpoint_id') or row.get('maxOutputChannels',0)<4 or row.get('isLoopbackDevice'):
                 return False
             if value.usb_parent_id:
                 from windows_device_identity import usb_parent_id
@@ -139,7 +184,7 @@ class DeviceBinding:
                 if parent and parent!=value.usb_parent_id:return False
             if value.container_id and row.get('container_id') and value.container_id!=row['container_id'] and not allow_container_mismatch:
                 return False
-            self._identity=replace(self._identity,confirmed_container_id=row.get('container_id') if allow_container_mismatch else None)
+            self._identity=replace(self._identity,confirmed_container_id=row.get('container_id') if allow_container_mismatch else None,require_output_identity=False)
             self.bind_output(row)
             return True
     def output_issue(self,rows):

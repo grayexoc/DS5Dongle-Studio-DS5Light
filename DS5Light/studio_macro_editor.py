@@ -86,6 +86,12 @@ class MacroEditor(InlineCapture):
         self.button_dropdown.bind('<<ComboboxSelected>>',self.choose_button)
         ttk.Button(bar,text=_ui_tr('선택 초기화'),command=self.clear_buttons).grid(row=1,column=0,sticky='w',pady=(8,0))
         ttk.Button(bar,text=_ui_tr('버튼 눌러 지정'),command=lambda:self.start_capture('input')).grid(row=1,column=1,sticky='e',pady=(8,0))
+        self.ps_shortcut_row=tk.Frame(self.button_area,bg=CARD)
+        self.ps_shortcut=tk.BooleanVar(value=bool(ui.doc.values.get('ps_shortcut_enabled')))
+        self.ps_shortcut_control=CircleCheck(self.ps_shortcut_row,text=_ui_tr('PS 기본 단축키'),variable=self.ps_shortcut,
+                                            command=self.change_ps_shortcut,background=CARD)
+        self.ps_shortcut_control.pack(side='left')
+        ui.help_icon(self.ps_shortcut_row,_ui_tr('짧게 Win+G · 길게 Win+Tab. PS를 매핑에 쓰려면 끄세요. 변경값은 현재 프로필에 편집되고 임시 적용 또는 저장할 때 Pico에 전송됩니다.')).pack(side='left',padx=5)
         self.gesture_area=tk.Frame(one,bg=CARD);self.gesture_area.columnconfigure(1,weight=1);self.gesture_area.grid(row=3,column=0,columnspan=2,sticky='ew',pady=8)
         self.gesture_control=ControllerChoice(self.gesture_area,textvariable=self.gesture,values=list(self.gestures));self.form(self.gesture_area,0,_ui_tr('방향·동작'),_ui_tr('스틱은 네 방향을 각각 키로 보냅니다. 스와이프는 지정한 방향·터치 위치·손가락 수가 일치할 때 한 번 실행합니다.'),self.gesture_control)
         self.mode_control=self.combo(one,self.mode,list(CONDITIONS.values()));self.form(one,4,_ui_tr('누르는 방식'),_ui_tr('길게 누르기·두 번 누르기·유지 중 하나만 선택합니다. 스틱은 유지, 스와이프는 단발 동작을 사용합니다.'),self.mode_control)
@@ -170,6 +176,20 @@ class MacroEditor(InlineCapture):
         self.button_choice.set(_ui_tr('버튼을 선택하세요'))
     def clear_buttons(self):
         for variable in self.buttons:variable.set(False)
+    def ps_shortcut_writable(self):
+        ui=self.ui
+        return ('ps_shortcut_enabled' in ui.doc.values and ui.loaded and ui.write_ready
+                and not ui.busy and not ui.transfer_locked and not ui.external_stale and not ui.uncertain)
+
+    def sync_ps_shortcut(self):
+        self.ps_shortcut.set(bool(self.ui.doc.values.get('ps_shortcut_enabled')))
+        self.ps_shortcut_control.set_enabled(self.ps_shortcut_writable())
+
+    def change_ps_shortcut(self):
+        if self.ps_shortcut_writable():
+            self.ui.changed('ps_shortcut_enabled',int(self.ps_shortcut.get()))
+        self.sync_ps_shortcut()
+        self.refresh()
     def threshold_value(self):
         value=int(self.threshold.get())
         if not 10<=value<=120:raise ValueError(_ui_tr('스틱 작동 경계는 10~120으로 지정하세요.'))
@@ -193,6 +213,10 @@ class MacroEditor(InlineCapture):
                 else:self.mode.set(CONDITIONS['tap']);self.gesture.set(_ui_tr('터치 왼쪽 · 1손가락 · 위'))
                 self.last_kind=kind
             self.button_area.grid() if kind=='button' else self.button_area.grid_remove()
+            if kind=='button' and self.buttons[16].get() and 'ps_shortcut_enabled' in self.ui.doc.values:
+                self.ps_shortcut_row.pack(anchor='w',pady=(0,6))
+                self.sync_ps_shortcut()
+            else:self.ps_shortcut_row.pack_forget()
             self.gesture_area.grid_remove() if kind=='button' else self.gesture_area.grid()
             self.gesture_control.configure(values=[name for name,value in self.gestures.items() if bool(value&32)==(kind=='stick')])
             self.mode_control.configure(state='readonly' if kind=='button' else 'disabled')

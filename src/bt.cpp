@@ -76,7 +76,7 @@ static hci_con_handle_t acl_handle = HCI_CON_HANDLE_INVALID;
 static uint16_t hid_control_cid;
 static uint16_t hid_interrupt_cid;
 static bt_data_callback_t bt_data_callback = nullptr;
-static bool check_dse = false;
+static bool check_dse = true;
 #if !ENABLE_SERIAL
 static constexpr uint32_t usb_feature_wait_ms = 120;
 static uint32_t usb_feature_started_ms = 0;
@@ -190,6 +190,10 @@ bool bt_is_connected() {
 bool bt_is_ready() {
     return bt_is_connected() && link_encrypted &&
            hid_control_open && hid_interrupt_open;
+}
+
+bool bt_edge_connected() {
+    return bt_is_ready() && !check_dse && is_dse;
 }
 
 void bt_get_signal_strength(int8_t *rssi) {
@@ -461,7 +465,7 @@ void bt_inquiring_led() {
 // direction, otherwise the host may miss the change entirely.
 static void restore_full_usb_identity(void) {
     usb_set_idle_pid(false);
-    if (usb_served_idle_pid()) {   // host currently holds the idle identity
+    if (usb_served_idle_pid() || (tud_mounted() && usb_edge_serial_refresh_needed())) {
         usb_schedule_reconnect();
     } else if (!usb_reconnect_pending()) {
         if (!tud_mounted()) usb_select_host_mode();
@@ -784,6 +788,7 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             device_found = false;
             new_pair = false;
             acl_handle = HCI_CON_HANDLE_INVALID;
+            check_dse = true;
             link_encrypted = false;
             hid_control_open = hid_interrupt_open = false;
 #if !ENABLE_SERIAL

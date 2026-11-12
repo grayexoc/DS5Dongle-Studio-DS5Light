@@ -23,6 +23,7 @@ void bt_power_off_controller();
 bool bt_disconnect();
 bool bt_is_connected();
 bool bt_is_ready();
+bool bt_edge_connected();
 bool bt_usb_features_pending();
 void bt_usb_identity_task();
 void bt_set_scan_idle();

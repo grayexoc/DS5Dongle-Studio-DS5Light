@@ -33,6 +33,9 @@ def read_current(identity,previous=None,full=False):
             stamp={k:header[k] for k in ('index','name','edited')}
             checked=full or stamp!=old or previous.get('auto_haptics_enable') not in (0,1,2)
             profile=client.profile_state() if checked else dict(header,auto_haptics_enable=previous['auto_haptics_enable'])
+            if stamp==old and previous.get('auto_haptics_enable')==profile.get('auto_haptics_enable')==1:
+                for key in ('mix_native_level','ah_dsp_source'):
+                    if key in previous:profile.setdefault(key,previous[key])
             if stamp == {k:profile[k] for k in stamp} and 'mute_macro' in header:
                 profile['mute_macro'] = header['mute_macro']
             return dict(path=target['path'] if target else identity.hid_path,row=target,profile=profile,full=checked)

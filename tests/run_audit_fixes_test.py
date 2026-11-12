@@ -238,6 +238,7 @@ ProfileChime profile_chime;
 std::atomic<bool> audio_link_active{false};
 bool link=true,audio_input_seen=false,stream_reset_requested=false,speaker_filters_reset=false;
 uint32_t now=0,last_audio_input_ms=0;int resets=0,clears=0,discards=0;
+uint16_t g_diag_rear_left_peak=0,g_diag_rear_right_peak=0;
 struct Resampler{void Reset(){resets++;}}resampler;
 void __sev(){} bool bt_is_ready(){return link;}
 uint32_t get_absolute_time(){return now;}uint32_t to_ms_since_boot(uint32_t x){return x;}
@@ -271,16 +272,16 @@ variables=sorted(set(re.findall(r'\b([a-z][a-z0-9_]*)\s*=',block))-{'speaker_fil
 run('dsp-reset','#include <cassert>\n#include <cstdio>\nint main(){\nbool speaker_filters_reset=true;\n'+''.join('float '+x+'=1;\n' for x in variables)+block+''.join('assert('+x+'==0);\n' for x in variables)+'assert(!speaker_filters_reset);puts("PASS: actual DSP reset clears all envelope, carrier and native filter memories");}\n')
 
 s=(root/'src/state_mgr.cpp').read_text(encoding='utf-8')
-a=s.index('    // Synthetic ticks');b=s.index('    // XInput rumble',a)
+a=s.index('    // Cached trigger commands');b=s.index('    // XInput rumble',a)
 run('synth-audio-authority',r"""
 #include <cstdint>
 #include <cassert>
 #include <cstdio>
 int main(){uint8_t copy[63]{};copy[0]=0xff;copy[1]=0xff;
 """+s[a:b]+r"""
-assert(copy[0]==0x0f&&copy[1]==0x7d);
-assert(!(copy[0]&0xf0)&&!(copy[1]&0x82));
-puts("PASS: synthetic replay removes audio/volume authority and preserves trigger/motor selectors");}
+assert(copy[0]==0x03&&copy[1]==0x7d);
+assert(!(copy[0]&0xfc)&&!(copy[1]&0x82));
+puts("PASS: synthetic replay drops cached game trigger/audio authority and retains motor selectors");}
 """)
 
 
@@ -568,6 +569,46 @@ int main(){float pcm[1024]{};for(int i=0;i<5;i++)publish_speaker_block(pcm,1);
  uint8_t i;assert(queue_try_remove(&audio_fifo,&i));assert(speaker_blocks[i].sequence==4);
  release_speaker_block(i);assert(queue_try_remove(&audio_fifo,&i));assert(speaker_blocks[i].sequence==5);
  puts("PASS: source identities survive PCM overflow; drops counted before encoder");}
+""")
+
+# Pace calibration by successful mouse reports, not main-loop iterations.
+s=(root/'src/main.cpp').read_text(encoding='utf-8')
+a=s.index('    // Keep calibration separate');b=s.index('\n}\n',a)
+run('gyro-calibration',r"""
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+using int32_t = std::int32_t;
+struct Config{} cfg;
+struct GyroMouseReport{uint8_t buttons;int16_t x,y;int8_t wheel;};
+int32_t g_cal_remaining=17,g_gm_pend_x=3,g_gm_pend_y=-2;
+constexpr int32_t CAL_STEP=8;
+uint8_t mbtn=0,s_mbtn_sent=0;
+bool ready=false,accept=false;
+int sum=0,packets=0;
+int8_t macro_mouse_peek_scroll(){return 0;}
+void macro_mouse_take_scroll(){}
+uint8_t usb_mouse_instance(Config){return 0;}
+bool tud_hid_n_ready(uint8_t){return ready;}
+bool tud_hid_n_report(uint8_t,int,const GyroMouseReport *report,size_t){
+ if(!accept)return false;
+ sum+=report->x;packets++;return true;
+}
+void tick(){
+"""+s[a:b]+r"""
+}
+int main(){
+ for(int i=0;i<300;i++)tick();
+ assert(g_cal_remaining==17 && g_gm_pend_x==3 && packets==0);
+ ready=true;tick();
+ assert(g_cal_remaining==17 && g_gm_pend_x==3 && packets==0);
+ accept=true;tick();
+ assert(g_cal_remaining==9 && g_gm_pend_x==0 && g_gm_pend_y==0 && sum==11);
+ tick();tick();tick();
+ assert(g_cal_remaining==0 && packets==3 && sum==20);
+ puts("PASS: busy/failed HID preserves counts; successful reports send at most 8 calibration counts each");
+}
 """)
 
 # Actual legacy save command publishes pending/completion with an echoed request tag.

@@ -178,6 +178,16 @@ class AppPolicyTests(unittest.TestCase):
         e.profile_stamp={k:AH[k] for k in ('index','name','edited')};e.doc.values['auto_haptics_gain']=123
         u._external_profile(dict(path=b'ours',profile=OFF,row=hidrow()))
         self.assertFalse(e.write_ready);self.assertEqual(e.doc.values['auto_haptics_gain'],123)
+    def test_verified_mix_observation_switches_live_channel_route(self):
+        u=self.ui
+        u.engine=SimpleNamespace(front_only=False)
+        try:
+            with patch.object(u,'render'):
+                for mode,level,front in ((1,50,True),(1,0,False),(1,100,True),(2,100,False)):
+                    u._external_profile(dict(path=b'ours',row=hidrow(),profile=dict(AH,auto_haptics_enable=mode,
+                                              mix_native_level=level,ah_dsp_source=0)))
+                    self.assertEqual(u.engine.front_only,front)
+        finally:u.engine=None
     def test_start_does_not_immediately_scan_whole_slot_catalog(self):
         p=self.ui.studio;p.last_profile_check=time.monotonic();p.choice.set('02 · Audio Haptic')
         with patch.object(p,'task') as task:p.discover(allow_running=True,after_start=True)

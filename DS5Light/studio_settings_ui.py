@@ -6,7 +6,7 @@ from tkinter import ttk,filedialog
 from studio_dialogs import messagebox
 from pathlib import Path
 from studio_fields import SECTIONS,FIELDS
-from studio_scope import EDITABLE,CONSTRUCTION,trigger_display,trigger_raw
+from studio_scope import EDITABLE,CONSTRUCTION,FAST_TRIGGER_FIELDS,TRIGGER_FIELDS,trigger_display,trigger_raw
 from studio_range import RangeSlider
 from studio_help import reference_point
 from studio_macro_tools import MacroTools
@@ -27,8 +27,22 @@ from studio_settings_protocol import SettingsClient,needs_reconnect,validate_cha
 from studio_slots import devices,_DEVICE_LOCK
 from studio_power import blocked as power_blocked
 from controller_glyphs import ControllerChoice,GlyphStrip
-from ui_controls import RoundedCard,CircleCheck,AutoScrollbar,widget_trace
+from ui_controls import RoundedCard,CircleCheck,Switch,AutoScrollbar,widget_trace
 BG='#0b0b0b';CARD='#151515';FG='#eee9df';MUTED='#aaa393';GOLD='#d6ad52';BORDER='#363126'
+FAST_TRIGGER_DEPTH=(9,64)
+FAST_TRIGGER_DEFAULT=14
+FAST_TRIGGER_RESISTANCE_START=2
+
+
+def fast_trigger_keys(prefix):
+    stage, button = ('t2_l2_',9) if prefix == 'at_l2_' else ('t2_',10)
+    return stage + 'mode', stage + 'pos', stage + 'button', button
+
+
+def fast_trigger_active(values, prefix):
+    mode, depth, output, button = fast_trigger_keys(prefix)
+    return (values.get(mode) == 1 and values.get(output) == button
+            and FAST_TRIGGER_DEPTH[0] <= values.get(depth,0) <= FAST_TRIGGER_DEPTH[1])
 _CircleCheck=CircleCheck
 def CircleCheck(parent,**kw):
     return _CircleCheck(parent,foreground=FG,muted=MUTED,accent=GOLD,disabled='#666257',**kw)
@@ -85,8 +99,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.poll_id=None;self.search_job=None;self.vars={};self.invalid={};self.loaded=False;self.write_ready=False;self.category=0;self.slots_expanded=False;self.live_enabled=False;self.live_job=None;self.live_result=None;self.slots=[];self.resume=False;self.tips=[]
         self.return_list_job=None;self.search_targets={};self._display_fields={}
         self._option_groups=[]
-        self._trigger_additional_fields=()
-        if not hasattr(self,"_open_option_groups"):self._open_option_groups=set()
+        self._open_option_groups={('triggers','common')}
     def open(self):
         # If the user opens settings immediately, its serialized snapshot also
         # supplies current-profile identity. Do not launch a redundant 32-slot
@@ -105,7 +118,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         if self.built:
             self.identity.set(_ui_tr('프로필 변경됨 · 다시 조회 필요'))
             self.progress.configure(text=_ui_tr('이전 편집값 보관 중 · 새로 고침으로 확인하세요.') if self.doc.dirty else _ui_tr('다음 Studio설정 진입 시 다시 읽습니다.'))
-            self.refresh_read_extras()
+            if 'disable_usb_sn' in self.field_views:self.render_fields()
+            else:self.refresh_read_extras()
             self.update_state()
     def build(self):
         self.built=True;self.parent.columnconfigure(0,weight=1);self.parent.rowconfigure(1,weight=1)
@@ -211,6 +225,11 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         # A short list must never let Canvas retain a negative scroll origin.
         self.canvas.coords(self.body_window,0,0)
         self.canvas.configure(scrollregion=(0,0,max(1,self.canvas.winfo_width()),max(self.body.winfo_reqheight(),self.canvas.winfo_height())))
+    def restore_scroll_offset(self,offset):
+        self.body.update_idletasks()
+        self.sync_scrollregion()
+        height=max(1,self.body.winfo_reqheight(),self.canvas.winfo_height())
+        self.canvas.yview_moveto(max(0,offset)/height)
     def update_editor_view(self):
         if self.closed or not self.built:return
         editor=getattr(self,'macro_editor',None)
@@ -284,9 +303,13 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.parent.after_idle(reveal)
     def visible(self,key):
         # Keep the full supported gyro/stick set visible, even while disabled.
-        return key in EDITABLE
+        return key in EDITABLE and key!='ps_shortcut_enabled' and (key!='disable_usb_sn' or self.edge_serial_visible())
+    def edge_serial_visible(self):
+        return ('disable_usb_sn' in self.doc.values and 'disable_usb_sn' not in self.unsupported_fields
+                and not self.external_stale and getattr(self.app.studio,'controller_connected',None) is not False)
     def enabled_for(self,key):
         values=self.doc.values
+        if key=='disable_usb_sn':return self.edge_serial_visible()
         if key=='haptics_gain':return values.get('auto_haptics_enable')==0
         if key=='haptics_aa':return values.get('auto_haptics_enable') in (1,2)
         if key in ('rumble_haptic_strength','mix_native_level'):return values.get('auto_haptics_enable')==1
@@ -326,22 +349,19 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.search_job=None
         if self.closed or not self.built:return
         context=(self.category,self.search.get().strip().casefold())
-        position=self.canvas.yview()[0] if context==getattr(self,'_render_context',None) else 0.
+        position=self.canvas.canvasy(0) if context==getattr(self,'_render_context',None) else 0
         self._render_context=context
         for tip in self.tips:tip.hide()
         self.tips=[];self.vars={};self.speaker_recommendations=[];self.range_controls={};self.field_views={}
         self.search_targets={};self._display_fields={}
         self._option_groups=[]
-        self._trigger_additional_fields=()
-        if not hasattr(self,"_open_option_groups"):self._open_option_groups=set()
         self._extra_body=None;self._extra_signature=None
         for child in self.body.winfo_children():child.destroy()
         for i,b in enumerate(self.nav):b.configure(style='Selected.StudioNav.TButton' if i==self.category else 'StudioNav.TButton')
         query=normalized(self.search.get());sections=GROUPS[self.category][1];count=0
         for section in SECTIONS:
-            if not query and section['title'] not in sections:continue
-            from studio_scope import TRIGGER_FIELDS
-            ordered=[f for f in section['fields'] if f[1] not in ('rumble_gain','rumble_mode','rumble_release','enable_wake') and (query or f[1] not in TRIGGER_FIELDS)]
+            if not query and (section['title'] not in sections or section['title']=='Rumble → Trigger'):continue
+            ordered=[f for f in section['fields'] if f[1] not in FAST_TRIGGER_FIELDS and f[1] not in ('rumble_gain','rumble_mode','rumble_release','enable_wake') and (query or f[1] not in TRIGGER_FIELDS)]
             if section['title']=='Auto-Haptics & Speaker Effect Leak':
                 ordered=[f for f in ordered if f[1] not in ('auto_mute_mix','auto_mute_replace')]
             elif section['title']=='General Haptics & Audio':
@@ -351,7 +371,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 ordered[at:at]=[FIELDS['auto_mute_mix'],FIELDS['auto_mute_replace']]
             if not query and section['title']=='Device & Connection':
                 ordered=[f for f in ordered if f[1] not in self.LIGHTING_FIELDS]
-            fields=[f for f in ordered if f[1] in EDITABLE and (field_matches(f,section['title'],query) if query else self.visible(f[1]))]
+            fields=[f for f in ordered if self.visible(f[1]) and (not query or field_matches(f,section['title'],query))]
             if section['title']=='General Haptics & Audio' and any(f[1] in ('auto_mute_mix','auto_mute_replace') for f in fields):
                 if not any(f[1]=='disable_speaker' for f in fields):
                     fields.insert(next(i for i,f in enumerate(fields) if f[1] in ('auto_mute_mix','auto_mute_replace')),FIELDS['disable_speaker'])
@@ -401,13 +421,14 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         if not query:
             self._extra_body=tk.Frame(self.body,bg=BG);self._extra_body.pack(fill='x')
             self.refresh_read_extras()
-            if self._trigger_additional_fields:
-                self.render_additional_fields(self._trigger_additional_fields)
+            if self.category==2:
+                section=next(section for section in SECTIONS if section['title']=='Rumble → Trigger')
+                self.render_option_groups(section['title'],section['fields'])
         elif not count:tk.Label(self.body,text=ui_text(_ui_tr('검색 결과가 없습니다.'),'No results found.'),bg=BG,fg=MUTED,pady=24).pack()
         self.refresh_option_groups()
         self.align_choices(self.body)
         self.update_editor_view()
-        self.body.update_idletasks();self.sync_scrollregion();self.canvas.yview_moveto(position);self.update_state()
+        self.restore_scroll_offset(position);self.update_state()
         if self.busy and getattr(self,'_read_view_kind',None):self.read_view_lock()
     def standby_value(self, policy='standby_policy'):
         path,mode=getattr(self,policy,(None,None))
@@ -474,18 +495,28 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         for widget in parent.winfo_children():
             if isinstance(widget,ttk.Combobox):widget.configure(justify='right')
             self.align_choices(widget)
-    def field_row(self,parent,row,f):
+    def field_row(self,parent,row,f,title_text=None,dropdown_width=22,default=None):
+        if f[1]=='mix_native_level':
+            f=[*f[:4],'mix_toggle']
+            title_text=ui_text('Mix 네이티브 햅틱 혼합','Mix native haptics')
         self._display_fields = getattr(self, '_display_fields', {})
         self._display_fields[f[1]] = f
         key=f[1];valid=key in self.doc.values and self.enabled_for(key);value=self.doc.values.get(key)
         if key=='lightbar_rgb':self.lightbar_colour_row(parent,row,f);return
         if f[4]=='number' or key=='trigger_reduce':
-            self.range_row(parent,row,f,value,valid)
+            self.range_row(parent,row,f,value,valid,default=default)
             return
-        title=self.option_title(parent,key,text=f[3] if key.startswith("at_") else None,foreground=FG if valid else MUTED);title.grid(row=row,column=0,sticky='w',padx=(18 if key in ('disable_inactive_disconnect','speaker_gain') else 0,12),pady=8)
+        title=self.option_title(parent,key,text=title_text if title_text is not None else f[3] if key.startswith("at_") else None,foreground=FG if valid else MUTED);title.grid(row=row,column=0,sticky='w',padx=(18 if key in ('disable_inactive_disconnect','speaker_gain') else 0,12),pady=8)
         var=tk.StringVar(value='' if value is None else format(value,'.5g') if f[2]=='f32' else str(value));self.vars[key]=var
         controls=[];bits=[]
-        if f[4]=='bool':
+        if f[4]=='mix_toggle':
+            box=tk.Frame(parent,bg=CARD);box.grid(row=row,column=1,sticky='e',pady=6)
+            active=tk.BooleanVar(value=bool(value));self.vars[key]=active
+            control=Switch(box,active,lambda:self.select_value(key,100 if active.get() else 0))
+            control.set_enabled(valid and not self.busy);control.pack(side='right')
+            control.status=tk.Label(box,bg=CARD,fg=MUTED);control.status.pack(side='right',padx=(0,5))
+            self.update_mix_toggle_text(control,value)
+        elif f[4]=='bool':
             box=tk.Frame(parent,bg=CARD);box.grid(row=row,column=1,sticky='e',pady=6)
             bv=tk.BooleanVar(value=bool(value));self.vars[key]=bv;control=CircleCheck(box,text='',variable=bv,command=lambda:None,background=CARD)
             control.pack(side='left');control.set_enabled(valid and not self.busy);widget_trace(control,bv,lambda *_,k=key,v=bv:self.changed(k,int(v.get())))
@@ -498,7 +529,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 control=ControllerChoice(parent,textvariable=var,values=list(mapping),compact=True,state='readonly' if valid and not self.busy else 'disabled')
                 control.grid(row=row,column=1,sticky='ew',pady=6)
             else:
-                control=ttk.Combobox(parent,textvariable=var,values=list(mapping),width=22,justify='right',state='readonly' if valid and not self.busy else 'disabled');control.grid(row=row,column=1,sticky='e',pady=6)
+                control=ttk.Combobox(parent,textvariable=var,values=list(mapping),width=dropdown_width,justify='right',state='readonly' if valid and not self.busy else 'disabled');control.grid(row=row,column=1,sticky='e',pady=6)
             control.bind('<<ComboboxSelected>>',lambda e,k=key,v=var,m=mapping:self.select_value(k,m.get(v.get())))
         elif f[4]=='bits':
             box=tk.Frame(parent,bg=CARD);box.grid(row=row,column=1,sticky='e')
@@ -511,15 +542,26 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             widget_trace(control,var,lambda *_,k=key,v=var:self.number_changed(k,v.get()));control.bind('<Return>',lambda e:self.render_fields())
         if not controls:controls=[control]
         self.field_views[key]=(title,controls,bits)
+    @staticmethod
+    def update_mix_toggle_text(control,value):
+        text=ui_text('켜짐','On') if value else ui_text('꺼짐','Off') if value==0 else ui_text('미확인','Unknown')
+        if value is not None and 0<value<100:text+=f' · {value}%'
+        control.status.configure(text=text)
     def number_changed(self,key,value):
         if getattr(self,'_syncing_fields',False):return
         try:
             from studio_settings_protocol import encode
-            number=float(value) if FIELDS[key][2]=='f32' else int(value);encode(FIELDS[key],number);self.invalid.pop(key,None);self.changed(key,number)
+            field=getattr(self,'_display_fields',{}).get(key,FIELDS[key])
+            number=float(value) if field[2]=='f32' else int(value);encode(field,number);self.invalid.pop(key,None);self.changed(key,number)
         except (ValueError,OverflowError):self.invalid[key]=label(key)+_ui_tr('의 입력값을 확인하세요.');self.update_state()
     def select_value(self,key,value):
         if value is not None:
             self.changed(key,value);self.refresh_read_values()
+            if self.category==2 and not self.search.get():
+                if key in ('at_mode','at_l2_mode') and value==1:
+                    self.reveal_trigger_field(key[:-4]+'threshold')
+                elif key in ('at_kick_style','at_l2_kick_style') and value==0:
+                    self.reveal_trigger_field(key[:-10]+'pushback_freq')
     def changed(self,key,value):
         if self.transfer_locked or getattr(self,'_syncing_fields',False):return
         self.progress.clear()
@@ -536,12 +578,11 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         if key in ('disable_speaker','auto_haptics_enable'):self.update_speaker_controls()
         if key in self.LIGHTING_FIELDS:self.refresh_lighting()
         if key in ('auto_haptics_enable','lightbar_fixed'):self.refresh_read_values()
-        if key=='mix_native_level':self.refresh_read_values(keys=('mix_native_filter',))
+        if key=='mix_native_level':self.refresh_read_values(keys=('mix_native_level','mix_native_filter','ah_dsp_source'))
+        if self.category==3 and key in ('gyro_mode','gyro_output','gyro_sens_mode'):self.refresh_read_extras()
         self.update_state()
         if key in ('auto_haptics_enable','gyro_mode','gyro_output','gyro_sens_mode','stick_mouse','r2t_mode','mix_native_level'):
             self.refresh_option_groups()
-        if previous != value and key in ('at_mode', 'at_l2_mode', 'at_shape', 'at_l2_shape'):
-            self.parent.after_idle(self.render_fields)
     def update_speaker_controls(self):
         for key in ('auto_mute_mix','auto_mute_replace'):
             view=getattr(self,'field_views',{}).get(key)
@@ -580,6 +621,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             else:note.pack_forget()
         editor=getattr(self,'macro_editor',None)
         editing=editor is not None and getattr(editor,'embedded',False) and not editor.closed
+        if editing:editor.sync_ps_shortcut()
         target=self.current_save_target()
         self.save_target.set(_ui_tr('저장 대상: ')+(f'{target[0]+1:02d} · '+(target[1] or _ui_tr('이름 없음')) if target else _ui_tr('미지정 · 프로필 슬롯에서 저장 대상을 선택하세요.')))
         detail=' '.join(self.progress.cget('text').split())
@@ -631,7 +673,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             if self.doc.dirty and not messagebox.askyesno(_ui_tr('편집 취소'),_ui_tr('다른 장치를 읽으면 미적용 변경이 취소됩니다.'),parent=self.parent):return
             target=self.device_rows[i]['path']
             def choose():
-                self.doc=SettingsDocument();self.profile_stamp=None;self.path=target;self.loaded=False;self.write_ready=False;self.read(confirm=False)
+                self.doc=SettingsDocument();self.profile_stamp=None;self.path=target;self.external_stale=False;self.loaded=False;self.write_ready=False;self.read(confirm=False)
             if self.app.engine and target!=self.path:self.app.stop(on_complete=choose)
             else:choose()
     def read(self,confirm=True):
@@ -747,6 +789,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         pending_macros=self.doc.macros_pending_flash;profile_stamp=self.profile_stamp
         refresh_macros='macro_disable' in changes
         self.after_profile_save=after
+        edge_serial_changed='disable_usb_sn' in changes
+        binding=self.app.studio.binding
         reconnect_path=self.path
         reconnect_serial=next((d.get("serial_number") for d in self.device_rows if d["path"]==self.path),None) or self.app.studio.device_serials.get(self.path)
         reconnect=needs_reconnect(baseline,dict(baseline,**changes),self.doc.macro_baseline)
@@ -794,19 +838,34 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 save_uncertain=True;save_error=str(exc)
             reset_uncertain=False
             if reconnect_needed and not save_uncertain:
+                if edge_serial_changed:binding.expect_edge_serial_reconnect(hidden=bool(changes['disable_usb_sn']))
                 try:client.reconnect_usb()
                 except (OSError,RuntimeError):
                     if self.cancel.is_set():raise
                     reset_uncertain=True
             return dict(values=dict(current,**checked),saved=persist and not save_uncertain,reconnect=reconnect_needed,
                         profile=profile,profile_saved=profile_saved,target=target,macros_pending=pending_macros,
-                        save_uncertain=save_uncertain,save_error=save_error,reset_uncertain=reset_uncertain)
+                        trigger_changed=bool(TRIGGER_FIELDS.intersection(changes)),
+                        save_uncertain=save_uncertain,save_error=save_error,reset_uncertain=reset_uncertain,
+                        edge_serial_reconnect=edge_serial_changed and reconnect_needed and not save_uncertain)
         def operation():
             result=self.with_client(op)
             if refresh_macros or persist or reconnect or result.get('save_uncertain'):
                 from studio_reconnect import wait_for_macros
-                try:result['reloaded']=wait_for_macros(reconnect_path,reconnect_serial,self.cancel)
-                except Exception as exc:result['reload_error']=str(exc)
+                try:
+                    if result['edge_serial_reconnect']:
+                        result['reloaded']=wait_for_macros(reconnect_path,reconnect_serial,self.cancel,
+                            edge_binding=binding,serial_hidden=bool(changes['disable_usb_sn']))
+                    else:
+                        result['reloaded']=wait_for_macros(reconnect_path,reconnect_serial,self.cancel)
+                except Exception as exc:
+                    result['reload_error']=str(exc)
+                    if result['edge_serial_reconnect']:
+                        try:
+                            from studio_slots import devices
+                            result['reconnect_rows']=devices()
+                        except (OSError,ImportError):
+                            pass
             return result
         if reconnect or refresh_macros or persist:self.app.studio.binding.expect_reconnect()
         self.stopped_task('apply',operation)
@@ -823,7 +882,9 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             else:self.progress.configure(text=result,kind='progress')
             self.poll_id=self.parent.after(60,self.poll);return
         self.busy=False;self.reconnect_wait=False
-        if kind in READ_JOBS:self.read_view_unlock();self._read_view_kind=None
+        if kind in READ_JOBS:
+            edge_row_present='disable_usb_sn' in self.field_views
+            self.read_view_unlock();self._read_view_kind=None
         if error:
             if kind in ('read','entry_read'):
                 self.entry_failed=True;self.close_entry_queries()
@@ -872,10 +933,17 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 if serial:self.app.studio.device_serials[self.path]=serial
                 self.identity.set('Studio · '+str(result['version'])+' · '+((profile or {}).get('name') or _ui_tr('현재 설정')));self.progress.configure(text=_ui_tr('설정 {0}개 읽음').format(f"{len(result['values'])}")+(_ui_tr(' · {0}개 미지원/미확인').format(f"{len(result['unsupported'])}") if result['unsupported'] else ''),kind='loaded')
         elif kind=='apply':
+            if result.get('edge_serial_reconnect'):
+                self.resume=False
+                if result.get('reloaded'):
+                    self.app._edge_audio_recheck=True
             self.profile_save_needed=not result.get('profile_saved',False)
             self.profile_stamp=result.get('profile');self.doc.macros_pending_flash=result.get('macros_pending',False)
             self.doc.load(result['values']);self.doc.effect_baseline=copy.deepcopy(self.doc.effects);self.doc.unsaved=not result['saved'];self.doc.save_requested=result['saved']
             self.progress.configure(text=_ui_tr('프로필 슬롯 저장 확인 · Pico 시작 설정 저장 확인') if result['saved'] else _ui_tr('현재 프로필 설정을 임시 적용했습니다.'),kind='saved' if result['saved'] else 'applied');self.app.studio.auto_haptics_mode=self.doc.values.get('auto_haptics_enable')
+            if result.get('trigger_changed') and not result['saved']:
+                self.progress.configure(text=ui_text('트리거 설정 적용 확인 · 반응이 없으면 Pico 효과 상태 확인',
+                                                     'Trigger settings verified · Check Pico effect status if there is no response'),kind='action')
             if result.get('reloaded'):
                 fresh=result['reloaded'];self.uncertain=False
                 self.doc.load(fresh['values']);self.merge_entry_snapshot(fresh)
@@ -890,9 +958,20 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 if result['reconnect']:self.app.refresh_devices()
             elif result.get('reload_error'):
                 self.resume=False;self.loaded=False;self.write_ready=False;self.uncertain=True
-                self.progress.configure(text=_ui_tr('재연결 조회 미완료 · 새로 고침을 눌러 주세요.'))
+                if result.get('edge_serial_reconnect'):
+                    self.path=None;self.pico_recognized=False
+                    self.device_rows=result.get('reconnect_rows',[])
+                    from studio_snapshot import device_labels
+                    self.device_choice.configure(values=device_labels(self.device_rows,None,None))
+                    self.device_choice.set('')
+                    self.progress.configure(text=_ui_tr('Edge 재연결 후 Pico를 확인하지 못했습니다. 장치 목록에서 같은 Pico를 선택하세요.'),kind='warning')
+                else:self.progress.configure(text=_ui_tr('재연결 조회 미완료 · 새로 고침을 눌러 주세요.'))
             elif result['reconnect']:
                 self.loaded=False;self.path=None;self.doc.effects={};self.doc.effect_baseline={};self.doc.macros={};self.doc.macro_baseline={};self.app.refresh_devices()
+            if self.path and result.get('profile') and not result.get('reloaded') and not result.get('reload_error'):
+                state=dict(result['profile'],auto_haptics_enable=self.doc.baseline.get('auto_haptics_enable'))
+                state.update({key:self.doc.baseline[key] for key in ('mix_native_level','ah_dsp_source') if key in self.doc.baseline})
+                self.app.studio._observe_profile(self.path,state)
             if result.get('profile_saved'):
                 self.profile_save_needed=False
                 self.app.studio.catalog_invalid=True;self.app.studio.last_read=-1e9
@@ -902,7 +981,6 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                     self.slots=[Slot(s.index,'saved',target[1]) if s.index==target[0] else s for s in self.slots]
                 profile=result.get('profile')
                 if profile:
-                    self.app.studio._observe_profile(self.path,dict(profile,auto_haptics_enable=self.doc.values.get('auto_haptics_enable')))
                     self.app.studio._sync_current_profile(self.path,profile)
         elif kind=='shared_save':self.finish_shared_save(result)
         elif kind=='recommended':self.finish_recommended(result)
@@ -922,6 +1000,17 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         elif kind=='timeline_stop':self.recording=False;self.show_timeline(result)
         elif kind=='history':self.show_history(result)
         elif kind=='macro_live':self.live_result=result
+        elif kind=='trigger_status':
+            side,flags,signal=result
+            left=side=='L2'
+            if flags & (1 if left else 2):
+                status=ui_text('게임 효과 우선 · L2/R2 공통 설정에서 내 설정 우선으로 시험',
+                               'Game effect has priority · Test with Prefer my settings under Shared L2/R2 settings')
+            elif flags & (4 if left else 8):status=ui_text('장치 효과 출력 중','Device effect active')
+            else:status=ui_text('활성 효과 없음 · 작동 조건 또는 게임 실행 후 다시 확인',
+                                'No active effect · Check activation conditions or start a game and try again')
+            self.progress.configure(text=ui_text('Pico 현재 상태','Current Pico status')+f' · {side} · {status} · '+
+                                    ui_text(f'공통 반동 신호 {signal}/255',f'Shared recoil signal {signal}/255'),kind='action')
         elif kind=='chime_preview':self.progress.configure(text=_ui_tr('전환 신호음 요청 완료 · 프로필은 바뀌지 않았습니다.'),kind='info')
         elif kind=='slots':self.slots=result;self.progress.configure(text=_ui_tr('슬롯 목록 새로 고침 완료'),kind='info')
         elif kind=='slot_save':
@@ -941,7 +1030,12 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             else:self.stop_live()
             self.update_state();self.app.last_render=None;self.app.render();return
         self._transfer_job=None
-        if kind in READ_JOBS:self.refresh_read_values()
+        if kind in READ_JOBS:
+            query=normalized(self.search.get())
+            show_edge=self.edge_serial_visible() and (field_matches(FIELDS['disable_usb_sn'],'Device & Connection',query)
+                if query else self.category==0)
+            if edge_row_present==show_edge:self.refresh_read_values()
+            else:self.render_fields()
         else:self.render_fields()
         self.update_state();self.app.last_render=None;self.app.render();resume,self.resume=self.resume,False
         if kind in ('apply','shared_save'):
@@ -1056,75 +1150,259 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
     def copy_trigger(self, source, target):
         if self.busy:
             return
-        from studio_scope import TRIGGER_FIELDS
+        values=self.doc.values
+        target_mode,target_depth,target_output,target_button=fast_trigger_keys(target)
+        copy_fast=fast_trigger_active(values,source)
+        if copy_fast:
+            if not all(k in values for k in (target_mode,target_depth,target_output)):return
+            if not self.confirm_fast_trigger(target):return
         for key in TRIGGER_FIELDS:
             if key.startswith(source) and not (source == 'at_' and key.startswith('at_l2_')):
                 destination = target + key[len(source):]
                 if destination in TRIGGER_FIELDS and key in self.doc.values and destination in self.doc.values:
                     self.doc.values[destination] = self.doc.values[key]
+        if copy_fast:
+            values.update({target_mode:1,target_depth:values[fast_trigger_keys(source)[1]],target_output:target_button})
+        elif fast_trigger_active(values,target):
+            values[target_mode]=0
+        self.stage_trigger_priority()
         self.update_state()
         self.render_fields()
 
+    def stage_trigger_priority(self):
+        values = self.doc.values
+        if 'synth_force' in values:
+            values['synth_force'] = int(any(
+                values.get(prefix+'mode') or fast_trigger_active(values,prefix)
+                for prefix in ('at_l2_', 'at_')
+            ))
+
+    def confirm_fast_trigger(self, prefix):
+        mode, depth, _, _ = fast_trigger_keys(prefix)
+        values = self.doc.values
+        if not (values.get(mode,0) & 3 and values.get(depth)) or fast_trigger_active(values,prefix):
+            return True
+        side = 'L2' if prefix == 'at_l2_' else 'R2'
+        return messagebox.askyesno(ui_text('단축 트리거','Short-pull trigger'),
+            ui_text(f'{side}에 설정된 2단계 입력을 단축 트리거로 바꿀까요?',
+                    f'Replace the existing two-stage input on {side} with Short-pull trigger?'), parent=self.parent)
+
     def render_construction(self):
-        for side, prefix, gate, custom in (('L2', 'at_l2_', 'R', 'ce_l2_'), ('R2', 'at_', 'L', 'ce_r2_')):
-            box = self.card(side)
-            mode = self.doc.values.get(prefix + 'mode', 0)
-            shape = self.doc.values.get(prefix + 'shape', 0)
-            enabled = not self.busy and prefix + 'mode' in self.doc.values
-            effects = [ui_text('끔', 'Off'), ui_text('일정한 저항', 'Constant resistance'),
-                       ui_text('점점 무거워짐', 'Progressive resistance'),
-                       ui_text('2단 걸림', 'Two-stage detent'), ui_text('단단한 벽', 'Breakable wall')]
-            value = tk.StringVar(value=effects[shape + 1] if mode and shape in range(4) else effects[0])
-            choice = ttk.Combobox(box, textvariable=value, values=effects, state='readonly' if enabled else 'disabled')
-            choice.grid(row=1, column=1, sticky='ew', pady=8)
-            tk.Label(box, text=ui_text('효과', 'Effect'), bg=CARD, fg=FG).grid(row=1, column=0, sticky='w')
-            def select(event, p=prefix, v=value, names=effects):
-                selected = names.index(v.get())
-                if selected == 0:
-                    self.doc.values[p + 'mode'] = 0
+        effects = [ui_text('끔', 'Off'), ui_text('일정한 저항', 'Constant resistance'),
+                   ui_text('점점 무거워짐', 'Increasing resistance'),
+                   ui_text('2단계 저항', 'Two-stage resistance'), ui_text('눌러 넘는 벽', 'Breakable wall')]
+        sides = {'L2': 'at_l2_', 'R2': 'at_'}
+        side = getattr(self, '_trigger_side', 'L2')
+        prefix = sides[side]
+        other = 'R2' if side == 'L2' else 'L2'
+        values = self.doc.values
+        fast_mode, fast_depth, fast_output, fast_button = fast_trigger_keys(prefix)
+        fast_available = all(key in values for key in (fast_mode,fast_depth,fast_output,prefix+'start_pos',prefix+'strength',prefix+'pushback'))
+        fast_active = fast_trigger_active(values,prefix)
+        fast_name = ui_text('단축 트리거','Short-pull trigger')
+        mode = values.get(prefix + 'mode', 0)
+        shape = values.get(prefix + 'shape', 0)
+        enabled = not self.busy and prefix + 'mode' in values and prefix + 'shape' in values
+        box = self.card(ui_text('커스텀 트리거', 'Custom triggers'))
+        tabs = tk.Frame(box, bg=CARD)
+        tabs.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(0, 8))
+
+        def switch(target):
+            self._trigger_side = target
+            self.refresh_read_extras()
+
+        for column, (name, key) in enumerate(sides.items()):
+            active = values.get(key + 'mode', 0)
+            form = values.get(key + 'shape', 0)
+            summary = (ui_text('미확인', 'Unknown') if key + 'mode' not in values
+                       else fast_name if fast_trigger_active(values,key)
+                       else effects[form + 1] if active and form in range(4) else effects[0])
+            if any(field in self.doc.changes for field in (key+'mode',key+'shape',*fast_trigger_keys(key)[:3])):
+                summary += ' · ' + ui_text('편집 중','Edited')
+            ttk.Button(tabs, text=f'{name} · {summary}', command=lambda name=name:switch(name),
+                       style='Selected.Filter.TButton' if name == side else 'Filter.TButton').grid(
+                           row=0, column=column, sticky='ew', padx=(0, 5))
+            tabs.columnconfigure(column, weight=1)
+
+        available_effects = effects[:1] + ([fast_name] if fast_available else []) + effects[1:]
+        selected = tk.StringVar(value=fast_name if fast_active else effects[shape + 1] if mode and shape in range(4) else effects[0])
+        choice = ttk.Combobox(box, textvariable=selected, values=available_effects, state='readonly' if enabled else 'disabled')
+        choice.grid(row=2, column=1, sticky='ew', pady=8)
+        tk.Label(box, text=ui_text('효과', 'Effect'), bg=CARD, fg=FG).grid(row=2, column=0, sticky='w')
+
+        def defaults_for(form):
+            from studio_help import reference_point
+            if form == 'fast':
+                return {'strength':100,'start_pos':FAST_TRIGGER_RESISTANCE_START,'pushback':0}
+            defaults={'strength':reference_point(prefix+'strength')[0],
+                      'start_pos':2 if form==3 else 0}
+            if form in (1,2):
+                defaults.update(strength=0 if form==1 else 40,strength_b=100)
+            if form in (2,3):defaults['detent_pos']=reference_point(prefix+'detent_pos')[0]
+            return defaults
+
+        def select(_event):
+            if self.busy:return
+            defaults={}
+            if selected.get() == fast_name and fast_available:
+                if not fast_active:
+                    if not self.confirm_fast_trigger(prefix):
+                        selected.set(effects[shape + 1] if mode and shape in range(4) else effects[0])
+                        return
+                    values.update({fast_mode:1,fast_depth:FAST_TRIGGER_DEFAULT,fast_output:fast_button,
+                                   prefix+'mode':2,prefix+'shape':0})
+                    self.invalid.pop(fast_depth,None)
+                    defaults=defaults_for('fast')
+            else:
+                index = effects.index(selected.get())
+                if fast_active:values[fast_mode]=0
+                if index == 0:values[prefix + 'mode']=0
                 else:
-                    self.doc.values[p + 'shape'] = selected - 1
-                    if not self.doc.values.get(p + 'mode'):
-                        self.doc.values[p + 'mode'] = 2
-                self.update_state()
-                self.render_fields()
-            choice.bind('<<ComboboxSelected>>', select)
-            rows = []
-            if mode:
-                rows = [('strength', ui_text('세기', 'Strength'), None),
-                        ('start_pos', ui_text('시작 위치 · 0~9 단계', 'Start position · steps 0–9'), None)]
-                if shape in (1, 2):
-                    rows.append(('strength_b', ui_text('끝 세기', 'End strength'), None))
-                if shape in (2, 3):
-                    rows.append(('detent_pos', ui_text('걸림 위치 · 0~9 단계', 'Detent position · steps 0–9'), None))
-                rows.append(('mode', ui_text('작동 조건', 'Activation'),
-                             [(0, ui_text('끔', 'Off')), (2, ui_text('항상', 'Always')),
-                              (1, gate + ui_text('2를 누를 때', '2 held')), (3, gate + ui_text('1을 누를 때', '1 held'))]))
-                if mode == 1:
-                    rows.append(('threshold', ui_text('작동 깊이 · 1~255', 'Activation depth · 1–255'), None))
-                rows.append(('pushback', ui_text('반동 세기 · 0 끔', 'Recoil strength · 0 off'), None))
-                if self.doc.values.get(prefix + 'pushback', 0):
-                    rows += [('kick_style', ui_text('반동 형태', 'Recoil style'),
-                              [(0, ui_text('진동', 'Vibration')), (1, ui_text('기계적 밀어내기', 'Mechanical pushback'))]),
-                             ('pushback_freq', ui_text('반동 주파수', 'Recoil frequency'), None)]
-            for row, (suffix, title, choices) in enumerate(rows, 2):
-                field = list(EDITABLE[prefix + suffix])
-                field[3] = title
-                if choices is not None:
-                    field[5] = choices
-                self.field_row(box, row, field)
-            row = len(rows) + 2
-            if mode and self.doc.values.get(prefix + 'pushback', 0):
-                self.field_row(box, row, EDITABLE['at_pushback_src'])
+                    new_shape=index-1
+                    values[prefix + 'shape']=new_shape
+                    if not mode or fast_active or new_shape!=shape:
+                        defaults=defaults_for(new_shape)
+                    if not mode:values[prefix + 'mode']=2
+            for suffix,default in defaults.items():
+                key=prefix+suffix
+                if key in values and default is not None:
+                    values[key]=default
+                    self.invalid.pop(key,None)
+            self.stage_trigger_priority()
+            self.progress.clear()
+            self.refresh_read_extras()
+            self.update_state()
+            if values.get(prefix+'mode'):
+                self.reveal_trigger_field(fast_depth if selected.get()==fast_name else prefix+'strength')
+
+        choice.bind('<<ComboboxSelected>>', select)
+        row = 3
+        open_groups = self._open_option_groups
+
+        def toggle(group, first_field):
+            open_groups.symmetric_difference_update({group})
+            self.refresh_read_extras()
+            if group in open_groups and first_field in self.field_views:
+                self.reveal_trigger_field(first_field)
+
+        def field(key, ko, en, choices=None, limits=None, default=None):
+            nonlocal row
+            spec = list(EDITABLE[key]);spec[3] = ui_text(ko,en)
+            if choices is not None:spec[5] = choices
+            if limits is not None:spec[5] = limits
+            self.field_row(box, row, spec, default=default)
+            row += 1
+
+        if fast_active or mode:
+            preview = tk.Canvas(box, height=24, bg=CARD, highlightthickness=0)
+            preview.grid(row=row, column=0, columnspan=2, sticky='ew');row += 1
+
+            def preview_value(key):
+                try:return int(self.vars[key].get())
+                except (KeyError,ValueError):return values.get(key,0)
+
+            def draw_preview(*_):
+                start, end = (preview_value(prefix + key) for key in ('start_pos','detent_pos'))
+                start, end = max(0,min(9,start)), max(0,min(9,end))
+                if shape == 3:
+                    start = max(2,min(7,start));end = max(start + 1,min(8,end))
+                width = max(preview.winfo_width(), 40) / 10
+                has_resistance=not fast_active or preview_value(prefix+'strength')>0
+                preview.delete('all')
+                for step in range(10):
+                    active = has_resistance and step >= start and (shape != 3 or step < end)
+                    fill = FG if shape in (2,3) and step == end else GOLD if active else BORDER
+                    preview.create_rectangle(step*width,5,(step+1)*width-3,20,fill=fill,outline='')
+
+            preview.bind('<Configure>', draw_preview)
+            legend=ui_text('금색 · 저항 구간','Gold: resistance range') if fast_active else ui_text(
+                '얕게 눌림 → 깊게 눌림 · 밝은 칸은 저항 또는 걸림 위치','Shallow → deep press · highlights show resistance and break points')
+            tk.Label(box, text=legend,
+                     bg=CARD, fg=MUTED, wraplength=420, justify='left').grid(row=row,column=0,columnspan=2,sticky='w')
+            row += 1
+        if fast_active:
+            field(fast_depth,'100%로 인식되는 깊이','Depth for full input',limits=FAST_TRIGGER_DEPTH,default=FAST_TRIGGER_DEFAULT)
+            field(prefix+'start_pos','저항 시작 위치','Resistance starts at',default=FAST_TRIGGER_RESISTANCE_START)
+            field(prefix+'strength','저항 세기','Resistance strength',default=100)
+            for key in (prefix+'start_pos',prefix+'strength'):
+                widget_trace(preview,self.vars[key],draw_preview)
+        elif mode:
+            defaults=defaults_for(shape)
+            field(prefix + 'strength', '시작 세기' if shape in (1,2) else '저항 세기', 'Starting force' if shape in (1,2) else 'Resistance strength',default=defaults['strength'])
+            field(prefix + 'start_pos', '저항 시작 위치', 'Resistance starts at',
+                  limits=(2,7) if shape == 3 else None, default=defaults['start_pos'])
+            if shape in (1,2):field(prefix + 'strength_b', '끝 세기', 'End force',default=defaults['strength_b'])
+            if shape in (2,3):
+                field(prefix + 'detent_pos', '벽 통과 위치' if shape == 3 else '걸림 위치',
+                      'Break point' if shape == 3 else 'Detent position', limits=(3,8) if shape == 3 else None, default=defaults['detent_pos'])
+            for key in ('start_pos','detent_pos'):
+                if prefix + key in self.vars:widget_trace(preview,self.vars[prefix + key],draw_preview)
+            field(prefix + 'mode','저항이 켜지는 조건','When resistance is active',
+                  [(2,ui_text('항상','Always')),(1,ui_text(f'{other}를 누르는 동안',f'While {other} is held')),
+                   (3,ui_text(f'{other[0]}1을 누르는 동안',f'While {other[0]}1 is held'))])
+            if mode == 1:field(prefix + 'threshold',f'{other}를 눌러야 하는 깊이',f'Required {other} pull depth')
+            if values.get('ce_l2_enable' if side == 'L2' else 'ce_r2_enable'):
+                tk.Label(box,text=ui_text('장치에 설정된 사용자 효과가 저항보다 우선할 수 있습니다.',
+                                         'A stored custom effect may take priority over resistance.'),
+                         bg=CARD,fg=MUTED,wraplength=420,justify='left').grid(row=row,column=0,columnspan=2,sticky='w')
                 row += 1
-            note = ui_text('위치는 낮을수록 얕게 눌렀을 때 작동합니다.', 'Lower positions engage earlier.')
-            if self.doc.values.get(custom + 'enable'):
-                note += ui_text(' 사용자 효과가 켜져 있어 저항 효과보다 우선할 수 있습니다.', ' A custom effect is enabled and may take priority.')
-            tk.Label(box, text=note, bg=CARD, fg=MUTED, wraplength=420, justify='left').grid(row=row, column=0, columnspan=2, sticky='w', pady=8)
-            target = 'at_' if prefix == 'at_l2_' else 'at_l2_'
-            ttk.Button(box, text=ui_text('반대쪽에 저항·반동 복사', 'Copy resistance and recoil to other trigger'),
-                       command=lambda p=prefix,t=target:self.copy_trigger(p,t),
-                       state='normal' if enabled else 'disabled').grid(row=row+1,column=0,columnspan=2,sticky='w',pady=8)
+
+            recoil = (side,'recoil')
+            ttk.Button(box,text=('▾ ' if recoil in open_groups else '▸ ')+ui_text('반동 설정','Recoil settings'),
+                       command=lambda:toggle(recoil,prefix+'pushback')).grid(row=row,column=0,columnspan=2,sticky='ew',pady=4)
+            row += 1
+            if recoil in open_groups:
+                field(prefix + 'pushback','반동 세기 · 0이면 끔','Recoil strength · 0 turns it off')
+                recoil_enabled = bool(values.get(prefix + 'pushback', 0))
+                entry, slider, _title = self.range_controls[prefix + 'pushback']
+                def refresh_recoil(_event):
+                    if recoil_enabled != bool(values.get(prefix + 'pushback', 0)):
+                        self.parent.after_idle(self.refresh_read_extras)
+                entry.bind('<FocusOut>', refresh_recoil, add='+')
+                entry.bind('<Return>', refresh_recoil, add='+')
+                slider.bind('<ButtonRelease-1>', refresh_recoil, add='+')
+                slider.bind('<KeyRelease>', refresh_recoil, add='+')
+                if recoil_enabled:
+                    field(prefix + 'kick_style','반동 느낌','Recoil feel',
+                          [(0,ui_text('진동','Vibration')),(1,ui_text('손가락을 밀어냄','Pushes back'))])
+                    if not values.get(prefix + 'kick_style', 0):
+                        field(prefix + 'pushback_freq','진동 주파수','Vibration frequency')
+                tk.Label(box,text=ui_text('반동에는 진동 또는 오디오햅틱 신호가 필요합니다.',
+                                         'Recoil needs a rumble or audio haptics signal.'),bg=CARD,fg=MUTED).grid(row=row,column=0,columnspan=2,sticky='w')
+                row += 1
+        common = ('triggers','common')
+        ttk.Button(box,text=('▾ ' if common in open_groups else '▸ ')+ui_text('L2/R2 공통 설정','Shared L2/R2 settings'),
+                   command=lambda:toggle(common,'at_pushback_src')).grid(row=row,column=0,columnspan=2,sticky='ew',pady=4)
+        row += 1
+        if common in open_groups:
+            field('at_pushback_src','반동을 일으키는 신호','Recoil signal',
+                  [(0,ui_text('일반 진동','Game rumble')),(1,ui_text('오디오햅틱','Audio haptics')),
+                   (2,ui_text('둘 중 강한 신호','Stronger of the two'))])
+            self.field_row(box,row,EDITABLE['synth_force'],title_text=ui_text('게임 효과보다 내 설정 우선','Prefer my settings over game effects'))
+            row += 1
+        ttk.Button(box,text=ui_text(f'{side} 설정을 {other}에 복사',f'Copy {side} settings to {other}'),
+                   command=lambda:self.copy_trigger(prefix,sides[other]),
+                   state='normal' if enabled and sides[other] + 'mode' in values and
+                   (not fast_active or all(key in values for key in fast_trigger_keys(sides[other])[:3])) else 'disabled').grid(row=row,column=0,sticky='w',pady=6)
+        ttk.Button(box,text=ui_text('Pico 효과 상태 확인','Check Pico effect status'),
+                   command=lambda:self.check_trigger_status(side),
+                   state='normal' if self.path and self.loaded and not self.busy else 'disabled').grid(row=row,column=1,sticky='e',pady=6)
+
+    def reveal_trigger_field(self,key):
+        view=self.field_views.get(key)
+        if view is not None:
+            widget=view[0]
+            self.restore_scroll_offset(widget.winfo_rooty()-self.body.winfo_rooty()-8)
+
+    def check_trigger_status(self, side):
+        def read(client):
+            fields = bytes((2,0x36,0x3c))
+            reply = client.command(0x0c,fields,echo=bytes((2,)))
+            if len(reply) < 10 or reply[2:6] != bytes((0,2,0x36,1)) or reply[7:9] != bytes((0x3c,1)):
+                raise ValueError(ui_text('장치가 트리거 상태 조회를 지원하지 않습니다.', 'Trigger status is unavailable on this device.'))
+            return side, reply[6], reply[9]
+        self.task('trigger_status',lambda:self.with_client(read))
+
     def render_effects(self):self.render_construction()
     def edit_effect(self,trig,index):
         self.progress.configure(text=_ui_tr('커스텀 트리거는 공사 중입니다.'))

@@ -21,10 +21,10 @@ class LightingTests(unittest.TestCase):
 
     def test_pico_positive_toggle_preserves_wire_polarity(self):
         ui=self.lighting();control=ui.field_views['disable_pico_led'][1][0]
-        self.assertEqual(control.text,'ON');self.assertTrue(control.variable.get())
+        self.assertEqual(control.text,'켜기');self.assertTrue(control.variable.get())
         with patch.object(ui,'with_client') as wire:
             control.invoke();self.assertEqual(ui.doc.values['disable_pico_led'],1)
-            self.assertFalse(control.variable.get());self.assertEqual(control.text,'OFF')
+            self.assertFalse(control.variable.get());self.assertEqual(control.text,'끄기')
             control.invoke();self.assertEqual(ui.doc.values['disable_pico_led'],0)
             wire.assert_not_called()
         self.assertFalse(ui.doc.changes)
@@ -48,7 +48,7 @@ class LightingTests(unittest.TestCase):
     def test_read_refresh_and_search_keep_values(self):
         ui=self.lighting();before=copy.deepcopy(ui.doc.values)
         ui.doc.values['disable_pico_led']=1;ui.doc.baseline['disable_pico_led']=1
-        ui.refresh_read_values();self.assertEqual(ui.field_views['disable_pico_led'][1][0].text,'OFF')
+        ui.refresh_read_values();self.assertEqual(ui.field_views['disable_pico_led'][1][0].text,'끄기')
         self.assertFalse(ui.doc.changes)
         ui.search.set('lightbar');ui.render_fields();self.assertIn('lightbar_rgb',ui.field_views)
         ui.search.set('');ui.render_fields();self.assertIn('조명',ui.search_targets)

@@ -422,6 +422,10 @@ class StudioPanel:
         old=self.observed_profile
 
         self.observed_profile={k:profile.get(k) for k in ('index','name','edited','auto_haptics_enable')}
+        if profile['auto_haptics_enable']==1:
+            self.observed_profile.update({key:profile[key] for key in ('mix_native_level','ah_dsp_source') if key in profile})
+        if getattr(self.app,'engine',None):
+            self.app.engine.front_only=self.native_mix_front_only()
 
         if old is not None and old!=self.observed_profile:self.catalog_invalid=True
 
@@ -470,6 +474,13 @@ class StudioPanel:
             self._discovery_status(tr(_ui_tr('Studio 연결 확인 완료')))
 
 
+
+    def native_mix_front_only(self):
+        profile=self.observed_profile or {}
+        return profile.get('auto_haptics_enable')==1 and (profile.get('mix_native_level') or 0)>0
+
+    def native_mix_conflict(self):
+        return self.native_mix_front_only() and self.observed_profile.get('ah_dsp_source')==1
 
     def _current_profile_display(self):
 

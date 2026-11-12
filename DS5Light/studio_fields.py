@@ -41,9 +41,20 @@ for _section in SECTIONS:
 
 for _section in SECTIONS:
     if _section['title']=='Device & Connection':
-        _section['fields'].append([0x0e,'ps_shortcut_enabled','u8','PS default shortcuts','bool'])
+        _section['fields'].extend([
+            [0x0e,'ps_shortcut_enabled','u8','PS default shortcuts','bool'],
+            [0xC7,'disable_usb_sn','u8',_ui_tr('Edge USB 시리얼 숨기기'),'bool'],
+        ])
 
 FIELDS = {f[1]: f for s in SECTIONS for f in s["fields"]}
+
+# The firmware accepts all T2Button values, including a trigger targeting itself.
+# Preserve mappings created outside this editor when backing up a profile.
+for _key in ('t2_button','t2_l2_button'):
+    FIELDS[_key][5].update({'9':'L2 (click)', '10':'R2 (click)', '16':'Create', '17':'Options', '18':'Touchpad',
+                            '19':'D-pad Up', '20':'D-pad Down', '21':'D-pad Left', '22':'D-pad Right'})
+for _key in ('t2_mode','t2_l2_mode'):
+    FIELDS[_key][5]['4'] = 'Off (release flag)'
 
 # A disabled custom effect legitimately has zero active stages on firmware.
 

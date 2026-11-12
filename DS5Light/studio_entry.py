@@ -63,6 +63,9 @@ class EntryQueries:
         if changed and not self.doc.dirty:
             from studio_document import SettingsDocument
             self.doc=SettingsDocument()
+        if 'disable_usb_sn' not in result['values'] and 'disable_usb_sn' not in self.doc.changes:
+            self.doc.baseline.pop('disable_usb_sn',None)
+            self.doc.values.pop('disable_usb_sn',None)
         self.doc.merge_read_values(result['values'])
         self.path=result['path'];self.profile_stamp=stamp;self.loaded=bool(self.doc.values);self.external_stale=False
         self.profile_save_needed=bool(profile and profile.get('edited')) or getattr(self,'profile_save_needed',False) and not changed

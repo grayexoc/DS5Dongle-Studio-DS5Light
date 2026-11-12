@@ -26,6 +26,8 @@
 #include "bsp/board_api.h"
 #include "tusb.h"
 #include "config.h"
+#include "bt.h"
+#include "usb.h"
 #include "macro.h"
 
 #ifndef ENABLE_SERIAL
@@ -204,6 +206,29 @@ void usb_select_host_mode() {
 #endif
 }
 
+static bool served_edge = false;
+static bool served_serial_hidden = false;
+
+bool usb_edge_serial_available() {
+    return served_edge && bt_edge_connected();
+}
+
+bool usb_edge_serial_hidden(const Config_body &config) {
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    if (config.usb_gamepad_mode == 1) return false;
+#endif
+    return config.disable_usb_sn && config.controller_mode != 0 && bt_edge_connected();
+}
+
+bool usb_edge_serial_refresh_needed() {
+    const auto &config = get_config();
+#ifdef STUDIO_XINPUT_EXPERIMENT
+    if (usb_xinput_active()) return false;
+#endif
+    return served_serial_hidden != usb_edge_serial_hidden(config) ||
+           (!served_edge && config.controller_mode != 0 && bt_edge_connected());
+}
+
 uint8_t const *tud_descriptor_device_cb(void) {
     // The idle identity must not look like a Sony controller in ANY respect.
     // Changing only the product id was not enough: DS4Windows still claimed it,
@@ -211,6 +236,8 @@ uint8_t const *tud_descriptor_device_cb(void) {
     // idle identity uses the Raspberry Pi vendor id (this IS an RP2350 board),
     // its own product id, and its own manufacturer and product strings.
     s_served_idle_pid = s_idle_pid;   // record what this enumeration hands over
+    served_edge = false;
+    served_serial_hidden = false;
 #ifdef STUDIO_XINPUT_EXPERIMENT
     if (usb_xinput_active()) return xinput_device_descriptor();
 #endif
@@ -221,7 +248,9 @@ uint8_t const *tud_descriptor_device_cb(void) {
         desc_device.idVendor  = 0x054C;   // Sony, for the real controller identity
         desc_device.idProduct = ds_mode() ? 0x0CE6 : 0x0DF2;
     }
-    desc_device.iSerialNumber = get_config().disable_usb_sn ? 0x00 : 0x03;
+    served_edge = !s_idle_pid && desc_device.idProduct == 0x0DF2;
+    served_serial_hidden = served_edge && usb_edge_serial_hidden(get_config());
+    desc_device.iSerialNumber = served_serial_hidden ? 0x00 : 0x03;
     // USB 2.1 (so the host requests the BOS / MS OS 2.0 selective-suspend opt-in)
     // only when wake is enabled; plain USB 2.0 otherwise.
     desc_device.bcdUSB = get_config().enable_wake ? 0x0210 : 0x0200;

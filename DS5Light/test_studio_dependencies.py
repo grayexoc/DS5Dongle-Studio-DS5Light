@@ -59,18 +59,24 @@ class UITests(unittest.TestCase):
     setUp=fixture.NativeUITests.setUp
     tearDown=fixture.NativeUITests.tearDown
     editor=fixture.NativeUITests.editor
-    def test_live_slider_dependency_and_values_preserved(self):
-        ui=self.editor();ui.select_value('auto_haptics_enable',1)
-        before=ui.doc.values['mix_native_filter']
+    def test_mix_toggle_links_restore_and_preserves_stored_level(self):
+        ui=self.editor();ui.doc.load(dict(ui.doc.baseline,auto_haptics_enable=1,mix_native_level=0,mix_native_filter=1,ah_dsp_source=1))
+        ui.render_fields()
         with patch.object(ui,'with_client') as wire:
-            ui.vars['mix_native_level'].set('0')
+            toggle=ui.field_views['mix_native_level'][1][0]
             self.assertEqual(str(ui.field_views['mix_native_filter'][1][0].cget('state')),'disabled')
-            self.assertIn('0보다',option_help(ui,'mix_native_filter'))
-            ui.vars['mix_native_level'].set('50')
+            self.assertIn('혼합을 켜',option_help(ui,'mix_native_filter'))
+            toggle.invoke()
+            self.assertEqual((ui.doc.values['mix_native_level'],ui.doc.values['mix_native_filter'],ui.doc.values['ah_dsp_source']),(100,0,0))
             self.assertEqual(str(ui.field_views['mix_native_filter'][1][0].cget('state')),'readonly')
-            self.assertFalse(option_help(ui,'mix_native_filter').startswith('현재 비활성'))
+            toggle.invoke()
+            self.assertFalse(ui.doc.changes)
+            toggle.invoke();ui.revert()
+            self.assertFalse(ui.doc.changes)
+            ui.doc.load(dict(ui.doc.baseline,mix_native_level=50));ui.render_fields()
+            self.assertEqual(ui.field_views['mix_native_level'][1][0].status.cget('text'),'켜짐 · 50%')
+            self.assertFalse(ui.doc.changes)
             wire.assert_not_called()
-        self.assertEqual(ui.doc.values['mix_native_filter'],before)
     def test_device_rumble_mode_switch(self):
         ui=self.editor();ui.doc.values.update(rumble_gain=125,rumble_release=1,rumble_mode=2)
         ui.doc.baseline.update(rumble_gain=125,rumble_release=1,rumble_mode=2)

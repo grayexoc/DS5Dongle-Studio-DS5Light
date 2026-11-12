@@ -27,8 +27,8 @@ def inactive_reason(editor,key):
     if key in ('rumble_haptic_strength','mix_native_level'):
         return _ui_tr('오디오햅틱 모드를 Mix로 변경하면 사용할 수 있습니다.')
     if key=='mix_native_filter':
-        if mode!=1:return _ui_tr('오디오햅틱 모드를 Mix로 변경하고 네이티브 햅틱 혼합량을 0보다 높이세요.')
-        return _ui_tr('네이티브 햅틱 혼합량을 0보다 높이면 사용할 수 있습니다.')
+        if mode!=1:return _ui_tr('오디오햅틱 모드를 Mix로 변경하고 네이티브 햅틱 혼합을 켜세요.')
+        return _ui_tr('네이티브 햅틱 혼합을 켜면 사용할 수 있습니다.')
     if key in ('auto_mute_mix','auto_mute_replace'):
         target='Mix' if key=='auto_mute_mix' else 'Replace'
         steps=[]
@@ -79,7 +79,7 @@ def option_help(editor,key):
         elif key in ('rumble_gain','rumble_mode','rumble_release'):reason='Set audio haptics to Off.'
         elif key=='haptics_gain':reason='Existing gain is preserved. Switching to Mix or Replace stages 1. Adjust separately with audio haptics off.'
         elif key in ('rumble_haptic_strength','mix_native_level'):reason='Select Mix mode.'
-        elif key=='mix_native_filter':reason='Select Mix mode and set native haptic mix above zero.'
+        elif key=='mix_native_filter':reason='Select Mix mode and turn on native haptic mixing.'
         elif key in ('auto_mute_mix','auto_mute_replace'):reason='Select the corresponding audio haptic mode and turn off the speaker-disable option.'
         elif key=='haptics_aa' or key in AUDIO_HAPTIC_CHILDREN:reason='Select Mix or Replace mode.'
         elif key in ('ah_low_gain','ah_high_gain'):reason='Set the low/high crossover above zero.'

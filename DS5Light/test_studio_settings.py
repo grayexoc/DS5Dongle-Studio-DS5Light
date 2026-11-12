@@ -47,8 +47,44 @@ class Device:
     def get_feature_report(self,r,n):return self.reply
 
 class SchemaTests(unittest.TestCase):
+    def test_edge_serial_requires_explicit_firmware_support(self):
+        from studio_settings_protocol import needs_reconnect
+        client=SettingsClient(None)
+        with patch.object(client,'command',return_value=b'\x66\x0c\x01\x00') as command:
+            self.assertEqual(client.read_fields([FIELDS['disable_usb_sn']]),({},['disable_usb_sn']))
+            command.assert_called_once()
+            self.assertEqual(command.call_args.args,(12,b'\x01\xc7'))
+        with patch.object(client,'command',return_value=b'\x66\x0c\x00\x01\xc7\x01\x00'):
+            self.assertEqual(client.read_fields([FIELDS['disable_usb_sn']]),({'disable_usb_sn':0},[]))
+        self.assertTrue(needs_reconnect({'disable_usb_sn':0},{'disable_usb_sn':1}))
+        self.assertFalse(needs_reconnect({}, {'disable_usb_sn':1}))
+
+    def test_slot_restore_uses_serial_storage_even_when_live_edge_is_unavailable(self):
+        from studio_backup import restore_all
+        class Client:
+            cancel=staticmethod(lambda:False)
+            def __init__(self):self.stored=1;self.saved=[]
+            def read_fields(self):return {},['disable_usb_sn']
+            def read_one(self,field):
+                self.assert_storage(field)
+                return self.stored
+            def assert_storage(self,field):
+                if field[0]!=0xc8:raise AssertionError(field)
+            def read_macros(self):return {}
+            def command(self,*args):return bytes((0x66,26,0))
+            def write_fields(self,values,baseline,*,profile_snapshot):
+                if not profile_snapshot:raise AssertionError('expected profile snapshot')
+                self.stored=values['disable_usb_sn']
+            def save_slot(self,index,name):self.saved.append((index,self.stored))
+        client=Client()
+        rows=[dict(index=0,name='Edge',fields={'disable_usb_sn':1},effects={}),
+              dict(index=1,name='Legacy',fields={},effects={})]
+        self.assertEqual(restore_all(client,rows,{}),[0,1])
+        self.assertEqual(client.saved,[(0,1),(1,0)])
+        self.assertEqual(client.stored,1)
+
     def test_full_stable_registry_and_descriptions(self):
-        self.assertEqual(len(FIELDS),142);self.assertEqual(len({f[0] for f in FIELDS.values()}),142)
+        self.assertEqual(len(FIELDS),143);self.assertEqual(len({f[0] for f in FIELDS.values()}),143)
         self.assertEqual(set(FIELDS),set(LABELS));self.assertFalse(any('experimental' in s['title'].lower() for s in SECTIONS))
         for key,f in FIELDS.items():
             text=help_text(key);self.assertIn(f[3],text);self.assertNotIn('('+key+')',text)
@@ -82,12 +118,13 @@ class SchemaTests(unittest.TestCase):
             def read_rumble(self,refresh=False):return {'rumble_gain':100,'rumble_release':0}
             def slots(self):return [Slot(0,'saved','Legacy'),Slot(1,'saved','Custom')]
             def read_macros(self):return {}
-            def command(self,command,payload,report=0x81,echo=b'',echo_offset=3):
+            def command(self,command,payload,report=0x81,echo=b'',echo_offset=3,**kwargs):
+                if command==12 and payload==b'\x01\xc8':return b'\x66\x0c\x00\x01\xc8\x01\x00'
                 if command==12 and payload==b'\x01\xc5':return b'\x66\x0c\x00\x01\xc5\x01\x00'
                 if command==12 and payload==b'\x01\xc6':return b'\x66\x0c\x00\x01\xc6\x01\x00'
                 assert command==13 and report==0x84 and echo==payload
                 slot,fid=payload
-                field=next(f for f in EDITABLE.values() if f[0]==fid)
+                field=FIELDS['disable_usb_sn'] if fid==0xc8 else next(f for f in EDITABLE.values() if f[0]==fid)
                 key=field[1]
                 if slot==0:
                     size=struct.calcsize('<'+{'u8':'B','u16':'H','u32':'I','f32':'f'}[field[2]])
@@ -96,7 +133,7 @@ class SchemaTests(unittest.TestCase):
                     value=encode(field,custom[key])
                 return b'\x66\x0d\0'+payload+value
         custom={key:defaults()[key] for key in EDITABLE}
-        custom.update(rumble_gain=175,rumble_release=2,rumble_mode=2,lightbar_rgb=0x3366cc,usb_gamepad_mode=1,
+        custom.update(rumble_gain=175,rumble_release=2,rumble_mode=2,lightbar_rgb=0x3366cc,usb_gamepad_mode=1,disable_usb_sn=1,
                       auto_haptics_lowpass_hz=20,ah_xover_hz=200,
                       gyro_natural_x10=254,gyro_natural_y_x10=230,gyro_scale_trim_x100=1)
         rows,_=validate_backup(backup_all(Client(None)))
@@ -158,7 +195,7 @@ class NativeUITests(unittest.TestCase):
     def test_busy_and_readonly_disable_apply(self):
         e=self.editor();e.changed('auto_haptics_gain',100);e.write_ready=False;e.update_state();self.assertIn('disabled',e.apply_button.state());e.write_ready=True;e.busy=True;e.render_fields();self.assertIn('disabled',e.apply_button.state())
     def test_help_contains_recommendation_and_reason(self):
-        e=self.editor();self.assertTrue(e.tips);self.assertIn('추천 시작값',help_text('auto_haptics_gain'));self.assertIn('체크 해제',help_text('disable_mic'))
+        e=self.editor();self.assertTrue(e.tips);self.assertIn('추천 시작값',help_text('auto_haptics_gain'));self.assertIn('추천 시작값: 체크',help_text('disable_mic'))
 
 
 
@@ -168,6 +205,9 @@ class RestoreSafetyTests(unittest.TestCase):
         class Client:
             def __init__(self):self.values={'auto_haptics_gain':100};self.saves=[];self.suspended=False;self.cancel=lambda:False
             def read_fields(self):return dict(self.values),[]
+            def read_one(self,field):
+                from studio_settings_protocol import EdgeSerialUnsupported
+                raise EdgeSerialUnsupported('Unsupported')
             def read_effects(self):return {'0':[],'1':[]}
             def read_macros(self):return {}
             def command(self,cmd,payload,report):self.suspended=bool(payload[0]);return bytes([102,cmd,0,0])

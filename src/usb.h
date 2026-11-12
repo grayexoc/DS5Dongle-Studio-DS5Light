@@ -18,6 +18,10 @@ bool usb_is_idle_pid(void);
 // True if the identity the HOST currently has enumerated is the idle one
 // (latched at GET_DESCRIPTOR, unlike usb_is_idle_pid which is only intent).
 bool usb_served_idle_pid(void);
+struct Config_body;
+bool usb_edge_serial_available();
+bool usb_edge_serial_hidden(const Config_body &config);
+bool usb_edge_serial_refresh_needed();
 void usb_schedule_reconnect();
 void usb_cancel_reconnect();
 bool usb_reconnect_pending();

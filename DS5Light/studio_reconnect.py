@@ -7,7 +7,7 @@ from studio_settings_protocol import SettingsClient
 from device_binding import resolve_hid
 
 
-def wait_for_macros(path,serial,cancel,timeout=30):
+def wait_for_macros(path,serial,cancel,timeout=30,*,edge_binding=None,serial_hidden=None):
     """Reopen only the selected Pico; never repeat apply/flash/reset commands."""
     import hid
     deadline=time.monotonic()+timeout
@@ -20,7 +20,10 @@ def wait_for_macros(path,serial,cancel,timeout=30):
         attempt+=1
         try:
             rows=devices()
-            target=resolve_hid(rows,path,serial)
+            if edge_binding is not None:
+                target=edge_binding.resolve_edge_reconnect(rows,not serial_hidden)
+            else:
+                target=resolve_hid(rows,path,serial)
             if target is None:continue
             result=snapshot(target['path'],cancel.is_set,deadline=deadline)
             if time.monotonic()>=deadline:break

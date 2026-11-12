@@ -199,6 +199,7 @@ bool get_effect_history(uint8_t trig, uint8_t slot, uint8_t out[11]) {
 }
 
 static bool state_update_apply(const uint8_t (&data)[sizeof(SetStateData)], uint8_t size);
+static void synthesize_triggers(const SetStateData &update);
 
 // Adaptive synthesis cadence. The 8 ms tick exists so a stage sequence can see
 // the trigger cross a boundary mid-pull - but a trigger sitting at rest cannot
@@ -229,11 +230,24 @@ uint32_t state_synth_interval_ms() {
 }
 
 bool state_synth_tick() {
-    if (!g_host_cache_size) return false;                  // no host intent cached yet
     const uint32_t now = to_ms_since_boot(get_absolute_time());
     // Nothing to synthesize while the host is suspended, and the extra BT output
     // traffic competes with the input reports wake-on-PS must observe.
     if (wake_host_is_suspended()) return false;
+    if (!g_host_cache_size) {
+        const auto &cfg = get_config();
+        if (!cfg.at_mode && !cfg.at_l2_mode && !cfg.ce_r2_enable && !cfg.ce_l2_enable &&
+            !synth_owned_r2 && !synth_owned_l2) return false;
+        const auto before = state;
+        state.AllowRightTriggerFFB = state.AllowLeftTriggerFFB = 0;
+        synthesize_triggers({});
+        const bool force = g_ce_force_send;
+        g_ce_force_send = false;
+        return force || (state.AllowRightTriggerFFB && (!before.AllowRightTriggerFFB ||
+            memcmp(before.RightTriggerFFB, state.RightTriggerFFB, sizeof(state.RightTriggerFFB)))) ||
+            (state.AllowLeftTriggerFFB && (!before.AllowLeftTriggerFFB ||
+            memcmp(before.LeftTriggerFFB, state.LeftTriggerFFB, sizeof(state.LeftTriggerFFB))));
+    }
     // Quiet-window before we recompose. Normally 50 ms, but when a custom effect
     // owns a trigger we need a fine-grained view of trigger POSITION (stage
     // transitions latch), so drop to 8 ms - still far slower than the 250-1000 Hz
@@ -244,8 +258,8 @@ bool state_synth_tick() {
     }
     alignas(4) static uint8_t copy[sizeof(SetStateData)];
     memcpy(copy, g_host_cache, sizeof(copy));
-    // Synthetic ticks must not replay one-shot host volume/audio settings.
-    copy[0] &= ~0xf0u;
+    // Cached trigger commands must not renew game ownership or re-enter capture.
+    copy[0] &= ~0xfcu;
     copy[1] &= ~0x82u;
     // XInput rumble is held until the host sends a replacement or stop.
     if (!usb_xinput_active() && now - g_last_rumble_ms >= 300) {
@@ -266,6 +280,9 @@ void state_init() {
     output_diagnostics.reset();
     output_test.reset();
     game_ever_r2 = game_ever_l2 = false;
+    synth_owned_r2 = synth_owned_l2 = at_engaged = at_engaged_l2 = false;
+    g_diag_synth = 0;
+    g_diag_at_env = 0;
     g_host_cache_size = 0;
     g_host_motor_valid = false;
     player_led_restore_pending = false;
@@ -678,6 +695,69 @@ static bool state_update_apply(const uint8_t (&data)[sizeof(SetStateData)], cons
         sizeof(update.LeftTriggerFFB)
     );
 
+    synthesize_triggers(update);
+
+    copy_if_allowed(
+        update.AllowMotorPowerLevel,
+        kMotorPowerLevelOffset,
+        sizeof(uint8_t)
+    );
+    copy_if_allowed(
+        !get_config().lock_volume && update.AllowAudioControl2,
+        kAudioControl2Offset,
+        sizeof(uint8_t)
+    );
+    if (!get_config().lock_volume && update.AllowAudioControl2) {
+        get_config().speaker_gain = update.SpeakerCompPreGain;
+    }
+    copy_if_allowed(
+        update.AllowHapticLowPassFilter,
+        kHapticLowPassFilterOffset,
+        sizeof(uint8_t)
+    );
+
+    if (update.AllowLightBrightnessChange && size > offsetof(SetStateData, LightBrightness))
+        state.AllowLightBrightnessChange = 1;
+    if (update.AllowPlayerIndicators && size > kPlayerIndicatorsOffset)
+        state.AllowPlayerIndicators = 1;
+    if (update.AllowLedColor && size >= offsetof(SetStateData, LedRed) + 3)
+        state.AllowLedColor = 1;
+    copy_if_allowed(
+        update.AllowLightBrightnessChange,
+        offsetof(SetStateData, LightBrightness),
+        sizeof(update.LightBrightness)
+    );
+    copy_if_allowed(
+        update.AllowPlayerIndicators,
+        kPlayerIndicatorsOffset,
+        sizeof(uint8_t)
+    );
+    copy_if_allowed(
+        update.AllowLedColor,
+        offsetof(SetStateData, LedRed),
+        sizeof(update.LedRed) * 3
+    );
+
+    const auto *before = reinterpret_cast<const uint8_t *>(&old_state);
+    const auto *after = reinterpret_cast<const uint8_t *>(&state);
+    if ((before[0] & 3) != (after[0] & 3) || (before[38] & 4) != (after[38] & 4) ||
+        before[2] != after[2] || before[3] != after[3]) rumble_output_pending = true;
+    bool changed = false;
+    rumble_reset_pending = false;
+    if (g_ce_force_send) {
+        changed = true;                 // re-arm: send identical bytes fresh
+        g_ce_force_send = false;
+    } else if (memcmp(&old_state, &state, 32) != 0) {
+        changed = true;
+    } else if (memcmp(reinterpret_cast<const uint8_t *>(&old_state) + 36,
+                      reinterpret_cast<const uint8_t *>(&state) + 36,
+                      sizeof(SetStateData) - 36) != 0) {
+        changed = true;
+    }
+    return changed;
+}
+
+static void synthesize_triggers(const SetStateData &update) {
     // --- Synthesized trigger effects ---
     // Two features share this block:
     //   1) Rumble->trigger vibration (r2t): express the game's rumble as trigger
@@ -1242,25 +1322,22 @@ static bool state_update_apply(const uint8_t (&data)[sizeof(SetStateData)], cons
             }
         };
 
-        // -- release helper: remove OUR footprint from the persistent state.
-        // Clears the FFB bytes we wrote and drops our claim. It clears the Allow bit
-        // ONLY if the game isn't currently driving that trigger (the top-of-function
-        // sync already set state.Allow from the host; if the game owns it we must
-        // leave that bit + the copied game FFB intact). When neither game nor synth
-        // wants the trigger, this returns byte 0 to its clean native value — which is
-        // what fixes native haptics breaking, since the Allow bits share byte 0 with
-        // the rumble/haptic-mode flags.
+        // Release our effect with an explicit Off unless the game supplied its own.
         auto release_left = [&](bool game_has_it) {
             if (!synth_owned_l2) return;
-            for (int i = 0; i < 11; ++i) state.LeftTriggerFFB[i] = 0;
-            if (!game_has_it) state.AllowLeftTriggerFFB = 0;
             synth_owned_l2 = false;
+            if (game_has_it || update.AllowLeftTriggerFFB) return;
+            memset(state.LeftTriggerFFB, 0, sizeof(state.LeftTriggerFFB));
+            state.LeftTriggerFFB[0] = 0x05;
+            state.AllowLeftTriggerFFB = 1;
         };
         auto release_right = [&](bool game_has_it) {
             if (!synth_owned_r2) return;
-            for (int i = 0; i < 11; ++i) state.RightTriggerFFB[i] = 0;
-            if (!game_has_it) state.AllowRightTriggerFFB = 0;
             synth_owned_r2 = false;
+            if (game_has_it || update.AllowRightTriggerFFB) return;
+            memset(state.RightTriggerFFB, 0, sizeof(state.RightTriggerFFB));
+            state.RightTriggerFFB[0] = 0x05;
+            state.AllowRightTriggerFFB = 1;
         };
 
         // -- LEFT trigger --
@@ -1377,65 +1454,6 @@ static bool state_update_apply(const uint8_t (&data)[sizeof(SetStateData)], cons
                                  (synth_owned_l2 ? 4 : 0) | (synth_owned_r2 ? 8 : 0) |
                                  (at_engaged ? 16 : 0) | (at_kick_diag ? 32 : 0));
     }
-
-    copy_if_allowed(
-        update.AllowMotorPowerLevel,
-        kMotorPowerLevelOffset,
-        sizeof(uint8_t)
-    );
-    copy_if_allowed(
-        !get_config().lock_volume && update.AllowAudioControl2,
-        kAudioControl2Offset,
-        sizeof(uint8_t)
-    );
-    if (!get_config().lock_volume && update.AllowAudioControl2) {
-        get_config().speaker_gain = update.SpeakerCompPreGain;
-    }
-    copy_if_allowed(
-        update.AllowHapticLowPassFilter,
-        kHapticLowPassFilterOffset,
-        sizeof(uint8_t)
-    );
-
-    if (update.AllowLightBrightnessChange && size > offsetof(SetStateData, LightBrightness))
-        state.AllowLightBrightnessChange = 1;
-    if (update.AllowPlayerIndicators && size > kPlayerIndicatorsOffset)
-        state.AllowPlayerIndicators = 1;
-    if (update.AllowLedColor && size >= offsetof(SetStateData, LedRed) + 3)
-        state.AllowLedColor = 1;
-    copy_if_allowed(
-        update.AllowLightBrightnessChange,
-        offsetof(SetStateData, LightBrightness),
-        sizeof(update.LightBrightness)
-    );
-    copy_if_allowed(
-        update.AllowPlayerIndicators,
-        kPlayerIndicatorsOffset,
-        sizeof(uint8_t)
-    );
-    copy_if_allowed(
-        update.AllowLedColor,
-        offsetof(SetStateData, LedRed),
-        sizeof(update.LedRed) * 3
-    );
-
-    const auto *before = reinterpret_cast<const uint8_t *>(&old_state);
-    const auto *after = reinterpret_cast<const uint8_t *>(&state);
-    if ((before[0] & 3) != (after[0] & 3) || (before[38] & 4) != (after[38] & 4) ||
-        before[2] != after[2] || before[3] != after[3]) rumble_output_pending = true;
-    bool changed = false;
-    rumble_reset_pending = false;
-    if (g_ce_force_send) {
-        changed = true;                 // re-arm: send identical bytes fresh
-        g_ce_force_send = false;
-    } else if (memcmp(&old_state, &state, 32) != 0) {
-        changed = true;
-    } else if (memcmp(reinterpret_cast<const uint8_t *>(&old_state) + 36,
-                      reinterpret_cast<const uint8_t *>(&state) + 36,
-                      sizeof(SetStateData) - 36) != 0) {
-        changed = true;
-    }
-    return changed;
 }
 
 void set_volume(const uint8_t value) {

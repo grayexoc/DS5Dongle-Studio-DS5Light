@@ -43,6 +43,16 @@ class GainTests(unittest.TestCase):
         data=np.full((480,4),1000,dtype='<i2').tobytes()
         output=p.process(data,Controls(bypass=True,gain=.5))
         self.assertTrue(np.all(np.frombuffer(output,'<i2')==500))
+    def test_mix_front_only_zeros_rear_with_filter_on_or_off_and_restores(self):
+        wave=np.tile([2000,-4000,900,-800],(480,1)).astype('<i2')
+        for bypass in (True,False):
+            controls=Controls(bypass=bypass)
+            def output(front_only):
+                p=OutputProcessor();p.level.current=1.
+                return np.frombuffer(p.process(wave.tobytes(),controls,front_only=front_only),'<i2').reshape(-1,4)
+            legacy=output(False);front=output(True)
+            np.testing.assert_array_equal(front[:,:2],legacy[:,:2])
+            self.assertTrue(np.any(legacy[:,2:]));self.assertFalse(np.any(front[:,2:]))
     def test_invalid_gain_rejected(self):
         for value in (-.1,1.51,float('nan'),True):
             with self.assertRaises(ValueError): OutputGain().process(bytes(8),value)

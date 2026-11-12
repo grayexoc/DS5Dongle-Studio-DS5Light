@@ -6,13 +6,16 @@ import secrets
 import time
 from studio_slots import StudioClient
 from studio_fields import FIELDS
-from studio_scope import EDITABLE,CONSTRUCTION,LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB_MODE_FIELDS,RUMBLE_MODE_FIELDS,OPTIONAL_FIELDS
+from studio_scope import EDITABLE,CONSTRUCTION,LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB_MODE_FIELDS,RUMBLE_MODE_FIELDS,EDGE_SERIAL_FIELDS,OPTIONAL_FIELDS
 
 FORMATS={'u8':'B','u16':'H','u32':'I','f32':'f'}
 ENUM_FIELDS={'usb_gamepad_mode','controller_mode','polling_rate_mode','audio_buffer_length','disable_mic','disable_speaker','enable_wake'}
 class PartialApplyError(RuntimeError):pass
 class USBModeUnsupported(ValueError):pass
 class RumbleModeUnsupported(ValueError):pass
+class EdgeSerialUnsupported(ValueError):pass
+
+EDGE_SERIAL_STORAGE_FIELD=[0xC8,*FIELDS['disable_usb_sn'][1:]]
 
 class PolicySaveError(ValueError):
     def __init__(self, message, current):
@@ -46,6 +49,14 @@ def validate_changes(values,changes,*,profile_snapshot=False):
         if key not in FIELDS:raise ValueError(_ui_tr('지원하지 않는 설정: ')+key)
         encode(FIELDS[key],value)
     merged=dict(values,**changes)
+    if (not profile_snapshot and 'disable_usb_sn' in changes and
+            (merged.get('usb_gamepad_mode')==1 or merged.get('controller_mode')==0)):
+        raise ValueError(_ui_tr('Edge USB 시리얼 설정은 DualSense Edge USB 모드에서 적용하세요.'))
+    if (not profile_snapshot and any(k in changes and changes[k]!=values.get(k)
+                                     for k in ('auto_haptics_enable','mix_native_level','ah_dsp_source'))
+            and merged.get('auto_haptics_enable')==1 and merged.get('mix_native_level',0)>0
+            and merged.get('ah_dsp_source')==1):
+        raise ValueError(_ui_tr('네이티브 햅틱을 혼합하려면 햅틱 입력 채널을 앞 채널로 선택하세요.'))
     split=merged.get('ah_xover_hz',0)
     cutoff=merged.get('auto_haptics_lowpass_hz')
     split_edited=any(key in changes and changes[key]!=values.get(key)
@@ -55,6 +66,7 @@ def validate_changes(values,changes,*,profile_snapshot=False):
     return merged
 
 def needs_reconnect(before,after,macros=None):
+    if 'disable_usb_sn' in before and before['disable_usb_sn']!=after.get('disable_usb_sn',before['disable_usb_sn']):return True
     if any(before.get(k)!=after.get(k) for k in ENUM_FIELDS if k in after and k in before):return True
     for key in ('gyro_output','stick_mouse','touch_mouse'):
         if bool(before.get(key,0))!=bool(after.get(key,0)):return True
@@ -170,7 +182,15 @@ class SettingsClient(StudioClient):
             if not values:raise ValueError(_ui_tr('일반 진동 조절 미지원 · 펌웨어 확인 필요'))
             if slot is None:return values[field[1]]
         fid=field[0]
-        if field[1] in (USB_MODE_FIELDS | RUMBLE_MODE_FIELDS) and slot is None:
+        if field[1] in (USB_MODE_FIELDS | RUMBLE_MODE_FIELDS | EDGE_SERIAL_FIELDS) and slot is None:
+            if field[1] in EDGE_SERIAL_FIELDS:
+                reply=self.command(12,bytes([1,fid]),echo=bytes([1,fid]),attempts=3)
+                if reply[2:4]==b'\x01\x00':
+                    raise EdgeSerialUnsupported(_ui_tr('Edge USB 시리얼 숨기기'))
+                if len(reply)<7 or reply[2:6]!=bytes([0,1,fid,1]) or reply[6]>1:
+                    raise ValueError(_ui_tr('Studio 필드 응답 불일치'))
+                self.bulk=True
+                return reply[6]
             rumble_mode = field[1] in RUMBLE_MODE_FIELDS
             error = _ui_tr('일반 진동 모드 지원을 확인하지 못했습니다.') if rumble_mode else _ui_tr('XBOX 모드 지원을 확인하지 못했습니다.')
             reply=self.command(12,bytes([1,fid]),echo=bytes([1,fid]))
@@ -194,7 +214,7 @@ class SettingsClient(StudioClient):
         out={};unsupported=[]
         optional=[f for f in fields if f[1] in LIGHTBAR_FIELDS]
         rumble=[f for f in fields if f[1] in RUMBLE_FIELDS]
-        modes=[f for f in fields if f[1] in (USB_MODE_FIELDS | RUMBLE_MODE_FIELDS)]
+        modes=[f for f in fields if f[1] in (USB_MODE_FIELDS | RUMBLE_MODE_FIELDS | EDGE_SERIAL_FIELDS)]
         fields=[f for f in fields if f[1] not in OPTIONAL_FIELDS]
         for f in modes:
             try:out[f[1]]=self.read_one(f)
@@ -238,8 +258,9 @@ class SettingsClient(StudioClient):
     def write_fields(self,values,baseline,*,profile_snapshot=False):
         if any(k not in EDITABLE for k in values):raise ValueError(_ui_tr('공사 중 또는 제외된 설정은 쓰지 않습니다.'))
         validate_changes(baseline,values,profile_snapshot=profile_snapshot)
-        for key in (USB_MODE_FIELDS | RUMBLE_MODE_FIELDS).intersection(values):
-            self.read_one(FIELDS[key])
+        serial_field=EDGE_SERIAL_STORAGE_FIELD if profile_snapshot else FIELDS['disable_usb_sn']
+        for key in (USB_MODE_FIELDS | RUMBLE_MODE_FIELDS | EDGE_SERIAL_FIELDS).intersection(values):
+            self.read_one(serial_field if key in EDGE_SERIAL_FIELDS else FIELDS[key])
         if RUMBLE_FIELDS.intersection(values):
             if not self.read_rumble():raise ValueError(_ui_tr('일반 진동 조절 미지원 · 새로 고침과 펌웨어 확인이 필요합니다.'))
             self.bulk=True
@@ -251,7 +272,9 @@ class SettingsClient(StudioClient):
             values=dict(sorted(values.items(),key=lambda item:order.get(item[0],3)))
         # Probe the read side before choosing the write protocol.
         if self.bulk is None and values:self.read_fields([FIELDS[next(iter(values))]])
-        entries=[(FIELDS[k],encode(FIELDS[k],v)) for k,v in values.items()];groups=[];chunk=[];size=1
+        entries=[(serial_field if k in EDGE_SERIAL_FIELDS else FIELDS[k],encode(FIELDS[k],v))
+                 for k,v in values.items()]
+        groups=[];chunk=[];size=1
         for field,data in entries:
             if size+2+len(data)>58:groups.append(chunk);chunk=[];size=1
             chunk.append((field,data));size+=2+len(data)

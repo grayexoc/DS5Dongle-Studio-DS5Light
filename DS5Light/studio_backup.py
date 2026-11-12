@@ -5,7 +5,7 @@ from studio_scope import EDITABLE
 # Custom effect records are excluded, so their enable flags must be excluded too.
 FIELDS = {key: field for key, field in EDITABLE.items() if not key.startswith('ce_')}
 from studio_scope import LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB_MODE_FIELDS,RUMBLE_MODE_FIELDS,OPTIONAL_FIELDS,config_version
-from studio_settings_protocol import USBModeUnsupported,RumbleModeUnsupported,encode,validate_changes
+from studio_settings_protocol import EDGE_SERIAL_STORAGE_FIELD,EdgeSerialUnsupported,USBModeUnsupported,RumbleModeUnsupported,encode,validate_changes
 from studio_records import effect_states,macro_records
 
 # The slot wire command reads flash directly. Missing legacy tails are
@@ -33,6 +33,8 @@ _SLOT_DEFAULTS = {
 }
 
 _SLOT_DEFAULTS['ps_shortcut_enabled']=0
+_SLOT_DEFAULTS['disable_usb_sn']=0
+_SLOT_DEFAULTS.update(dict.fromkeys(('t2_mode','t2_pos','t2_button','t2_l2_mode','t2_l2_pos','t2_l2_button'),0))
 
 _SLOT_DEFAULTS.update({'at_mode': 0, 'at_strength': 70, 'at_threshold': 30, 'at_start_pos': 0, 'at_shape': 0, 'at_strength_b': 70, 'at_detent_pos': 5, 'at_pushback': 0, 'at_kick_style': 0, 'at_pushback_freq': 35, 'at_l2_mode': 0, 'at_l2_strength': 70, 'at_l2_threshold': 30, 'at_l2_start_pos': 0, 'at_l2_shape': 0, 'at_l2_strength_b': 70, 'at_l2_detent_pos': 5, 'at_l2_pushback': 0, 'at_l2_kick_style': 0, 'at_l2_pushback_freq': 35, 'at_pushback_src': 2, 'ce_r2_enable': 0, 'ce_l2_enable': 0, 'ce_r2_yield': 0, 'ce_l2_yield': 0})
 
@@ -57,6 +59,11 @@ def backup_all(client,progress=lambda text:None):
     except USBModeUnsupported:available.pop('usb_gamepad_mode',None)
     try:client.read_one(FIELDS['rumble_mode'])
     except RumbleModeUnsupported:available.pop('rumble_mode',None)
+    try:
+        client.read_one(EDGE_SERIAL_STORAGE_FIELD)
+        available['disable_usb_sn']=EDGE_SERIAL_STORAGE_FIELD
+    except EdgeSerialUnsupported:
+        available.pop('disable_usb_sn',None)
     for slot in client.slots():
         if slot.state!='saved':slots.append(dict(index=slot.index,valid=False));continue
         progress(_ui_tr('슬롯 {0} 백업 중').format(f'{slot.index + 1:02d}'))
@@ -112,6 +119,15 @@ def restore_all(client,rows,macros,progress=lambda text:None):
         rows=[dict(row,fields={k:v for k,v in row['fields'].items() if k not in USB_MODE_FIELDS}) for row in rows]
     else:
         rows=[dict(row,fields={'usb_gamepad_mode':0,**row['fields']}) for row in rows]
+    try:
+        original['disable_usb_sn']=client.read_one(EDGE_SERIAL_STORAGE_FIELD)
+    except EdgeSerialUnsupported:
+        if any(row['fields'].get('disable_usb_sn',0) for row in rows):
+            raise RuntimeError(_ui_tr('복원 대상 펌웨어에서 Edge USB 시리얼 저장을 지원하지 않습니다.'))
+        rows=[dict(row,fields={k:v for k,v in row['fields'].items() if k!='disable_usb_sn'}) for row in rows]
+        original.pop('disable_usb_sn',None)
+    else:
+        rows=[dict(row,fields={'disable_usb_sn':0,**row['fields']}) for row in rows]
     if 'rumble_mode' in original:
         rows=[dict(row,fields={'rumble_mode':0,**row['fields']}) for row in rows]
     elif any(row['fields'].get('rumble_mode',0) for row in rows):

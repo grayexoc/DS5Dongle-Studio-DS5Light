@@ -121,7 +121,7 @@ class LightbarUI:
             control=views['disable_pico_led'][1][0]
             if getattr(control,'_lighting_inverse',False):
                 control.variable.set(not bool(self.doc.values.get('disable_pico_led',1)))
-                control.text='ON' if control.variable.get() else 'OFF'
+                control.text=ui_text('켜기','ON') if control.variable.get() else ui_text('끄기','OFF')
                 control.configure(width=control.font.measure(control.text)+30);control.draw()
         basic=views.get('lightbar_fixed')
         if basic and getattr(basic[1][0],'_lighting_default',False):

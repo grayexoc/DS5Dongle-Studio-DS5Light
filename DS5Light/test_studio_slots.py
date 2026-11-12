@@ -84,6 +84,18 @@ class Tests(unittest.TestCase):
 
 class ProfileTests(unittest.TestCase):
 
+    def test_profile_state_reads_native_mix_level_only_in_mix(self):
+        mode=lambda value:bytes((129,102,4,0x12,value))
+        level=bytes((129,102,4,0x55,60))
+        source=bytes((129,102,4,0x64,0))
+        for current in (0,1,2):
+            replies=[self.reply(),mode(current)]+([level,source] if current==1 else [])+[self.reply()]
+            device=Fake(replies)
+            state=StudioClient(device,sleep=lambda _:None).profile_state()
+            self.assertEqual(state.get('mix_native_level'),60 if current==1 else None)
+            self.assertEqual(state.get('ah_dsp_source'),0 if current==1 else None)
+            self.assertEqual(len(device.sent),5 if current==1 else 3)
+
     def reply(self, index=3, edited=1, status=0):
         return bytes([129, 102, 103, status, index, edited]) + b'Audio Haptics'.ljust(16, b'\x00') + bytes(42)
 

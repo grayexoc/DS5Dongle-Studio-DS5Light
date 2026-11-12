@@ -5,10 +5,11 @@ from studio_scope import trigger_display,trigger_raw
 from ui_dpi import px,watch_scale
 
 class RangeSlider(tk.Canvas):
-    def __init__(self,parent,variable,low,high,enabled=True,marker=None,marker_label='',trigger=False,allowed=None,display_scale=1,**kw):
+    def __init__(self,parent,variable,low,high,enabled=True,marker=None,marker_label='',trigger=False,allowed=None,display_scale=1,reset_to_marker=False,**kw):
         super().__init__(parent,height=px(parent,64),width=px(parent,220),bg='#151515',highlightthickness=0,bd=0,takefocus=enabled,**kw)
         self.variable=variable;self.low=low;self.high=high;self.enabled=enabled
         self.marker=marker;self.marker_label=marker_label;self.trigger=trigger;self.allowed=allowed;self.display_scale=display_scale
+        self.reset_to_marker=reset_to_marker
         self.bind('<Configure>',self.draw)
         self.bind('<Button-1>',self.move);self.bind('<B1-Motion>',self.move)
         self.bind('<Left>',lambda e:self.step(-1));self.bind('<Right>',lambda e:self.step(1))
@@ -37,13 +38,19 @@ class RangeSlider(tk.Canvas):
             m=self.display(self.marker);mx=left+max(0,min(1,(m-lo)/(hi-lo)))*(right-left)
             self.create_line(mx,px(self,24),mx,px(self,27),fill='#aaa393',width=px(self,2))
             anchor='w' if mx<left+px(self,40) else 'e' if mx>right-px(self,40) else 'center'
-            self.create_text(mx,px(self,55),text=f'{self.marker_label} {m:g}',fill='#aaa393',font=(_ui_tr('맑은 고딕'),8),anchor=anchor)
+            self.create_text(mx,px(self,55),text=f'{self.marker_label} {m:g}',fill=color if self.reset_to_marker else '#aaa393',
+                             font=(_ui_tr('맑은 고딕'),8),anchor=anchor,tags='default_marker')
         self.create_text(left,px(self,34),text=f'{lo:g}',anchor='w',fill='#aaa393',font=(_ui_tr('맑은 고딕'),8))
         self.create_text(right,px(self,34),text=f'{hi:g}',anchor='e',fill='#aaa393',font=(_ui_tr('맑은 고딕'),8))
         self.create_oval(x-px(self,6),px(self,10),x+px(self,6),px(self,22),fill='#151515',outline=color,width=px(self,2))
     def move(self,event):
         if not self.enabled:return
-        self.focus_set();lo,hi=self.limits();fraction=max(0,min(1,(event.x-px(self,12))/max(1,self.winfo_width()-px(self,24))))
+        self.focus_set()
+        if self.reset_to_marker and 'default_marker' in self.gettags('current'):
+            if event.type==tk.EventType.ButtonPress:self.variable.set(f'{self.marker:g}')
+            return
+        if self.reset_to_marker and event.y>px(self,30):return
+        lo,hi=self.limits();fraction=max(0,min(1,(event.x-px(self,12))/max(1,self.winfo_width()-px(self,24))))
         value=self.raw(lo+fraction*(hi-lo))
         if self.allowed:value=min(self.allowed,key=lambda v:abs(value-v))
         self.variable.set(f'{value:.2f}' if isinstance(self.low,float) or isinstance(self.high,float) else str(round(value)))
