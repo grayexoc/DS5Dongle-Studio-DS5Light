@@ -13,14 +13,14 @@ Thank you to the original authors and contributors. This repository contains mod
 
 ## Download and quick start
 
-**Release v1.0.6 · DS5Light v1.0.6 · Studio firmware v34**
+**Release v1.0.10 · DS5Light v1.0.10 · Studio firmware v40**
 
 Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/latest):
 
 | File | Purpose |
 | --- | --- |
-| `ds5-studio-light_v34.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
-| `DS5Light-win-x64-v1.0.6-Experimental.zip` | Complete Windows x64 app package. Python is not required. |
+| `ds5-studio-light_v40.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
+| `DS5Light-win-x64-v1.0.10.zip` | Complete Windows x64 app package. Python is not required. |
 
 1. Back up current dongle settings and slots. To install this firmware, enter BOOTSEL mode on the Pico 2 W and copy the UF2 to its USB drive. The app does not flash firmware automatically.
 2. Extract the entire app ZIP into a writable folder. Run `DS5Light.exe`, keeping `_internal` beside it. GitHub's automatic **Source code** archives are not the executable package.
@@ -40,7 +40,7 @@ DS5Light requires Windows 10/11 x64; selected-application capture requires build
 
 ![DS5Light Audio haptics and Studio settings screens](docs/images/preview.jpg)
 
-Left: **Audio haptics** — select the capture target, manage game presets and adjust channel mixing, suppression and haptic strength. Right: **Studio settings** — configure the dongle inside the app. This image shows these two screens; it does not show the diagnostics screen. Values and version labels in the image are examples, not installation defaults.
+Left: **Audio haptics** — select the capture target, manage game presets and adjust channel mixing, suppression and haptic strength. Right: **Studio settings** — configure the dongle inside the app. Preview captured with DS5Light v1.0.10 and Studio v40.
 
 ### Audio haptics processing
 
@@ -128,14 +128,14 @@ DS5Dongle-Studio 펌웨어와 DS5Light를 기반으로, 오디오 햅틱 처리�
 
 ## 다운로드와 시작
 
-**릴리즈 v1.0.6 · DS5Light v1.0.6 · Studio 펌웨어 v34**
+**릴리즈 v1.0.10 · DS5Light v1.0.10 · Studio 펌웨어 v40**
 
 [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/latest)에서 첨부 파일을 받으세요.
 
 | 파일 | 용도 |
 | --- | --- |
-| `ds5-studio-light_v34.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
-| `DS5Light-win-x64-v1.0.6-Experimental.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
+| `ds5-studio-light_v40.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
+| `DS5Light-win-x64-v1.0.10.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
 
 1. 현재 동글 설정과 슬롯을 백업합니다. 펌웨어 설치 시 Pico 2 W를 BOOTSEL 모드로 연결하고 USB 드라이브에 UF2를 복사하세요. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
 2. 앱 ZIP 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행합니다. `_internal` 폴더를 함께 유지하세요. GitHub의 자동 **Source code** 압축 파일은 실행 배포본이 아닙니다.
