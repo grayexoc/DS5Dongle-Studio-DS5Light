@@ -16,6 +16,10 @@ def inactive_reason(editor,key):
         return _ui_tr('조회·저장 작업이 끝나면 조절할 수 있습니다.') if editor.busy else ''
     mode=values.get('auto_haptics_enable')
     if key=='haptics_gain':return _ui_tr('기존 증폭값은 유지합니다. Mix·Replace로 전환할 때 기본값 1을 예약합니다. 별도 조절은 오디오햅틱 끔에서 가능합니다.')
+    if key=='rumble_mode':
+        if key in getattr(editor,'unsupported_fields',()):
+            return _ui_tr('일반 진동 모드 지원을 확인하지 못했습니다.')
+        return _ui_tr('오디오햅틱 모드를 끔으로 변경하면 사용할 수 있습니다.')
     if key in ('rumble_gain','rumble_release'):
         if not all(k in values for k in ('rumble_gain','rumble_release')):
             return _ui_tr('일반 진동 조절 지원을 확인하지 못했습니다. 지원 펌웨어에서 새로 고침하세요.')
@@ -31,7 +35,7 @@ def inactive_reason(editor,key):
         if mode!=(1 if key=='auto_mute_mix' else 2):steps.append(_ui_tr('오디오햅틱 모드를 ')+target+_ui_tr('로 변경하세요.'))
         if values.get('disable_speaker'):steps.append(_ui_tr('듀얼센스 스피커 끄기를 해제하세요. 현재는 전체 음소거가 우선합니다.'))
         return ' '.join(steps)
-    if key in AUDIO_HAPTIC_CHILDREN and not mode:
+    if key=='haptics_aa' or (key in AUDIO_HAPTIC_CHILDREN and not mode):
         return _ui_tr('오디오햅틱 모드를 Mix 또는 Replace로 변경하면 사용할 수 있습니다.')
     if key in ('ah_low_gain','ah_high_gain'):
         return _ui_tr('저음·고음 분리 기준을 0보다 높게 설정하면 사용할 수 있습니다.')
@@ -70,12 +74,14 @@ def option_help(editor,key):
         if key not in values:
             reason='This setting is unavailable. Connect the device and refresh; a firmware update may be required.'
         elif editor.busy:reason='Available when the current operation finishes.'
-        elif key in ('rumble_gain','rumble_release'):reason='Set audio haptics to Off.'
+        elif key=='rumble_mode' and key in getattr(editor,'unsupported_fields',()):
+            reason='Rumble mode support could not be verified.'
+        elif key in ('rumble_gain','rumble_mode','rumble_release'):reason='Set audio haptics to Off.'
         elif key=='haptics_gain':reason='Existing gain is preserved. Switching to Mix or Replace stages 1. Adjust separately with audio haptics off.'
         elif key in ('rumble_haptic_strength','mix_native_level'):reason='Select Mix mode.'
         elif key=='mix_native_filter':reason='Select Mix mode and set native haptic mix above zero.'
         elif key in ('auto_mute_mix','auto_mute_replace'):reason='Select the corresponding audio haptic mode and turn off the speaker-disable option.'
-        elif key in AUDIO_HAPTIC_CHILDREN:reason='Select Mix or Replace mode.'
+        elif key=='haptics_aa' or key in AUDIO_HAPTIC_CHILDREN:reason='Select Mix or Replace mode.'
         elif key in ('ah_low_gain','ah_high_gain'):reason='Set the low/high crossover above zero.'
         elif key=='speaker_volume':reason='Turn off the DualSense speaker-disable option.'
         elif key=='enable_wake':reason='Available in standby with deep sleep off; the PC must support USB wake.'

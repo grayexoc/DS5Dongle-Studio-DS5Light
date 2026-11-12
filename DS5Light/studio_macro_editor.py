@@ -227,7 +227,7 @@ class MacroEditor(InlineCapture):
             self.release_row.grid() if outkind=='keyboard' and kind!='stick' else self.release_row.grid_remove()
             self.rules.set((_ui_tr('입력을 놓으면 유지한 출력을 해제합니다. 조건 버튼 숨기기를 켜도 지정한 동작은 게임에 전달됩니다.') if held else _ui_tr('조건이 맞으면 한 번 실행하고 출력을 해제합니다. 조건 버튼 숨기기는 누르는 동안 유지에서 사용할 수 있습니다.'))+(_ui_tr('\n키보드·마우스로 동작을 보내면 게임 화면의 버튼 안내가 키보드·마우스용으로 바뀔 수 있습니다.') if outkind in ('keyboard','mouse') else ''))
             if kind=='swipe':self.rules.set(_ui_tr('스와이프를 감지하면 지정한 동작을 한 번 실행합니다. 클릭 차단은 이 프로필·레이어에서 해당 매핑이 활성인 동안 계속 적용됩니다.'))
-            self.rules.set(self.rules.get()+_ui_tr('\n마이크 버튼을 Pico 매핑·시프트로 사용하면 PC로 보내는 기본 음소거 입력과 마이크 LED 표시를 억제합니다. Edge FN 기본 조합과 PS + Create는 사용할 수 없습니다.'))
+            self.rules.set(self.rules.get()+'\n'+_ui_tr('마이크 버튼을 Pico 매핑·시프트로 사용하면 PC로 보내는 기본 음소거 입력과 마이크 LED 표시를 억제합니다. Edge FN 기본 조합과 PS + Create는 사용할 수 없습니다.'))
             self.release_name.set(next((k for k,v in self.orders.items() if v==int(self.release.get())),_ui_tr('기존 순서 {0}').format(f'{self.release.get()}')))
             preview=self.draft.build(self.state());self.summary.set(self.ui.macro_summary(preview).replace('\n',' · '))
             raw=self.draft.build(self.state(),strict=True)

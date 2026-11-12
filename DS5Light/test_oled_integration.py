@@ -168,10 +168,10 @@ class AppPolicyTests(unittest.TestCase):
         u._external_profile(dict(path=b'ours',profile=OFF,row=hidrow()))
         self.assertTrue(u.run_intent.profile_paused)
         with patch.object(u.profile_watch,'tick',return_value=dict(path=b'ours',profile=AH,row=None)),patch.object(u.battery,'tick'),patch.object(u,'start') as start:
-            u.tick();start.assert_called_once_with(automatic=True)
+            u._watch_external_profile();start.assert_called_once_with(automatic=True)
         u.stop()
         with patch.object(u.profile_watch,'tick',return_value=dict(path=b'ours',profile=AH,row=None)),patch.object(u.battery,'tick'),patch.object(u,'start') as start:
-            u.tick();start.assert_not_called()
+            u._watch_external_profile();start.assert_not_called()
     def test_external_profile_invalidates_studio_write_guard_preserving_draft(self):
         import test_studio_settings as f
         u=self.ui;e=u.studio_settings;e.build();e.doc.load(f.defaults());e.loaded=True;e.write_ready=True

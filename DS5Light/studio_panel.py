@@ -1104,3 +1104,4 @@ class StudioPanel:
                 or bool(getattr(getattr(self.app,'idle_presence',None),'absent',False))
 
                 or self.app.engine is not None and bool(getattr(getattr(self.app,'controller_presence',None),'disconnected',False)))
+

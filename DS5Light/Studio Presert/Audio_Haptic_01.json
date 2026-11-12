@@ -8,7 +8,7 @@
     "auto_haptics_smooth": 30,
     "auto_haptics_gate": 25,
     "mix_native_level": 0,
-    "mix_native_filter": 0,
+    "mix_native_filter": 1,
     "ah_dsp_source": 0,
     "auto_haptics_lowpass_hz": 80,
     "ah_xover_hz": 50,
@@ -17,7 +17,7 @@
     "auto_haptics_slope": 24,
     "auto_mute_replace": 1,
     "auto_mute_mix": 1,
-    "rumble_haptic_strength": 50
+    "rumble_haptic_strength": 100
   },
   "settings": {
     "auto_haptics_enable": 1,
@@ -25,7 +25,7 @@
     "auto_haptics_smooth": 30,
     "auto_haptics_gate": 25,
     "mix_native_level": 0,
-    "mix_native_filter": 0,
+    "mix_native_filter": 1,
     "ah_dsp_source": 0,
     "auto_haptics_lowpass_hz": 80,
     "ah_xover_hz": 50,
@@ -34,7 +34,7 @@
     "auto_haptics_slope": 24,
     "auto_mute_replace": 1,
     "auto_mute_mix": 1,
-    "rumble_haptic_strength": 50
+    "rumble_haptic_strength": 100
   },
   "effects": {},
   "macros": {}

@@ -29,6 +29,7 @@ Page 0, body offsets:
 | 47 | Optional USB audio fields version, 1 when present, 0 on older firmware |
 | 48, 50 | LE16 raw rear-left and rear-right PCM peaks of the latest USB block, 0–32768 |
 | 52 | LE32 cumulative USB audio read blocks with at least one complete frame, since boot |
+| 56 | Rumble comparison capability, 1 for extended test selectors |
 
 The USB block count excludes internally generated profile chimes. Compare its
 delta with page 1 over the same sampling interval. A USB block and a Bluetooth
@@ -51,6 +52,8 @@ wrap modulo 2^32, and are never reset by this command. Pages are not one atomic 
 Selector 0 stops the current test (safe no-op when no test exists).
 1/2/3 = left/right/both classic rumble at 64/255, 4/5 = L2/R2 light resistance,
 6 = native PCM selection for a separately generated audio test.
+7–9 = left/right/both classic rumble at 128/255, 10–12 = improved rumble at 64/255,
+and 13–15 = improved rumble at 128/255.
 START requires BT ready, no active PCM processing, auto-haptics OFF and idle power state.
 No profile setting is changed or saved. Existing rumble and cached game trigger effects are cleared
 at test start, including the game-ownership recency latch. Profile trigger settings are preserved;

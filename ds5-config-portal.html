@@ -251,7 +251,7 @@ const SECTIONS = [
     [0xa6,'touch_mouse_trackball','u8','Touchpad Trackball (keep gliding)','bool'],
     [0xa7,'touch_mouse_friction','u8','Trackball Friction','number',[1,100]],
   ]},
-  { title: 'Native Haptics Filter', fields: [
+  { title: 'Haptic Waveform Texture', fields: [
     [0x33,'haptics_aa','u8','Smoothing (anti-alias filter)','select',{1:'Off — raw & gritty (pre-1.0.4 texture)',2:'Light — kills grit, keeps snap (recommended)',3:'Strong — maximum smooth (can feel muted)'}],
   ]},
   { title: 'Trigger Strength', fields: [
@@ -408,8 +408,8 @@ const DESCRIPTIONS = {
   disable_inactive_disconnect: "Keeps the controller connected even when left idle.",
   disable_pico_led: "Turns off the Pico board's on-board LED.",
   enable_wake: "Lets a PS-button press wake the PC from sleep (set per profile).",
-  // Native Haptics Filter
-  haptics_aa: "How much the native haptics are smoothed to remove digital grit.",
+  // Haptic Waveform Texture
+  haptics_aa: "Smooths generated audio haptics in Mix and Replace, and converted rumble in Mix. The saved value is kept when audio haptics are off.",
   // Rumble to Trigger
   r2t_mode: "Turns a game's rumble into trigger vibration, and on which trigger(s).",
   r2t_on_press: "Only vibrate the trigger while it is actually being pressed.",
@@ -2863,7 +2863,7 @@ const SECTION_TAB = {
   'Rumble → Trigger':'triggers',
   'Auto-Haptics & Speaker Effect Leak':'haptics',
   'General Haptics & Audio':'haptics',
-  'Native Haptics Filter':'haptics',
+  'Haptic Waveform Texture':'haptics',
   'Gyro Aiming':'gyro',
   'Right Stick':'gyro',
   'Stick to Mouse':'gyro',
@@ -5623,8 +5623,9 @@ function fieldRowHTML(f){
     // NOTE: never embed a JSON array here - its double quotes close the onchange
     // attribute and silently break EVERY select in the portal. Decide the
     // re-render here and emit only a bare call.
-    const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable','t2_button','t2_l2_button','gyro_mode'].includes(key);
-    html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRender?';render()':''}">`;
+    const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable','t2_button','t2_l2_button','gyro_mode','auto_haptics_enable'].includes(key);
+    const disabled = key==='haptics_aa' && ![1,2].includes(+config.auto_haptics_enable);
+    html += `<select${disabled?' disabled':''} onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRender?';render()':''}">`;
     { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl] of pairs) html += `<option value="${v}" ${config[key]==v?'selected':''}>${lbl}</option>`; }
     html += `</select>`;
   } else {

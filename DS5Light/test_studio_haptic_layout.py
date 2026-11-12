@@ -25,7 +25,8 @@ class LayoutTests(unittest.TestCase):
         ui.select_category(1)
         keys=list(ui.field_views)
         self.assertLess(keys.index('haptics_gain'),keys.index('rumble_gain'))
-        self.assertLess(keys.index('rumble_gain'),keys.index('rumble_release'))
+        self.assertLess(keys.index('rumble_gain'),keys.index('rumble_mode'))
+        self.assertEqual(keys.index('rumble_mode')+1,keys.index('rumble_release'))
         entry=ui.range_controls['rumble_gain'][0]
         self.assertEqual(ui.parent.getvar(str(entry.cget('textvariable'))),'1.5')
         self.assertEqual(ui.doc.values,before)

@@ -36,14 +36,18 @@ public:
     }
     // Only original host reports enter here; synthesis must not replay one-shot commands.
     void host_update(const uint8_t *data, uint8_t size) {
-        if (size > 1 && (data[1] & 8)) { host_release_ = true; restore_prepared_ = false; }
+        if (size > 1 && (data[1] & 8)) {
+            host_release_ = true;
+            restore_pending_ |= host_color_valid_;
+            restore_prepared_ = false;
+        }
         if (size > 41 && (data[38] & 2)) {
             host_setup_pending_ = true; host_setup_ = data[41]; restore_prepared_ = false;
-            if (data[41] == 2) host_color_valid_ = true;
+            if (data[41] == 2) restore_pending_ = true;
         }
         if (size > 46 && (data[1] & 4)) {
             host_color_valid_ = true;
-            if (!sent_color_valid_ || data[44] != sent_r_ || data[45] != sent_g_ || data[46] != sent_b_)
+            if (host_release_ || !sent_color_valid_ || data[44] != sent_r_ || data[45] != sent_g_ || data[46] != sent_b_)
                 restore_pending_ = true;
             if (data[44] != restore_r_ || data[45] != restore_g_ || data[46] != restore_b_)
                 restore_prepared_ = false;
@@ -84,6 +88,7 @@ public:
             // Reapply a host/user player pattern in the following report, after release.
             if (host_release_) data[1] = (data[1] & ~0x10u) | 8;
             if (host_setup_pending_) { data[38] |= 2; data[41] = host_setup_; }
+            data[1] &= ~0x14u; // Restore RGB and the player pattern after setup/release.
         } else if (temporary) {
             restore_pending_ = true;
             restore_prepared_ = false;
@@ -111,6 +116,7 @@ public:
         }
         if (setup_pending_ && (data[38] & 2) && data[41] == 2) {
             setup_pending_ = false;
+            if (!next.mode && host_setup_pending_ && host_setup_ == 2) host_setup_pending_ = false;
             restore_pending_ = true;
             valid_ = false;
             return; // Setup submission does not acknowledge RGB.

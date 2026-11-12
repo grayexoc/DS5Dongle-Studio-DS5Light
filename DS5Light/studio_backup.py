@@ -4,25 +4,25 @@ from studio_scope import EDITABLE
 
 # Custom effect records are excluded, so their enable flags must be excluded too.
 FIELDS = {key: field for key, field in EDITABLE.items() if not key.startswith('ce_')}
-from studio_scope import LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB_MODE_FIELDS,OPTIONAL_FIELDS,config_version
-from studio_settings_protocol import USBModeUnsupported,encode,validate_changes
+from studio_scope import LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB_MODE_FIELDS,RUMBLE_MODE_FIELDS,OPTIONAL_FIELDS,config_version
+from studio_settings_protocol import USBModeUnsupported,RumbleModeUnsupported,encode,validate_changes
 from studio_records import effect_states,macro_records
 
 # The slot wire command reads flash directly. Missing legacy tails are
 # filled with 0xFF; use the defaults from the firmware's config validation.
 _SLOT_DEFAULTS = {
     'auto_haptics_enable': 0, 'auto_haptics_gain': 100, 'auto_haptics_smooth': 40,
-    'auto_haptics_gate': 20, 'mix_native_level': 100, 'mix_native_filter': 1,
+    'auto_haptics_gate': 20, 'mix_native_level': 0, 'mix_native_filter': 1,
     'ah_dsp_source': 0, 'auto_haptics_lowpass_hz': 60, 'ah_low_gain': 100,
     'ah_high_gain': 100, 'auto_haptics_slope': 12, 'auto_mute_replace': 1,
-    'auto_mute_mix': 0, 'rumble_haptic_strength': 50, 'haptics_gain': 1.0,
+    'auto_mute_mix': 0, 'rumble_haptic_strength': 100, 'haptics_gain': 1.0,
     'speaker_volume': 100, 'headset_volume': 100, 'speaker_gain': 2,
     'sync_spk_headset_volume': 1, 'lock_volume': 0, 'disable_mic': 0,
     'disable_speaker': 0, 'controller_mode': 2, 'polling_rate_mode': 0,
     'audio_buffer_length': 64, 'inactive_time': 30, 'disable_inactive_disconnect': 0,
     'disable_pico_led': 0, 'lightbar_off': 0, 'lightbar_fixed': 0,
     'player_led_mode': 0, 'player_led_bright': 0, 'enable_wake': 0,
-    'rumble_gain': 100, 'rumble_release': 0, 'haptics_aa': 2, 'trigger_reduce': 0,
+    'rumble_gain': 100, 'rumble_release': 0, 'rumble_mode': 0, 'haptics_aa': 1, 'trigger_reduce': 0,
     'r2t_mode': 0, 'r2t_on_press': 0, 'r2t_strength': 100, 'r2t_frequency': 60,
     'synth_force': 0, 'gyro_mode': 0, 'gyro_sens': 50, 'gyro_axis': 0,
     'gyro_invert': 0, 'gyro_sens_y': 0, 'gyro_output': 0, 'flick_angle': 90,
@@ -55,6 +55,8 @@ def backup_all(client,progress=lambda text:None):
     available={k:f for k,f in FIELDS.items() if (lightbar or k not in LIGHTBAR_FIELDS) and (rumble or k not in RUMBLE_FIELDS)}
     try:client.read_one(FIELDS['usb_gamepad_mode'])
     except USBModeUnsupported:available.pop('usb_gamepad_mode',None)
+    try:client.read_one(FIELDS['rumble_mode'])
+    except RumbleModeUnsupported:available.pop('rumble_mode',None)
     for slot in client.slots():
         if slot.state!='saved':slots.append(dict(index=slot.index,valid=False));continue
         progress(_ui_tr('슬롯 {0} 백업 중').format(f'{slot.index + 1:02d}'))
@@ -110,6 +112,12 @@ def restore_all(client,rows,macros,progress=lambda text:None):
         rows=[dict(row,fields={k:v for k,v in row['fields'].items() if k not in USB_MODE_FIELDS}) for row in rows]
     else:
         rows=[dict(row,fields={'usb_gamepad_mode':0,**row['fields']}) for row in rows]
+    if 'rumble_mode' in original:
+        rows=[dict(row,fields={'rumble_mode':0,**row['fields']}) for row in rows]
+    elif any(row['fields'].get('rumble_mode',0) for row in rows):
+        raise RuntimeError(_ui_tr('일반 진동 모드 지원을 확인하지 못했습니다.'))
+    else:
+        rows=[dict(row,fields={k:v for k,v in row['fields'].items() if k not in RUMBLE_MODE_FIELDS}) for row in rows]
     if any(original_macros.get(key,[0]*35)[4]&16 for key in macros):raise RuntimeError(_ui_tr('복원 대상 번호에 제외된 모션 매크로가 있습니다. 원본 Studio에서 관리하세요.'))
     # Prevent enabled controller macros from firing while a different mask is
     # transiently live. This is an explicit operation, never background polling.

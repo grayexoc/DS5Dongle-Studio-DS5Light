@@ -48,7 +48,7 @@ class Device:
 
 class SchemaTests(unittest.TestCase):
     def test_full_stable_registry_and_descriptions(self):
-        self.assertEqual(len(FIELDS),141);self.assertEqual(len({f[0] for f in FIELDS.values()}),141)
+        self.assertEqual(len(FIELDS),142);self.assertEqual(len({f[0] for f in FIELDS.values()}),142)
         self.assertEqual(set(FIELDS),set(LABELS));self.assertFalse(any('experimental' in s['title'].lower() for s in SECTIONS))
         for key,f in FIELDS.items():
             text=help_text(key);self.assertIn(f[3],text);self.assertNotIn('('+key+')',text)
@@ -84,6 +84,7 @@ class SchemaTests(unittest.TestCase):
             def read_macros(self):return {}
             def command(self,command,payload,report=0x81,echo=b'',echo_offset=3):
                 if command==12 and payload==b'\x01\xc5':return b'\x66\x0c\x00\x01\xc5\x01\x00'
+                if command==12 and payload==b'\x01\xc6':return b'\x66\x0c\x00\x01\xc6\x01\x00'
                 assert command==13 and report==0x84 and echo==payload
                 slot,fid=payload
                 field=next(f for f in EDITABLE.values() if f[0]==fid)
@@ -95,13 +96,13 @@ class SchemaTests(unittest.TestCase):
                     value=encode(field,custom[key])
                 return b'\x66\x0d\0'+payload+value
         custom={key:defaults()[key] for key in EDITABLE}
-        custom.update(rumble_gain=175,rumble_release=2,lightbar_rgb=0x3366cc,usb_gamepad_mode=1,
+        custom.update(rumble_gain=175,rumble_release=2,rumble_mode=2,lightbar_rgb=0x3366cc,usb_gamepad_mode=1,
                       auto_haptics_lowpass_hz=20,ah_xover_hz=200,
                       gyro_natural_x10=254,gyro_natural_y_x10=230,gyro_scale_trim_x100=1)
         rows,_=validate_backup(backup_all(Client(None)))
         self.assertEqual(set(rows[0]['fields']),{k for k in EDITABLE if not k.startswith('ce_')})
-        for key,value in dict(rumble_gain=100,rumble_release=0,haptics_gain=1.0,
-                              ah_xover_hz=0,haptics_aa=2,stick_mouse_curve=18,
+        for key,value in dict(rumble_gain=100,rumble_release=0,rumble_mode=0,haptics_gain=1.0,
+                              ah_xover_hz=0,haptics_aa=1,stick_mouse_curve=18,
                               macro_disable=0xffffffff).items():
             self.assertEqual(rows[0]['fields'][key],value,key)
         self.assertEqual(rows[1]['fields'],{k:v for k,v in custom.items() if not k.startswith('ce_')})

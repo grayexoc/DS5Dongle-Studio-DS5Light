@@ -13,7 +13,8 @@ EDITABLE = {k:f for k,f in FIELDS.items() if k not in CONSTRUCTION | REMOVED}
 LIGHTBAR_FIELDS=frozenset(('lightbar_fixed','lightbar_rgb'))
 RUMBLE_FIELDS=frozenset(('rumble_gain','rumble_release'))
 USB_MODE_FIELDS=frozenset(('usb_gamepad_mode',))
-OPTIONAL_FIELDS=LIGHTBAR_FIELDS | RUMBLE_FIELDS | USB_MODE_FIELDS
+RUMBLE_MODE_FIELDS=frozenset(('rumble_mode',))
+OPTIONAL_FIELDS=LIGHTBAR_FIELDS | RUMBLE_FIELDS | USB_MODE_FIELDS | RUMBLE_MODE_FIELDS
 SUPPORTED_CONFIGS=(19,20,21,22)
 def config_version(values):
     if USB_MODE_FIELDS.issubset(values):return 22

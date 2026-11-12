@@ -23,7 +23,7 @@ PLANS = {
         ('Mix 혼합', 'Mix blending', 'rumble_haptic_strength mix_native_level mix_native_filter', False, True),
         ('주파수·반응 세부 조정', 'Frequency & response tuning', 'ah_dsp_source auto_haptics_smooth auto_haptics_gate auto_haptics_lowpass_hz auto_haptics_slope ah_xover_hz ah_low_gain ah_high_gain', True, True)],
     'General Haptics & Audio': [
-        ('햅틱및 진동 세기', 'Haptics and rumble strength', 'haptics_gain rumble_gain rumble_release', False, False),
+        ('햅틱및 진동 세기', 'Haptics and rumble strength', 'haptics_gain rumble_gain rumble_mode rumble_release', False, False),
         ('스피커·헤드셋', 'Speaker & headset', 'disable_speaker speaker_volume speaker_gain headset_volume', False, False),
         ('모드별 음소거·음량', 'Mode mute & volume', 'auto_mute_mix auto_mute_replace sync_spk_headset_volume lock_volume disable_mic', False, False)],
     'Rumble → Trigger': [

@@ -41,19 +41,21 @@ def read_current(identity,previous=None,full=False):
 
 class ProfileWatch:
     INTERVAL=3.
-    MODE_INTERVAL=30.
+    MODE_INTERVAL=10.
     def __init__(self):
         self.events=ProfileEvents()
         self.results=queue.SimpleQueue();self.busy=False;self.closed=False;self.key=None;self.generation=0
         self.next_check=0.;self.next_full=0.;self.profile=None;self.failures=0;self.was_paused=False
     def tick(self,binding,enabled,token,seed=None,paused=False):
-        now=time.monotonic();identity=binding.snapshot();key=(token,identity.serial or identity.hid_path) if enabled else None
+        now=time.monotonic();identity=binding.snapshot();key=(token,identity.serial,identity.hid_path) if enabled else None
         if enabled:self.events.tick(identity)
         else:
-            self.events.stop.set();self.events.key=None;self.events.supported=False
+            self.events.stop.set();self.events.key=None
         if key!=self.key or paused!=self.was_paused:
+            rebound=bool(key and self.key and key[:2]==self.key[:2] and key[2]!=self.key[2])
             self.key=key;self.was_paused=paused;self.generation+=1
             self.next_check=now+self.INTERVAL;self.next_full=now+self.MODE_INTERVAL
+            if rebound:self.next_check=self.next_full=now
             self.profile=dict(seed) if seed else None;self.failures=0
         result=None
         try:generation,data,error=self.results.get_nowait()
@@ -66,7 +68,8 @@ class ProfileWatch:
                     if data['full']:self.next_full=now+self.MODE_INTERVAL
                 elif error:
                     self.failures+=1
-                self.next_check=now+(self.MODE_INTERVAL if data and self.events.supported else min(12.,self.INTERVAL*max(1,self.failures)))
+                delay=.2 if not data and not error else min(12.,self.INTERVAL*max(1,self.failures))
+                self.next_check=now+delay
         if self.events.changed:self.next_check=now;self.next_full=now
         if (self.closed or key is None or paused or self.busy or now<self.next_check or not identity.hid_path):return result
         self.events.changed=False

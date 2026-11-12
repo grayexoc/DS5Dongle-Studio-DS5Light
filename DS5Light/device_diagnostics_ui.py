@@ -12,7 +12,7 @@ from pathlib import Path
 from studio_i18n import text as tr
 from studio_power import blocked
 from device_diagnostics import (collect_snapshot, measure_reports, run_output_test,
-                                with_selected_device)
+                                with_selected_device, RUMBLE_TEST_MODES)
 
 
 TEST_NAMES = dict(haptic_left='왼쪽 햅틱', haptic_right='오른쪽 햅틱', speaker='스피커',
@@ -90,6 +90,13 @@ class DeviceDiagnosticsDialog:
                                     command=lambda k=kind: self.test(k), width=8)
                 button.pack(side='left', fill='x', expand=True, padx=(4, 0))
                 self.buttons.append(button)
+            if title == '≋ 일반 진동':
+                self.rumble_labels = tuple(
+                    tr('클래식' if mode == 'classic' else '개선형') + f' · {strength}/255'
+                    for mode, strength in RUMBLE_TEST_MODES)
+                self.rumble_choice = ttk.Combobox(left, values=self.rumble_labels, state='disabled')
+                self.rumble_choice.current(0)
+                self.rumble_choice.pack(fill='x', pady=(0, 4))
         self.output_buttons=list(self.buttons)
         tk.Label(left, text=tr('각 시험 최대 2초 · 오디오햅틱 끔 프로필 필요'),
                  bg='#151515', fg='#aaa393', anchor='w').pack(fill='x', pady=(6, 0))
@@ -301,6 +308,7 @@ class DeviceDiagnosticsDialog:
         ttk.Button(dialog,text=tr('선택한 Pico의 출력으로 연결 확인'),command=confirm).pack(padx=16,pady=12)
 
     def test(self, kind):
+        rumble_mode = self.rumble_choice.current() if kind.startswith('rumble_') else 0
         def operation(device, identity):
             row = None
             if kind.startswith('haptic_') or kind == 'speaker':
@@ -312,7 +320,7 @@ class DeviceDiagnosticsDialog:
                 if current.hid_path!=identity.hid_path or current.serial!=identity.serial:
                     raise RuntimeError(tr('선택한 Pico가 변경됐습니다. 상태를 다시 조회하세요.'))
                 identity=current
-            return run_output_test(device, kind, self.cancel, self.app.studio.binding, identity, row)
+            return run_output_test(device, kind, self.cancel, self.app.studio.binding, identity, row, rumble_mode)
         self.start('test', operation)
 
     def poll(self):
@@ -347,7 +355,12 @@ class DeviceDiagnosticsDialog:
                     self.test_results = self.test_results[-64:]
                     for button in self.confirm_buttons:button.configure(state='normal')
                 self.draw_controller()
-                self.status.set(tr(TEST_NAMES.get(value.get('test'),''))+' · '+tr('전송 요청 완료 · 실제 반응을 확인하세요.') if self.last_test else tr(value.get('blocked_reason','시험 중지됨')))
+                title = tr(TEST_NAMES.get(value.get('test'), ''))
+                if 'rumble_mode' in value:
+                    mode = tr('클래식' if value['rumble_mode'] == 'classic' else '개선형')
+                    title += f" · {mode} · {value['rumble_strength']}/255"
+                self.status.set(title + ' · ' + tr('전송 요청 완료 · 실제 반응을 확인하세요.')
+                                if self.last_test else tr(value.get('blocked_reason', '시험 중지됨')))
             elif kind == 'timing':
                 self.status.set(tr('입력 수신 검사 완료') if not value.get('cancelled') else tr('검사 중지됨'))
             elif kind != 'audio_outputs':
@@ -362,6 +375,10 @@ class DeviceDiagnosticsDialog:
                    and status.get('auto_haptics')==0 and not status.get('audio_processing'))
         for button in self.output_buttons:
             button.configure(state='normal' if allowed else 'disabled')
+        comparison = status.get('rumble_comparison', False)
+        if not comparison:
+            self.rumble_choice.current(0)
+        self.rumble_choice.configure(state='readonly' if allowed and comparison else 'disabled')
         self.measure_button.configure(state='disabled' if self.busy or status.get('usb_mode')=='XInput' else 'normal')
 
     def show(self, value):

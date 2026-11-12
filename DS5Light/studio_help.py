@@ -75,6 +75,7 @@ def options(f):
     return [(int(k),translated.get(str(v),str(v)) if LANGUAGE=='en' else CHOICES.get(str(v),str(v))) for k,v in (raw.items() if isinstance(raw,dict) else raw)]
 
 CHOICES.update({
+ 'Follow game':_ui_tr('게임 설정 따름'),'Classic':_ui_tr('클래식'),'Improved':_ui_tr('개선형'),
 
  'Add button (keep trigger held)':_ui_tr('버튼 추가 · 트리거 유지'),'Add button + rescale below':_ui_tr('버튼 추가 · 하단 재배율'),
 
@@ -144,7 +145,7 @@ DESCRIPTIONS={
 
  'ah_high_gain':_ui_tr('저음·고음 분리 기준보다 높은 햅틱 대역의 세기입니다. 분리 기준이 0이면 적용되지 않습니다.'),
 
- 'haptics_aa':_ui_tr('최종 햅틱 파형의 거친 질감을 다듬으며 오디오햅틱과 Mix 변환 진동에도 적용됩니다.'),
+ 'haptics_aa':_ui_tr('Mix·Replace에서 생성된 오디오햅틱과 Mix의 변환 진동 파형을 다듬습니다.'),
 
  'audio_buffer_length':_ui_tr('동글 안에서 오디오를 쌓는 양입니다. 앱의 PC 전송 블록과는 다릅니다.'),
 
@@ -419,7 +420,7 @@ def help_text(key):
 
             'haptics_gain':'Amplifies native haptic waveforms and generated audio haptics. In Mix or Replace, DS5Light stages the default value 1 until applied.',
 
-            'haptics_aa':'Smooths the final haptic waveform, including audio haptics and converted Mix rumble.',
+            'haptics_aa':'Smooths generated audio haptics in Mix and Replace, and converted rumble in Mix.',
 
             'lightbar_fixed':'Keeps the selected lightbar color. The lightbar-off setting takes precedence.',
 
@@ -455,7 +456,7 @@ def help_text(key):
 
 
 
-LABELS.update({'mix_native_filter':_ui_tr('네이티브 햅틱 누설 억제'),'mix_native_level':_ui_tr('네이티브 햅틱 혼합량')})
+LABELS.update({'mix_native_filter':_ui_tr('네이티브 햅틱 누설 억제'),'mix_native_level':_ui_tr('Mix 네이티브 햅틱 혼합량')})
 
 LABELS.update({'lightbar_fixed':_ui_tr('듀얼센스 라이트바 색상 고정'),'lightbar_rgb':_ui_tr('라이트바 색상')})
 
@@ -471,19 +472,22 @@ CHOICES.update({'Mix with native':_ui_tr('Mix · 게임 진동과 혼합'),'Only
 
 
 
-LABELS.update({'rumble_gain':_ui_tr('일반 진동 세기'),'rumble_release':_ui_tr('일반진동 잔향')})
+LABELS.update({'rumble_gain':_ui_tr('일반 진동 세기'),'rumble_mode':_ui_tr('일반 진동 모드'),'rumble_release':_ui_tr('일반진동 잔향')})
 
 DESCRIPTIONS.update({
 
  'rumble_gain':_ui_tr('XInput·DS4 호환 방식으로 전달되는 일반 진동을 강화합니다. 1은 원래 세기이며, 이미 최대인 진동은 더 강해지지 않습니다. 오디오햅틱 끔에서만 작동하며 네이티브 햅틱에는 영향을 주지 않습니다.'),
 
+ 'rumble_mode':_ui_tr('장치 진단에서 두 모드를 시험할 수 있습니다. 클래식(V1)은 로터리 모터의 강한 질감, 개선형(V2)은 햅틱에 가까운 부드러운 질감입니다.'),
  'rumble_release':_ui_tr('진동이 약해지거나 끝날 때 짧은 여운을 남깁니다. 짧게는 20ms, 보통은 40ms입니다. 연속 타격이 뭉개지면 끔이나 짧게를 선택하세요.'),
 
 })
 
 
 
-DEFAULTS.update({'rumble_gain':100,'rumble_release':0,'rumble_haptic_strength':100})
+DEFAULTS.update({'rumble_gain':100,'rumble_release':0,'rumble_haptic_strength':100,
+                 'mix_native_filter':1,'mix_native_level':0,'haptics_gain':1.0})
+REFERENCE['rumble_haptic_strength'] = 100
 
 
 

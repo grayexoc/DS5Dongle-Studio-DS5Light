@@ -134,7 +134,7 @@ struct __attribute__((packed)) Config_body {
     // game audio, drowning the adjustable derived part. This fader scales the
     // passthrough per profile: 100 = classic native Mix, 0 = derived+rumble only
     // (auto-haptics own the actuators; the ds5audio --map choice stops mattering).
-    uint8_t  mix_native_level;  // [0-100] ch3/4 contribution in Mix (default 100)
+    uint8_t  mix_native_level;  // [0-100] ch3/4 contribution in Mix (default 0)
     // Effect leak MAX BURST (v1.12.0): cap on how long one gate opening may last
     // (x5 ms, 0 = off/unlimited). Transients (gunshots, impacts) end within the
     // cap naturally; SUSTAINED content (dialogue, music) used to hold the gate
@@ -412,6 +412,7 @@ struct __attribute__((packed)) Config_body {
     uint8_t rumble_gain;            // 100..200 percent; only native rumble with auto-haptics OFF
     uint8_t rumble_release;         // 0 off, 1 linear 20ms, 2 linear 40ms
     uint8_t usb_gamepad_mode;       // 0 DualSense, 1 XInput
+    uint8_t rumble_mode;           // 0 host, 1 classic V1, 2 improved V2
 };
 
 // Stage-2 output buttons. Values are PERSISTED in every profile and slot, so

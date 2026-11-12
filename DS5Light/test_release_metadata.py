@@ -15,7 +15,9 @@ class ReleaseMetadataTests(unittest.TestCase):
         package = f'DS5Light-win-x64-v{APP_VERSION}.zip'
         for name in ('README.md', 'PRODUCT_KO.md', 'SETUP.md', 'SETUP_KO.md', 'RELEASE_NOTES.md'):
             with self.subTest(document=name):
-                self.assertIn(package, (ROOT / name).read_text(encoding='utf-8-sig'))
+                text = (ROOT / name).read_text(encoding='utf-8-sig')
+                experimental = package.replace('.zip', '-Experimental.zip')
+                self.assertTrue(package in text or experimental in text, name)
 
     def test_setup_uses_the_actual_app_presets_and_defaults(self):
         tree = ast.parse((ROOT / 'studio_recommended.py').read_text(encoding='utf-8-sig'))

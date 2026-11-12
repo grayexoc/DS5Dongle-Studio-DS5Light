@@ -29,6 +29,8 @@ for _section in SECTIONS:
 
             [0xC3,'rumble_gain','u8','XInput rumble strength','number',[100,200]],
 
+            [0xC6,'rumble_mode','u8','Rumble mode','select',[[0,'Follow game'],[1,'Classic'],[2,'Improved']]],
+
             [0xC4,'rumble_release','u8','Rumble release','select',[[0,_ui_tr('끔')],[1,_ui_tr('짧게 · 20ms')],[2,_ui_tr('보통 · 40ms')]]],
 
         ])

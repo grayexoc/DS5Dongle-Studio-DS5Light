@@ -288,8 +288,11 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
     def enabled_for(self,key):
         values=self.doc.values
         if key=='haptics_gain':return values.get('auto_haptics_enable')==0
+        if key=='haptics_aa':return values.get('auto_haptics_enable') in (1,2)
         if key in ('rumble_haptic_strength','mix_native_level'):return values.get('auto_haptics_enable')==1
         if key=='mix_native_filter':return values.get('auto_haptics_enable')==1 and values.get('mix_native_level',0)>0
+        if key=='rumble_mode':
+            return key in values and key not in getattr(self,'unsupported_fields',()) and values.get('auto_haptics_enable')==0
         if key in ('rumble_gain','rumble_release'):
             return all(k in values for k in ('rumble_gain','rumble_release')) and values.get('auto_haptics_enable')==0
         from studio_scope import AUDIO_HAPTIC_CHILDREN
@@ -338,12 +341,12 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         for section in SECTIONS:
             if not query and section['title'] not in sections:continue
             from studio_scope import TRIGGER_FIELDS
-            ordered=[f for f in section['fields'] if f[1] not in ('rumble_gain','rumble_release','enable_wake') and (query or f[1] not in TRIGGER_FIELDS)]
+            ordered=[f for f in section['fields'] if f[1] not in ('rumble_gain','rumble_mode','rumble_release','enable_wake') and (query or f[1] not in TRIGGER_FIELDS)]
             if section['title']=='Auto-Haptics & Speaker Effect Leak':
                 ordered=[f for f in ordered if f[1] not in ('auto_mute_mix','auto_mute_replace')]
             elif section['title']=='General Haptics & Audio':
                 gain_at=next(i for i,f in enumerate(ordered) if f[1]=='haptics_gain')+1
-                ordered[gain_at:gain_at]=[FIELDS['rumble_gain'],FIELDS['rumble_release']]
+                ordered[gain_at:gain_at]=[FIELDS['rumble_gain'],FIELDS['rumble_mode'],FIELDS['rumble_release']]
                 at=next(i for i,f in enumerate(ordered) if f[1]=='disable_speaker')+1
                 ordered[at:at]=[FIELDS['auto_mute_mix'],FIELDS['auto_mute_replace']]
             if not query and section['title']=='Device & Connection':
@@ -746,12 +749,17 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.after_profile_save=after
         reconnect_path=self.path
         reconnect_serial=next((d.get("serial_number") for d in self.device_rows if d["path"]==self.path),None) or self.app.studio.device_serials.get(self.path)
-        reconnect=needs_reconnect(baseline,dict(baseline,**changes))
+        reconnect=needs_reconnect(baseline,dict(baseline,**changes),self.doc.macro_baseline)
         def op(client):
             if profile_stamp is not None and client.profile()!=profile_stamp:raise RuntimeError(_ui_tr('현재 프로필이 바뀌었습니다. 다시 읽어 주세요.'))
             current,missing=client.read_fields([FIELDS[k] for k in baseline])
             for key in baseline:
                 if key not in current or current[key]!=baseline[key]:raise RuntimeError(_ui_tr('외부에서 설정이 변경되었습니다. 다시 읽어 주세요.'))
+            reconnect_needed=reconnect
+            if refresh_macros:
+                try:macros=client.read_macros()
+                except (OSError,RuntimeError,TimeoutError):macros=None
+                reconnect_needed=needs_reconnect(current,dict(current,**changes),macros)
             if effects:
                 actual=client.read_effects()
                 for (trig,index) in effects:
@@ -775,7 +783,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 if profile.get('index')!=target[0] or profile.get('name')!=target[1] or profile.get('edited'):
                     raise RuntimeError(_ui_tr('프로필 저장 후 상태가 다릅니다. 새로 고침으로 확인하세요.'))
                 profile_saved=True
-            if refresh_macros or persist or reconnect:self.results.put(('progress',dict(reconnecting=True),None))
+            if refresh_macros or persist or reconnect_needed:self.results.put(('progress',dict(reconnecting=True),None))
             save_uncertain=False;save_error=None
             try:
                 if persist:
@@ -785,12 +793,12 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 if self.cancel.is_set():raise
                 save_uncertain=True;save_error=str(exc)
             reset_uncertain=False
-            if reconnect and not save_uncertain:
+            if reconnect_needed and not save_uncertain:
                 try:client.reconnect_usb()
                 except (OSError,RuntimeError):
                     if self.cancel.is_set():raise
                     reset_uncertain=True
-            return dict(values=dict(current,**checked),saved=persist and not save_uncertain,reconnect=reconnect,
+            return dict(values=dict(current,**checked),saved=persist and not save_uncertain,reconnect=reconnect_needed,
                         profile=profile,profile_saved=profile_saved,target=target,macros_pending=pending_macros,
                         save_uncertain=save_uncertain,save_error=save_error,reset_uncertain=reset_uncertain)
         def operation():

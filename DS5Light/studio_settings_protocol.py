@@ -6,12 +6,13 @@ import secrets
 import time
 from studio_slots import StudioClient
 from studio_fields import FIELDS
-from studio_scope import EDITABLE,CONSTRUCTION,LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB_MODE_FIELDS,OPTIONAL_FIELDS
+from studio_scope import EDITABLE,CONSTRUCTION,LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB_MODE_FIELDS,RUMBLE_MODE_FIELDS,OPTIONAL_FIELDS
 
 FORMATS={'u8':'B','u16':'H','u32':'I','f32':'f'}
 ENUM_FIELDS={'usb_gamepad_mode','controller_mode','polling_rate_mode','audio_buffer_length','disable_mic','disable_speaker','enable_wake'}
 class PartialApplyError(RuntimeError):pass
 class USBModeUnsupported(ValueError):pass
+class RumbleModeUnsupported(ValueError):pass
 
 class PolicySaveError(ValueError):
     def __init__(self, message, current):
@@ -53,11 +54,29 @@ def validate_changes(values,changes,*,profile_snapshot=False):
         raise ValueError(_ui_tr('주파수 분리 기준은 30Hz 이상이며 저역 통과 기준보다 낮아야 합니다.'))
     return merged
 
-def needs_reconnect(before,after):
+def needs_reconnect(before,after,macros=None):
     if any(before.get(k)!=after.get(k) for k in ENUM_FIELDS if k in after and k in before):return True
     for key in ('gyro_output','stick_mouse','touch_mouse'):
         if bool(before.get(key,0))!=bool(after.get(key,0)):return True
-    return (before.get('macro_disable',0xffffffff)==0xffffffff)!=(after.get('macro_disable',0xffffffff)==0xffffffff)
+    old_mask=before.get('macro_disable',0xffffffff)
+    new_mask=after.get('macro_disable',0xffffffff)
+    if old_mask==new_mask:return False
+    # Older firmware exposes a keyboard for any enabled macro.
+    if (old_mask==0xffffffff)!=(new_mask==0xffffffff):return True
+    if not macros or len(macros)!=32:return True
+
+    def interfaces(values,mask):
+        keys=mouse=False
+        for index,record in macros.items():
+            if mask & (1<<int(index)):continue
+            output=record[17]
+            mouse |= 11<=output<=15
+            keys |= output==0 and any(record[:5]) and any(record[7:11])
+        mouse |= any(values.get(key,0) for key in ('gyro_output','stick_mouse','touch_mouse'))
+        keyboard=mouse or keys or bool(values.get('enable_wake') or values.get('ps_shortcut_enabled'))
+        return keyboard,mouse
+
+    return interfaces(before,old_mask)!=interfaces(after,new_mask)
 
 class SettingsClient(StudioClient):
     def __init__(self,device,sleep=time.sleep,cancel=lambda:False):
@@ -151,12 +170,14 @@ class SettingsClient(StudioClient):
             if not values:raise ValueError(_ui_tr('일반 진동 조절 미지원 · 펌웨어 확인 필요'))
             if slot is None:return values[field[1]]
         fid=field[0]
-        if field[1] in USB_MODE_FIELDS and slot is None:
+        if field[1] in (USB_MODE_FIELDS | RUMBLE_MODE_FIELDS) and slot is None:
+            rumble_mode = field[1] in RUMBLE_MODE_FIELDS
+            error = _ui_tr('일반 진동 모드 지원을 확인하지 못했습니다.') if rumble_mode else _ui_tr('XBOX 모드 지원을 확인하지 못했습니다.')
             reply=self.command(12,bytes([1,fid]),echo=bytes([1,fid]))
             if reply[2:4]==b'\x01\x00':
-                raise USBModeUnsupported(_ui_tr('XBOX 모드 지원을 확인하지 못했습니다.'))
-            if len(reply)<7 or reply[2:6]!=bytes([0,1,fid,1]) or reply[6] not in (0,1):
-                raise ValueError(_ui_tr('XBOX 모드 지원을 확인하지 못했습니다.'))
+                raise (RumbleModeUnsupported if rumble_mode else USBModeUnsupported)(error)
+            if len(reply)<7 or reply[2:6]!=bytes([0,1,fid,1]) or reply[6] > (2 if rumble_mode else 1):
+                raise ValueError(error)
             self.bulk=True
             return reply[6]
         if slot is not None:
@@ -173,7 +194,7 @@ class SettingsClient(StudioClient):
         out={};unsupported=[]
         optional=[f for f in fields if f[1] in LIGHTBAR_FIELDS]
         rumble=[f for f in fields if f[1] in RUMBLE_FIELDS]
-        modes=[f for f in fields if f[1] in USB_MODE_FIELDS]
+        modes=[f for f in fields if f[1] in (USB_MODE_FIELDS | RUMBLE_MODE_FIELDS)]
         fields=[f for f in fields if f[1] not in OPTIONAL_FIELDS]
         for f in modes:
             try:out[f[1]]=self.read_one(f)
@@ -217,8 +238,8 @@ class SettingsClient(StudioClient):
     def write_fields(self,values,baseline,*,profile_snapshot=False):
         if any(k not in EDITABLE for k in values):raise ValueError(_ui_tr('공사 중 또는 제외된 설정은 쓰지 않습니다.'))
         validate_changes(baseline,values,profile_snapshot=profile_snapshot)
-        if USB_MODE_FIELDS.intersection(values):
-            self.read_one(FIELDS['usb_gamepad_mode'])
+        for key in (USB_MODE_FIELDS | RUMBLE_MODE_FIELDS).intersection(values):
+            self.read_one(FIELDS[key])
         if RUMBLE_FIELDS.intersection(values):
             if not self.read_rumble():raise ValueError(_ui_tr('일반 진동 조절 미지원 · 새로 고침과 펌웨어 확인이 필요합니다.'))
             self.bulk=True

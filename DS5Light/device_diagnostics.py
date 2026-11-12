@@ -22,6 +22,8 @@ COUNTERS = ('sent', 'overflow', 'expired', 'retry_expired', 'retry_exhausted',
 TESTS = {'rumble_left': 1, 'rumble_right': 2, 'rumble_both': 3,
          'trigger_left': 4, 'trigger_right': 5,
          'haptic_left': 6, 'haptic_right': 6, 'speaker': 6}
+RUMBLE_TEST_MODES = (('classic', 64), ('classic', 128), ('improved', 64), ('improved', 128))
+RUMBLE_TEST_OFFSETS = (0, 6, 9, 12)
 TEST_AUDIO_FRAMES = 72000  # 1.5 s PCM leaves room for the 2 s device lease and STOP.
 
 
@@ -48,7 +50,7 @@ def probe_support(device, cancel=lambda: False):
     return decode_status(reply)
 
 
-def decode_status(reply):
+def decode_status(reply, firmware=b''):
     if len(reply) != 63 or reply[:5] != b'\x66\x1e\x00\x01\x00':
         raise ValueError('Invalid diagnostic status')
     flags = reply[9]
@@ -61,13 +63,16 @@ def decode_status(reply):
     status = dict(connected=bool(flags & 1), ready=bool(flags & 2),
                 audio_processing=bool(flags & 4), audio_stream=bool(flags & 8),
                 usb_mode='XInput' if reply[10] else 'DualSense',
-                auto_haptics=reply[11], channels=reply[12],
+                auto_haptics=reply[11], channels=reply[12], rumble_comparison=reply[56] == 1,
                 front_peak=struct.unpack_from('<H', reply, 13)[0],
                 rear_peak=struct.unpack_from('<H', reply, 15)[0],
                 rssi=struct.unpack_from('b', reply, 17)[0] if flags & 16 else None,
                 last_host=control(19) if reply[18] & 1 else None,
                 current=control(27), last_accepted=control(35) if reply[18] & 2 else None,
                 uptime_ms=struct.unpack_from('<I', reply, 43)[0])
+    # v36 acknowledged selectors 7..15, but its state handler dropped them.
+    if firmware[3:].split(b'\0', 1)[0] in (b'36', b'v36'):
+        status['rumble_comparison'] = False
     if reply[47] == 1:
         left, right, blocks = struct.unpack_from('<HHI', reply, 48)
         status.update(rear_left_peak=left, rear_right_peak=right, usb_audio_blocks=blocks)
@@ -117,9 +122,10 @@ def collect_snapshot(device, identity, audio_stats=None, cancel=lambda: False):
                           'Pages are separate observations. Peaks are the latest PCM block.',
                           'Counters are cumulative modulo 2^32; no counters are reset.'])
     try:
-        report['firmware'] = client.metadata(5).hex()
+        firmware = client.metadata(5)
+        report['firmware'] = firmware.hex()
         report['profile'] = client.profile()
-        report['status'] = decode_status(tagged_command(client, 0x1e, 0))
+        report['status'] = decode_status(tagged_command(client, 0x1e, 0), firmware)
         report['transport'] = decode_transport(tagged_command(client, 0x1e, 1))
         report['speaker_settings'] = speaker_settings(client)
     except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
@@ -202,10 +208,17 @@ def audio_test(kind, row, cancel, binding, identity, begin=None):
         finally:p.terminate()
 
 
-def run_output_test(device, kind, cancel, binding, identity, row=None):
-    if kind not in TESTS:raise ValueError('Invalid output test')
+def run_output_test(device, kind, cancel, binding, identity, row=None, rumble_mode=0):
+    if kind not in TESTS or not 0 <= rumble_mode < len(RUMBLE_TEST_MODES):
+        raise ValueError('Invalid output test')
+    is_rumble = kind.startswith('rumble_')
+    selector = TESTS[kind] + (RUMBLE_TEST_OFFSETS[rumble_mode] if is_rumble else 0)
     client = SettingsClient(device)  # STOP must still run after user cancellation.
-    status = decode_status(tagged_command(client, 0x1e, 0))
+    reply = tagged_command(client, 0x1e, 0)
+    status = decode_status(reply)
+    if is_rumble and rumble_mode:
+        if not status['rumble_comparison'] or not decode_status(reply, client.metadata(5))['rumble_comparison']:
+            raise RuntimeError('현재 펌웨어는 일반 진동 세기·모드 비교를 지원하지 않습니다.')
     if not status['ready']:
         raise RuntimeError('시험 시작 안 됨 · 듀얼센스 연결 준비가 완료되지 않았습니다.')
     if status['auto_haptics'] != 0:
@@ -222,7 +235,7 @@ def run_output_test(device, kind, cancel, binding, identity, row=None):
     def begin():
         nonlocal started
         deadline = time.monotonic() + 2
-        tagged_command(client, 0x1f, TESTS[kind])
+        tagged_command(client, 0x1f, selector)
         started = True
         return deadline
     try:
@@ -237,6 +250,8 @@ def run_output_test(device, kind, cancel, binding, identity, row=None):
         tagged_command(client, 0x1f, 0)
     result = dict(test=kind, completed=started and not cancel.is_set(),
                   note='Submission only; confirm physical output separately.')
+    if is_rumble:
+        result['rumble_mode'], result['rumble_strength'] = RUMBLE_TEST_MODES[rumble_mode]
     if settings is not None:result['speaker_settings'] = settings
     if kind.startswith('trigger_'):
         from studio_records import build_effect

@@ -127,6 +127,40 @@ class DiagnosticTests(unittest.TestCase):
                 run_output_test(None, 'rumble_left', threading.Event(), None, DeviceIdentity())
         self.assertEqual(calls, [(0x1e, 0), (0x1f, 1), (0x1f, 0)])
 
+    def test_rumble_comparison_selectors_and_legacy_fallback(self):
+        status = response()
+        status[56] = 1
+        cancel = Mock()
+        cancel.is_set.return_value = False
+        for mode, side, selector, strength in (
+                (0, 'left', 1, 64), (1, 'right', 8, 128),
+                (2, 'both', 12, 64), (3, 'left', 13, 128)):
+            with self.subTest(mode=mode), patch('device_diagnostics.tagged_command',
+                                                return_value=status) as command, \
+                    patch('device_diagnostics.SettingsClient.metadata', return_value=b'\x81\x66\x0537\x00'):
+                result = run_output_test(None, 'rumble_' + side, cancel, None,
+                                         DeviceIdentity(), rumble_mode=mode)
+                self.assertEqual([call.args[1:] for call in command.call_args_list],
+                                 [(0x1e, 0), (0x1f, selector), (0x1f, 0)])
+                self.assertEqual(result['rumble_strength'], strength)
+                self.assertEqual(result['rumble_mode'], 'improved' if mode >= 2 else 'classic')
+        with patch('device_diagnostics.tagged_command', return_value=response()) as command:
+            with self.assertRaises(RuntimeError):
+                run_output_test(None, 'rumble_left', cancel, None, DeviceIdentity(), rumble_mode=3)
+            self.assertEqual([call.args[1:] for call in command.call_args_list], [(0x1e, 0)])
+
+    def test_v36_false_rumble_capability_never_starts_extended_output(self):
+        status = response()
+        status[56] = 1
+        firmware = b'\x81\x66\x0536\x00'
+        self.assertFalse(decode_status(status, firmware)['rumble_comparison'])
+        with patch('device_diagnostics.tagged_command', return_value=status) as command, \
+                patch('device_diagnostics.SettingsClient.metadata', return_value=firmware):
+            with self.assertRaises(RuntimeError):
+                run_output_test(None, 'rumble_right', threading.Event(), None,
+                                DeviceIdentity(), rumble_mode=1)
+        self.assertEqual([call.args[1:] for call in command.call_args_list], [(0x1e, 0)])
+
     def test_audio_device_change_never_opens_default_output(self):
         from device_diagnostics import audio_test
         from device_binding import DeviceBinding
@@ -290,6 +324,18 @@ class DialogTests(unittest.TestCase):
         self.assertIsNone(self.dialog.job)
         self.assertFalse(self.dialog.available('snapshot'))
         self.assertFalse(self.dialog.busy)
+
+    def test_rumble_choice_falls_back_on_legacy_firmware(self):
+        status = dict(ready=True, auto_haptics=0, rumble_comparison=True)
+        self.dialog.report = dict(status=status)
+        self.dialog.update_test_buttons()
+        choice = self.dialog.rumble_choice
+        self.assertEqual(str(choice.cget('state')), 'readonly')
+        choice.current(3)
+        status['rumble_comparison'] = False
+        self.dialog.update_test_buttons()
+        self.assertEqual(choice.current(), 0)
+        self.assertEqual(str(choice.cget('state')), 'disabled')
 
     def test_output_tests_block_audio_but_readonly_snapshot_remains_available(self):
         self.app.studio.binding._identity = DeviceIdentity(hid_path=b'a')

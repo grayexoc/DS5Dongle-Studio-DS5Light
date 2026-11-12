@@ -4,6 +4,8 @@
 
 ## Package and firmware
 
+For the local test build, use `DS5Light-win-x64-v1.0.9-Experimental.zip` with `ds5-studio-light_v38.uf2` on Pico 2 W. The instructions below also cover the published release.
+
 Use the complete `DS5Light-win-x64-v1.0.6.zip` package on Windows 10/11 x64. Extract it into a writable folder, keep `_internal` beside `DS5Light.exe`, and run the executable. Python is not required for the packaged app.
 
 The combined release is v1.0.6, the app is v1.0.6, and the firmware is Studio v34. Firmware is a separate release attachment: `ds5-studio-light_v34.uf2`. That attachment is for Raspberry Pi Pico 2 W; it is not for RP2040 Pico W or Waveshare boards. The app does not flash firmware automatically.

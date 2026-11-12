@@ -621,3 +621,4 @@ class MuteShortcut:
             if thread:
 
                 thread.join(timeout=.5)
+

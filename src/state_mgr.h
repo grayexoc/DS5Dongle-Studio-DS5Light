@@ -26,6 +26,6 @@ bool state_update(const uint8_t *data, uint8_t size);
 void set_volume(uint8_t value);
 void set_volume(uint8_t speaker, uint8_t headset);
 void state_diagnostic_snapshot(uint8_t *data); // 25 bytes: validity + host/current/sent
-void state_output_test(uint8_t kind); // 0 stop, 1..3 rumble, 4..5 triggers, 6 native PCM
+bool state_output_test(uint8_t kind); // 0 stop, 1..3 rumble, 4..5 triggers, 6 native PCM, 7..15 rumble comparison
 
 #endif //DS5_BRIDGE_STATE_MGR_H

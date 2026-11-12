@@ -76,6 +76,11 @@ class SettingsDocument:
             raise ValueError(_ui_tr('현재 펌웨어에서 라이트바 색상 고정 지원을 확인하지 못했습니다.'))
         if any(k in raw and k not in self.baseline for k in RUMBLE_FIELDS):
             raise ValueError(_ui_tr('현재 펌웨어에서 일반 진동 조절 지원을 확인하지 못했습니다.'))
+        if 'rumble_mode' in self.baseline:
+            if 'cfgVersion' in data and 'rumble_mode' not in raw:
+                changes['rumble_mode']=0
+        elif raw.get('rumble_mode',0)!=0:
+            raise ValueError(_ui_tr('일반 진동 모드 지원을 확인하지 못했습니다.'))
         if 'usb_gamepad_mode' in self.baseline:
             if 'cfgVersion' in data and 'usb_gamepad_mode' not in raw:
                 changes['usb_gamepad_mode']=0

@@ -25,19 +25,23 @@ def same_device(row,identity):
 class ProfileEvents:
     def __init__(self):
         self.key=None;self.stop=threading.Event();self.results=queue.SimpleQueue()
-        self.supported=False;self.changed=False;self.retry_at=0.;self.closed=False
+        self.changed=False;self.retry_at=0.;self.closed=False
+        self.missing=0
     def tick(self,identity):
         key=(identity.hid_path,identity.serial)
         if self.closed:return
         if key!=self.key:
             self.stop.set();self.stop=threading.Event();self.key=key
-            self.supported=False;self.changed=False;self.retry_at=0.
+            self.changed=False;self.retry_at=0.;self.missing=0
         while not self.results.empty():
             token,kind=self.results.get()
             if token is not self.stop:continue
-            if kind=='ready':self.supported=True
+            if kind=='ready':self.missing=0
             elif kind=='changed':self.changed=True
-            elif kind=='failed':self.supported=False;self.retry_at=time.monotonic()+30
+            elif kind=='missing':
+                self.missing+=1
+                if self.missing<3:self.retry_at=time.monotonic()+self.missing
+            elif kind=='failed':self.retry_at=time.monotonic()+3
         if not identity.hid_path or time.monotonic()<self.retry_at:return
         self.retry_at=float('inf');token=self.stop
         def listen():
@@ -45,7 +49,9 @@ class ProfileEvents:
             device=None
             try:
                 rows=[r for r in hid.enumerate() if same_device(r,identity)]
-                if len(rows)!=1:return  # Unsupported or ambiguous: retain legacy polling.
+                if len(rows)!=1:
+                    self.results.put((token,'missing'))
+                    return
                 device=hid.device();device.open_path(rows[0]['path'])
                 decode(device.get_feature_report(0x8f,16))
                 self.results.put((token,'ready'));last=None;renew=time.monotonic()+30

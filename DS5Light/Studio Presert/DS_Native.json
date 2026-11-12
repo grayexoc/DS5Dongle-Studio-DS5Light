@@ -17,7 +17,7 @@
     "auto_haptics_slope": 12,
     "auto_mute_replace": 1,
     "auto_mute_mix": 1,
-    "rumble_haptic_strength": 50
+    "rumble_haptic_strength": 100
   },
   "settings": {
     "auto_haptics_enable": 0,
@@ -34,7 +34,7 @@
     "auto_haptics_slope": 12,
     "auto_mute_replace": 1,
     "auto_mute_mix": 1,
-    "rumble_haptic_strength": 50
+    "rumble_haptic_strength": 100
   },
   "effects": {},
   "macros": {}

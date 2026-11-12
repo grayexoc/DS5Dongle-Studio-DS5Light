@@ -9,9 +9,11 @@
 
 int main() {
     static_assert(sizeof(Config_body) <= SLOT_MAX_BODY_LEN);
-    static_assert(sizeof(Config_body) == offsetof(Config_body, usb_gamepad_mode) + 1);
+    static_assert(sizeof(Config_body) == offsetof(Config_body, rumble_mode) + 1);
     Config_body defaults;memset(&defaults,0xff,sizeof(defaults));config_body_valid(defaults);
-    assert(std::fabs(defaults.haptics_gain-1.2f)<0.0001f && defaults.haptics_aa==1);
+    assert(std::fabs(defaults.haptics_gain-1.0f)<0.0001f && defaults.haptics_aa==1);
+    assert(defaults.mix_native_level == 0 && defaults.mix_native_filter == 1);
+    assert(defaults.rumble_mode == 0 && defaults.rumble_haptic_strength == 100);
     LightbarFixed p;
     uint8_t report[63]{}, original[63]{};
     // An unseen colour is not an explicit black/off command.
@@ -112,12 +114,14 @@ int main() {
     configured.lightbar_fixed = 1;
     configured.lightbar_r = 0; configured.lightbar_g = 73; configured.lightbar_b = 255;
     configured.rumble_gain = 100; configured.rumble_release = 0;
+    configured.mix_native_level = 100; configured.mix_native_filter = 0;
     config_body_valid(configured);
+    assert(configured.mix_native_level == 100 && configured.mix_native_filter == 0);
     assert(configured.lightbar_fixed == 1 && configured.lightbar_r == 0 && configured.lightbar_g == 73);
     memcpy(fixture_name, "Audio Haptic", 12);
     fixture_body = legacy;
     fixture_body.config_version = 19;
-    fixture_body.usb_gamepad_mode = 0xff;
+    fixture_body.usb_gamepad_mode = fixture_body.rumble_mode = 0xff;
     fixture_body.rumble_gain = fixture_body.rumble_release = 0xff;
     memset(reinterpret_cast<uint8_t *>(&fixture_body) + offsetof(Config_body, lightbar_fixed), 0xff, 4);
     const uint32_t previous_id = crc32(fixture_name, SLOT_NAME_LEN) ^
@@ -127,7 +131,7 @@ int main() {
     assert(!active_profile_restore(1, previous_id ^ 1));
     fixture_body = configured;
     fixture_body.config_version = 20;
-    fixture_body.usb_gamepad_mode = 0xff;
+    fixture_body.usb_gamepad_mode = fixture_body.rumble_mode = 0xff;
     fixture_body.rumble_gain = fixture_body.rumble_release = 0xff;
     const uint32_t v20_id = crc32(fixture_name, SLOT_NAME_LEN) ^
         crc32(reinterpret_cast<const uint8_t *>(&fixture_body), offsetof(Config_body, rumble_gain));
@@ -135,14 +139,20 @@ int main() {
     assert(g_active_snapshot.rumble_gain == 100 && g_active_snapshot.rumble_release == 0);
     fixture_body = configured;
     fixture_body.config_version = 21;
-    fixture_body.usb_gamepad_mode = 0xff;
+    fixture_body.usb_gamepad_mode = fixture_body.rumble_mode = 0xff;
     const uint32_t v21_id = crc32(fixture_name, SLOT_NAME_LEN) ^
         crc32(reinterpret_cast<const uint8_t *>(&fixture_body), offsetof(Config_body, usb_gamepad_mode));
     assert(active_profile_restore(1, v21_id) && g_active_snapshot.usb_gamepad_mode == 0);
     fixture_body = configured;
+    fixture_body.rumble_mode = 0xff;
+    const uint32_t v22_id = crc32(fixture_name, SLOT_NAME_LEN) ^
+        crc32(reinterpret_cast<const uint8_t *>(&fixture_body), offsetof(Config_body, rumble_mode));
+    assert(active_profile_restore(1, v22_id) && g_active_snapshot.rumble_mode == 0);
+    fixture_body.rumble_mode = 2;
     const uint32_t current_id = resume_slot_fingerprint(fixture_name, fixture_body);
     assert(active_profile_restore(1, current_id));
-    assert(g_active_snapshot.lightbar_g == 73);
+    assert(g_active_snapshot.lightbar_g == 73 && g_active_snapshot.rumble_mode == 2);
+    assert(!active_profile_restore(1, v22_id));
     assert(!active_profile_restore(1, previous_id)); // Never accept old identity for rewritten slot.
     puts("PASS: output isolation, host interference, queue retry, no periodic sends, OFF/release/reconnect, config compatibility");
     printf("Config_body=%zu bytes, slot limit=%u, prior body=%zu\n", sizeof(Config_body), SLOT_MAX_BODY_LEN,

@@ -77,7 +77,7 @@ void config_valid() {
 static void config_body_valid(Config_body &value) {
     auto body = &value;
     if (std::isnan(body->haptics_gain) || body->haptics_gain < 1.0f || body->haptics_gain > 2.0f) {
-        body->haptics_gain = 1.2f;
+        body->haptics_gain = 1.0f;
         printf("[Config] Haptics Gain value is invalid\n");
     }
     if (body->speaker_volume < 0 || body->speaker_volume > 127) {
@@ -155,6 +155,7 @@ static void config_body_valid(Config_body &value) {
     if (body->lightbar_fixed > 1) body->lightbar_fixed = 0;
     if (body->rumble_gain < 100 || body->rumble_gain > 200) body->rumble_gain = 100;
     if (body->rumble_release > 2) body->rumble_release = 0;
+    if (body->rumble_mode > 2) body->rumble_mode = 0;
     if (body->usb_gamepad_mode > 1) body->usb_gamepad_mode = 0;
     if (body->auto_haptics_smooth > 100) body->auto_haptics_smooth = 40;
     // Staged battery notification. An upgraded config arrives with this tail
@@ -190,7 +191,7 @@ static void config_body_valid(Config_body &value) {
     }
     if (body->bt_flush_timeout > 0x07FF) body->bt_flush_timeout = 0; // 0=off, max per BT spec
     if (body->bt_qos_latency_us > 50000) body->bt_qos_latency_us = 0; // 0=off
-    if (body->rumble_haptic_strength > 200) body->rumble_haptic_strength = 50; // >100 = deliberate overdrive
+    if (body->rumble_haptic_strength > 200) body->rumble_haptic_strength = 100; // >100 = deliberate overdrive
     if (body->effect_leak_volume > 100) body->effect_leak_volume = 0; // 0=off
     if (body->effect_leak_hp_hz < 100 || body->effect_leak_hp_hz > 5000) body->effect_leak_hp_hz = 800;
     if (body->effect_leak_sensitivity > 100) body->effect_leak_sensitivity = 50;
@@ -232,8 +233,8 @@ static void config_body_valid(Config_body &value) {
     if (body->at_l2_detent_pos > 9) body->at_l2_detent_pos = 5;
     if (body->at_deadzone > 9) body->at_deadzone = 0;
     if (body->at_l2_deadzone > 9) body->at_l2_deadzone = 0;
-    if (body->mix_native_level > 100) body->mix_native_level = 100; // 0 is valid (mute passthrough)
-    if (body->mix_native_filter > 1) body->mix_native_filter = 1;  // fresh flash (0xff) -> filtered, as before
+    if (body->mix_native_level > 100) body->mix_native_level = 0; // no native passthrough by default
+    if (body->mix_native_filter > 1) body->mix_native_filter = 1;  // suppress mirrored audio when passthrough is enabled
     if (body->ah_dsp_source > 1) body->ah_dsp_source = 0;         // fresh flash (0xff) -> ch0/1, as before
     if (body->rstick_invert > 3) body->rstick_invert = 0;        // fresh flash (0xff) -> no inversion
     if (body->effect_leak_max_burst > 100) body->effect_leak_max_burst = 0; // 0=off; covers fresh-flash 0xFF
@@ -854,11 +855,12 @@ bool active_profile_restore(uint8_t slot, uint32_t fingerprint) {
         const auto prefix_id = [&](size_t bytes) {
             return crc32(name, SLOT_NAME_LEN) ^ crc32(reinterpret_cast<const uint8_t *>(&body), bytes);
         };
-        if (body.usb_gamepad_mode != 0xff ||
-            (prefix_id(offsetof(Config_body, usb_gamepad_mode)) != fingerprint &&
-             !(new_tail && prefix_id(offsetof(Config_body, rumble_gain)) == fingerprint) &&
-             !(new_tail && old_tail && prefix_id(offsetof(Config_body, lightbar_fixed)) == fingerprint)))
-            return false;
+        const bool previous_layout = prefix_id(offsetof(Config_body, rumble_mode)) == fingerprint;
+        const bool older_layout = body.usb_gamepad_mode == 0xff &&
+            (prefix_id(offsetof(Config_body, usb_gamepad_mode)) == fingerprint ||
+             (new_tail && prefix_id(offsetof(Config_body, rumble_gain)) == fingerprint) ||
+             (new_tail && old_tail && prefix_id(offsetof(Config_body, lightbar_fixed)) == fingerprint));
+        if (body.rumble_mode != 0xff || !(previous_layout || older_layout)) return false;
     }
     // Validate a private copy. Restore identity/baseline only: never activate a
     // slot or overwrite the saved live settings loaded by config_load().

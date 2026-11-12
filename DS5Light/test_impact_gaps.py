@@ -15,6 +15,8 @@ class ImpactGapTests(unittest.TestCase):
         target[:]=1
         np.testing.assert_array_equal(a._gain_ramp(target,240),b._gain_ramp(target,240,np.ones(4,dtype=bool)))
 
-    def test_profile_default_is_not_changed(self):
+    def test_profile_defaults_match_firmware(self):
         from studio_backup import _SLOT_DEFAULTS as DEFAULTS
-        self.assertEqual(DEFAULTS['rumble_haptic_strength'],50)
+        self.assertEqual(DEFAULTS['rumble_haptic_strength'],100)
+        self.assertEqual(DEFAULTS['mix_native_filter'],1)
+        self.assertEqual(DEFAULTS['haptics_gain'],1.0)

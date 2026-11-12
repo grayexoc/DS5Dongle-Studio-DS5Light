@@ -4483,7 +4483,7 @@ EN['장치가 변경되었습니다. 상태를 새로 고침하세요.'] = 'Devi
 FIELD_LABELS = {
  'auto_haptics_enable':'Audio haptics mode', 'auto_haptics_gain':'Audio haptics strength',
  'auto_haptics_smooth':'Envelope smoothing', 'auto_haptics_gate':'Noise gate',
- 'mix_native_level':'Native haptics level', 'mix_native_filter':'Filter native haptics',
+ 'mix_native_level':'Mix native haptic level', 'mix_native_filter':'Filter native haptics',
  'ah_dsp_source':'Audio source channels', 'auto_haptics_lowpass_hz':'Low-pass cutoff',
  'ah_xover_hz':'Crossover frequency', 'ah_low_gain':'Low-band gain', 'ah_high_gain':'High-band gain',
  'auto_haptics_slope':'Filter slope', 'auto_mute_replace':'Mute speaker in Replace',
@@ -4498,7 +4498,7 @@ FIELD_LABELS = {
  'disable_inactive_disconnect':'Disable idle disconnect', 'disable_pico_led':'Turn off Pico LED',
  'lightbar_off':'Turn off lightbar', 'lightbar_fixed':'Fixed lightbar color', 'lightbar_rgb':'Lightbar color',
  'player_led_mode':'Player LED mode', 'player_led_bright':'Player LED brightness', 'enable_wake':'Wake PC with PS button',
- 'rumble_gain':'Rumble strength', 'rumble_release':'Rumble decay', 'trigger_reduce':'Adaptive trigger strength',
+ 'rumble_gain':'Rumble strength', 'rumble_mode':'Rumble mode', 'rumble_release':'Rumble decay', 'trigger_reduce':'Adaptive trigger strength',
  'r2t_mode':'Rumble to triggers', 'r2t_on_press':'Only while trigger is pressed',
  'r2t_strength':'Trigger vibration strength', 'r2t_frequency':'Trigger vibration frequency',
  'synth_force':'Override game trigger effects', 'at_pushback_src':'Recoil source',
@@ -4528,7 +4528,7 @@ FIELD_HELP = {
  'auto_mute_replace':'Mutes speaker audio in Replace mode.', 'auto_mute_mix':'Mutes speaker audio in Mix mode.',
  'rumble_haptic_strength':'Adds converted XInput or DS4 rumble in Mix only. Above 100% can saturate strong effects.',
  'haptics_gain':'Scales haptic waveforms. 1 is unchanged. Higher values can saturate. Unavailable in Mix and Replace.',
- 'haptics_aa':'Smooths audio haptics and converted Mix rumble. Strong smoothing can soften impacts.',
+ 'haptics_aa':'Smooths generated audio haptics in Mix and Replace, and converted rumble in Mix. Strong smoothing can soften impacts.',
  'speaker_volume':'Built-in DualSense speaker volume. Does not change PC speaker volume.',
  'headset_volume':'Volume of a headset connected to the DualSense audio jack.',
  'speaker_gain':'Extra speaker amplification. High values can distort.',
@@ -4551,6 +4551,7 @@ FIELD_HELP = {
  'player_led_bright':'Brightness of the white player LEDs. Separate from the lightbar.',
  'enable_wake':'Wakes the PC with the PS button. Requires USB wake support; unavailable in maximum hibernation.',
  'rumble_gain':'Scales XInput and DS4 rumble when audio haptics is off. 100% is unchanged. Does not affect native haptics.',
+ 'rumble_mode':'Try both modes in Device Diagnostics. Classic (V1) has a strong rotary feel. Improved (V2) feels smoother and closer to haptics.',
  'rumble_release':'Adds 20 or 40 ms of rumble decay. Use Off if repeated hits blend together.',
  'trigger_reduce':'1: weakest. 10: original strength.',
  'r2t_mode':'Sends XInput or DS4 rumble to the selected triggers. Does not convert native or audio haptics.',
@@ -4599,6 +4600,12 @@ for _side in ('r2','l2'):
     FIELD_LABELS['ce_'+_side+'_yield']='Custom effect priority'
     FIELD_HELP['ce_'+_side+'_enable']='Enables the captured custom trigger effect.'
     FIELD_HELP['ce_'+_side+'_yield']='Chooses whether custom effects or resistance settings take priority under the activation condition.'
+EN.update({
+ '클래식':'Classic',
+ '개선형':'Improved',
+ '일반 진동 모드 지원을 확인하지 못했습니다.':'Rumble mode support could not be verified.',
+ '현재 펌웨어는 일반 진동 세기·모드 비교를 지원하지 않습니다.':'This firmware does not support rumble strength and mode comparison.',
+})
 OPTION_TEXT = {
  'Mix with native':'Mix · game feedback + audio haptics', 'Replace (audio only)':'Replace · audio haptics only',
  'Filtered (default) — blocks 4ch mirror leakage':'Filtered', 'Raw — keep native haptics intact':'Raw',
@@ -4711,3 +4718,9 @@ FIELD_LABELS.update({'disable_inactive_disconnect':'Disable idle disconnect',
 
 FIELD_LABELS['ps_shortcut_enabled']='PS default shortcuts'
 FIELD_HELP['ps_shortcut_enabled']='Short press sends Win+G; long press sends Win+Tab. Turn this off to use PS in Pico mappings or Shift combinations.'
+EN.update({
+ '현재 프로필·레이어에서 이 스와이프가 활성인 동안 클릭만 차단합니다. 스와이프 성공 여부와 관계없이 적용하며, 터치 위치와 이동은 유지합니다.':
+     'Blocks only the click while this swipe mapping is enabled in the current profile and layer. Touch position and movement still reach the game.',
+ '마이크 버튼을 Pico 매핑·시프트로 사용하면 PC로 보내는 기본 음소거 입력과 마이크 LED 표시를 억제합니다. Edge FN 기본 조합과 PS + Create는 사용할 수 없습니다.':
+     'Using the microphone button in a Pico mapping or as Shift suppresses its default mute input and LED. Reserved Edge Fn combinations and PS + Create are unavailable.',
+})

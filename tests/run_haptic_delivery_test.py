@@ -38,7 +38,7 @@ struct Motor {
  bool AllowRightTriggerFFB=false,AllowLeftTriggerFFB=false;
  uint8_t RumbleEmulationLeft=0,RumbleEmulationRight=0;
 } state;
-struct Config {int auto_haptics_enable=1,rumble_gain=100,rumble_release=0;} config;
+struct Config {int auto_haptics_enable=1,rumble_gain=100,rumble_release=0,rumble_mode=0;} config;
 Config &get_config(){return config;}
 volatile uint8_t g_rumble_l=0,g_rumble_r=0;
 RumbleShape rumble_shape;bool rumble_output_pending=false;
@@ -71,26 +71,38 @@ int main(){
  // Mix stays linear below the knee, including opposite-polarity cancellation.
  for(int d=-90;d<=90;d++) {
    const float v=d/100.f;
-   assert(std::fabs(haptic_mix(0,v,0)-v)<1e-6f);
+   assert(std::fabs(haptic_mix(0,v)-v)<1e-6f);
  }
- assert(std::fabs(haptic_mix(0,.8f,-.7f)-.1f)<1e-6f);
- assert(std::fabs(haptic_mix(0,.3f,.4f)-.7f)<1e-6f);
- const float at_one=haptic_mix(0,1,0);
+ assert(std::fabs(haptic_mix(0,.8f-.7f)-.1f)<1e-6f);
+ assert(std::fabs(haptic_mix(0,.3f+.4f)-.7f)<1e-6f);
+ const float at_one=haptic_mix(0,1);
  assert(std::fabs(at_one-.95f)<1e-6f);
  float previous=0;
  for(int i=0;i<=2000;i++) {
-   const float x=i/1000.f,y=haptic_mix(0,x/2,x/2);
+   const float x=i/1000.f,y=haptic_mix(0,x);
    assert(y>=previous&&y<=1&&y<=x+1e-6f);
-   assert(std::fabs(y+haptic_mix(0,-x/2,-x/2))<1e-6f);
-   assert(std::fabs(y-haptic_mix(0,x,0))<1e-6f); // limit the sum, not individual sources
+   assert(std::fabs(y+haptic_mix(0,-x))<1e-6f);
    previous=y;
  }
- assert(std::fabs(haptic_mix(.5f,.2f,.1f)-.8f)<1e-6f);
- assert(haptic_mix(1,100,100)==1&&haptic_mix(-1,-100,-100)==-1);
+ assert(std::fabs(haptic_mix(.5f,.3f)-.8f)<1e-6f);
+ assert(std::fabs(haptic_mix(.7f,-.45f)-.25f)<1e-6f);
+ assert(std::fabs(haptic_mix(-.7f,.45f)+.25f)<1e-6f);
+ assert(std::fabs(haptic_mix(.7f,.3f)-.95f)<1e-6f);
+ assert(std::fabs(haptic_mix(.98f,-.01f)-.97f)<1e-6f);
+ assert(std::fabs(haptic_mix(1,-.3f)-.7f)<1e-6f);
+ assert(haptic_mix(1,2)==1&&haptic_mix(-1,-2)==-1);
  for(int n=-100;n<=100;++n) {
    float native=n/100.f;
-   assert(std::fabs(haptic_mix(native,0,0)-native)<1e-6f);
-   for(int d=-20;d<=20;++d) assert(std::fabs(haptic_mix(native,d/10.f,.8f))<=1.00001f);
+   assert(haptic_mix(native,0)==native);
+   float last = -1;
+   for(int d=-200;d<=200;++d) {
+     const float added = d/100.f;
+     const float out = haptic_mix(native,added);
+     assert(std::fabs(out)<=1.000001f && out>=last-1e-6f);
+     assert(std::fabs(out+haptic_mix(-native,-added))<1e-6f);
+     if (std::fabs(native+added)<=.9f) assert(out==native+added);
+     last = out;
+   }
  }
  RumbleSent sent;uint8_t snapshot[63]{};snapshot[0]=3;snapshot[2]=100;
  assert(sent.pending(snapshot));sent.accepted(snapshot);assert(!sent.pending(snapshot));

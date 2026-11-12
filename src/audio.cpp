@@ -928,8 +928,8 @@ void __not_in_flash_func(audio_loop)() {
                 // Keep native amplitude; additional signals use remaining headroom.
                 preserved_native_l = clamp(nat_l * native_lvl, -1.0f, 1.0f);
                 preserved_native_r = clamp(nat_r * native_lvl, -1.0f, 1.0f);
-                h_l = haptic_mix(0.0f, al, rl);
-                h_r = haptic_mix(0.0f, ar, rr);
+                h_l = al + rl;
+                h_r = ar + rr;
             }
         }
         // Anti-aliasing for the 48k->3k haptic decimation below (CONFIGURABLE —
@@ -958,10 +958,8 @@ void __not_in_flash_func(audio_loop)() {
             }
         }
         if (auto_mode == 1) {
-            const float room_l = 1.0f - fabsf(preserved_native_l);
-            const float room_r = 1.0f - fabsf(preserved_native_r);
-            h_l = preserved_native_l + clamp(h_l, -room_l, room_l);
-            h_r = preserved_native_r + clamp(h_r, -room_r, room_r);
+            h_l = haptic_mix(preserved_native_l, h_l);
+            h_r = haptic_mix(preserved_native_r, h_r);
         }
         in_buf[i * 2]     = static_cast<WDL_ResampleSample>(clamp(h_l, -1.0f, 1.0f));
         in_buf[i * 2 + 1] = static_cast<WDL_ResampleSample>(clamp(h_r, -1.0f, 1.0f));

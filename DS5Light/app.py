@@ -1297,6 +1297,7 @@ class App:
         if self.device_error: self.status.set(_ui_tr('장치 목록 조회 실패: ')+tr(self.device_error))
 
         root.after(150,lambda:self.refresh_games(initial=True)); root.after(1000,self.tick)
+        if self.profile_watch_enabled:root.after(200,self._profile_tick)
 
         if '--smoke-test' not in sys.argv:self.studio.schedule_initial_read()
 
@@ -2558,6 +2559,29 @@ class App:
 
 
 
+    def _profile_tick(self):
+        if self._closing or self._close_requested:return
+        self._watch_external_profile()
+        self.root.after(200,self._profile_tick)
+
+    def _watch_external_profile(self):
+        paused=(self._closing or self._close_requested or self._stopping or self.studio_power.blocked
+                or self.studio.busy or self.studio_settings.busy)
+        watch_audio=self.run_intent.requested and (self.engine is not None or self.run_intent.profile_paused)
+        watch_mute=self.studio.binding.snapshot().hid_path is not None
+        observation=self.profile_watch.tick(self.studio.binding,
+            enabled=self.profile_watch_enabled and (watch_audio or watch_mute),
+            token=self.run_intent.generation,seed=self.studio.observed_profile,paused=paused)
+        if observation:
+            self._mute_macro_policy=(observation['path'],observation['profile'].get('mute_macro',False))
+            self._external_profile(observation)
+            self._update_mute_state()
+        if self.run_intent.profile_paused and self.run_intent.route!=self._run_route():
+            self.run_intent.stop('route_changed')
+        if (not paused and self.engine is None and self.run_intent.can_resume(self._run_route())
+                and self.studio.auto_haptics_mode in (1,2)):
+            self.start(automatic=True)
+
     def tick(self):
         while True:
             try: item=self._refresh_results.get_nowait()
@@ -2705,28 +2729,6 @@ class App:
             self.render()
 
         self._update_diagnostics()
-
-        paused=(self._closing or self._close_requested or self._stopping or self.studio.busy or self.studio_settings.busy)
-
-        watch_audio = self.run_intent.requested and (self.engine is not None or self.run_intent.profile_paused)
-        watch_mute = self.studio.binding.snapshot().hid_path is not None
-        observation=self.profile_watch.tick(self.studio.binding,
-            enabled=self.profile_watch_enabled and (watch_audio or watch_mute),
-            token=self.run_intent.generation,seed=self.studio.observed_profile,paused=paused)
-        if observation:
-            self._mute_macro_policy = (observation['path'], observation['profile'].get('mute_macro', False))
-            self._external_profile(observation)
-            self._update_mute_state()
-
-        if self.run_intent.profile_paused and self.run_intent.route!=self._run_route():
-
-            self.run_intent.stop('route_changed')
-
-        if (not paused and self.engine is None and self.run_intent.can_resume(self._run_route())
-
-                and self.studio.auto_haptics_mode in (1,2)):
-
-            self.start(automatic=True)
 
         preferred=self.studio.selected[0] if self.studio.selected else self.studio.paths[0] if len(self.studio.paths)==1 else None
 

@@ -75,13 +75,15 @@ void state_report_sent(const uint8_t *data, bool lightbar_restore) {
     output_diagnostics.accepted(data);
     output_test.accepted(data);
     player_led_sent.accepted(data);
-    if ((data[1] & 8) || (data[38] & 2)) player_led_sent.release_pattern();
+    const bool led_reset = (data[1] & 8) || (data[38] & 2);
+    if (led_reset) player_led_sent.release_pattern();
     rumble_sent.accepted(data);
     const auto &c = get_config();
     lightbar_fixed_policy.accepted(data, c.lightbar_off, c.lightbar_fixed, c.lightbar_r, c.lightbar_g, c.lightbar_b, lightbar_restore);
     const auto *host = reinterpret_cast<const uint8_t *>(&state);
     const uint8_t player_mode = c.player_led_bright == 3 ? 1 : c.player_led_mode;
-    if (player_led_restore_pending && player_mode == 0 && (data[1] & 0x10) &&
+    if ((data[38] & 2) && data[41] == 2 && player_mode == 0) player_led_restore_pending = true;
+    if (!led_reset && player_led_restore_pending && player_mode == 0 && (data[1] & 0x10) &&
         (data[43] & 0x1f) == ((host[1] & 0x10) ? (host[43] & 0x1f) : 4)) player_led_restore_pending = false;
     uint8_t current[sizeof(SetStateData)]{};
     state_refresh_rumble(current);
@@ -132,11 +134,11 @@ static uint32_t g_last_host_ms = 0;
 static uint32_t g_last_rumble_ms = 0;
 static bool game_ever_r2 = false, game_ever_l2 = false;
 
-void state_output_test(uint8_t kind) {
-    if (kind > 6) return;
+bool state_output_test(uint8_t kind) {
+    if (kind > 15) return false;
     if (!kind) {
         if (output_test.pending()) output_test.start(0, to_ms_since_boot(get_absolute_time()));
-        return;
+        return true;
     }
     state_rumble_reset();
     // Never resurrect a departed game's effects when the test override expires.
@@ -144,6 +146,7 @@ void state_output_test(uint8_t kind) {
     if (g_host_cache_size) discard_test_trigger_intent(g_host_cache);
     game_ever_r2 = game_ever_l2 = false;
     output_test.start(kind, to_ms_since_boot(get_absolute_time()));
+    return true;
 }
 // Effect-capture history (monitor): last N distinct trigger effects each trigger
 // received from the game, newest at [0]. Read by the portal effect monitor.
@@ -484,10 +487,6 @@ static void state_host_led_update(const uint8_t *data, uint8_t size) {
     lightbar_fixed_policy.host_update(data, size);
     // Only host input can reset cached LEDs; synthesized ticks reuse old packets.
     auto *led_state = reinterpret_cast<uint8_t *>(&state);
-    if (size > 41 && (data[38] & 2) && data[41] == 2) {
-        led_state[1] &= ~4u;
-        led_state[44] = led_state[45] = led_state[46] = 0;
-    }
     if (size > 1 && (data[1] & 8)) {
         // Release is not a request for black RGB; retain the game's last colour.
         led_state[1] &= ~0x10u;
@@ -590,6 +589,14 @@ static bool state_update_apply(const uint8_t (&data)[sizeof(SetStateData)], cons
         state.UseRumbleNotHaptics = false;
         state.EnableRumbleEmulation = false;
         state.EnableImprovedRumbleEmulation = false;
+    } else if (size >= 4 && (state.UseRumbleNotHaptics || state.EnableImprovedRumbleEmulation)) {
+        // Override the selector only for a real rumble command, including STOP.
+        const uint8_t mode = get_config().rumble_mode;
+        if (mode == 1 || mode == 2) {
+            state.EnableRumbleEmulation = mode == 1;
+            state.UseRumbleNotHaptics = true;
+            state.EnableImprovedRumbleEmulation = mode == 2;
+        }
     }
     if (state.EnableRumbleEmulation ||
         state.UseRumbleNotHaptics ||

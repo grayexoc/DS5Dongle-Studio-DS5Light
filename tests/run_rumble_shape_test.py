@@ -12,7 +12,7 @@ p=subprocess.run([str(out/'test.exe')],env=env,capture_output=True,text=True)
 (out/'result.txt').write_text(p.stdout+p.stderr,encoding='utf-8');print(p.stdout+p.stderr);p.check_returncode()
 # Exercise the actual integration block without the unrelated trigger DSP.
 source=(root/'src/state_mgr.cpp').read_text(encoding='utf-8')
-first=source.index('    // Shape only controller-emulated rumble.')
+first=source.index('    if (auto_haptics_on) {')
 block=source[first:source.index('\n    if (!get_config().lock_volume',first)]
 code=r'''
 #include "rumble_shape.h"
@@ -23,7 +23,7 @@ code=r'''
 struct State { bool EnableRumbleEmulation=false, UseRumbleNotHaptics=false, EnableImprovedRumbleEmulation=false;
  uint8_t RumbleEmulationLeft=0,RumbleEmulationRight=0;uint8_t triggers[22]{}; } state;
 bool usb_xinput_active(){return false;}
-struct Config {uint8_t auto_haptics_enable=0,rumble_gain=200,rumble_release=1;} config;
+struct Config {uint8_t auto_haptics_enable=0,rumble_gain=200,rumble_release=1,rumble_mode=0;} config;
 const Config &get_config() {return config;}
 uint32_t now=0;
 uint32_t get_absolute_time() {return now;}
@@ -32,21 +32,41 @@ RumbleShape rumble_shape;
 bool rumble_output_pending=false;
 void apply(const State &update,uint8_t size,bool auto_haptics_on) {
  const State old_state=state;
+ state.EnableRumbleEmulation=update.EnableRumbleEmulation;
+ state.UseRumbleNotHaptics=update.UseRumbleNotHaptics;
+ state.EnableImprovedRumbleEmulation=update.EnableImprovedRumbleEmulation;
 '''+block+r'''
 }
 int main() {
  State input;input.RumbleEmulationLeft=100;input.RumbleEmulationRight=25;
- state.UseRumbleNotHaptics=true;memset(state.triggers,0x55,22);
+ input.EnableRumbleEmulation=input.UseRumbleNotHaptics=true;
+ memset(state.triggers,0x55,22);
  apply(input,63,false);assert(state.RumbleEmulationLeft==200&&state.RumbleEmulationRight==50);
  assert(input.RumbleEmulationLeft==100);for(auto b:state.triggers)assert(b==0x55);
- State zero;now=1;apply(zero,63,false);assert(state.RumbleEmulationLeft==200&&rumble_shape.active());
+ State zero=input;zero.RumbleEmulationLeft=zero.RumbleEmulationRight=0;now=1;apply(zero,63,false);assert(state.RumbleEmulationLeft==200&&rumble_shape.active());
  now=11;apply(zero,63,false);assert(state.RumbleEmulationLeft==100&&state.RumbleEmulationRight==25);
  state.RumbleEmulationLeft=7;state.RumbleEmulationRight=8;
  apply(input,63,true);assert(state.RumbleEmulationLeft==7&&state.RumbleEmulationRight==8&&!rumble_shape.active());
- state.UseRumbleNotHaptics=false;apply(input,63,false);
+ State native=input;native.EnableRumbleEmulation=native.UseRumbleNotHaptics=false;
+ config.rumble_mode=2;
+ apply(native,63,false);
  assert(state.RumbleEmulationLeft==7&&state.RumbleEmulationRight==8&&!rumble_shape.active());
- state.UseRumbleNotHaptics=true;apply(input,3,false);
- assert(state.RumbleEmulationLeft==7&&!rumble_shape.active());
+ assert(!state.UseRumbleNotHaptics&&!state.EnableImprovedRumbleEmulation);
+ apply(input,3,false);
+ assert(!state.EnableImprovedRumbleEmulation&&!rumble_shape.active());
+ apply(input,63,false);
+ assert(!state.EnableRumbleEmulation&&state.UseRumbleNotHaptics&&state.EnableImprovedRumbleEmulation);
+ assert(state.RumbleEmulationLeft==200&&state.RumbleEmulationRight==50);
+ apply(input,63,true);
+ assert(!state.UseRumbleNotHaptics&&!state.EnableImprovedRumbleEmulation);
+ config.rumble_mode=1;
+ State improved=input;improved.EnableRumbleEmulation=false;improved.EnableImprovedRumbleEmulation=true;
+ apply(improved,63,false);
+ assert(state.EnableRumbleEmulation&&state.UseRumbleNotHaptics&&!state.EnableImprovedRumbleEmulation);
+ config.rumble_release=0;
+ apply(zero,63,false);
+ assert(state.EnableRumbleEmulation&&!state.UseRumbleNotHaptics&&!state.EnableImprovedRumbleEmulation);
+ assert(state.RumbleEmulationLeft==0&&state.RumbleEmulationRight==0);
  puts("PASS: real integration gate: auto-haptics/native/short report bypass; raw source and triggers unchanged");
 }
 '''

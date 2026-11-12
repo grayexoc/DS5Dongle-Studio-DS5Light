@@ -28,9 +28,11 @@ DS5Light pins the collection to the selected serial, or exact collection-normali
 HID interface path when serial is absent. Ambiguous matches are not opened.
 It verifies framing/version/length/ranges and confirms current profile through
 the existing locked feature-query path after a notification. Duplicates are ignored.
-A slow 30-second current-profile safety check remains for missed events and
-mute policy; no repeated slot-list reads. Disconnect/error restores legacy checks.
-Legacy firmware without the collection uses the existing 3-second profile checks.
+DS5Light handles notifications on a 200 ms UI callback. An occupied command
+channel is retried without losing the forced mode check. The safety checks read
+the profile header every three seconds and confirm the mode on a ten-second
+schedule, without reading the slot list. Collection discovery retries briefly
+after reconnect, then uses the same safety checks on legacy firmware.
 A notification cannot activate a slot, write settings or restart a manually stopped engine.
 Studio drafts remain intact; visible clean settings can be re-read, dirty drafts are marked stale.
 

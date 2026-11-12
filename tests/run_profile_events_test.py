@@ -61,3 +61,5 @@ with (out/'arm-syntax.log').open('w',encoding='utf-8') as log:
   cmd,n=re.subn(r' -o \S+ -c ',' -fsyntax-only ',row['command']);assert n==1
   subprocess.run(cmd,cwd=row['directory'],stdout=log,stderr=log,check=True,shell=False)
 print('PASS ARM syntax main.cpp usb.cpp usb_descriptors.cpp config.cpp; no firmware build')
+
+

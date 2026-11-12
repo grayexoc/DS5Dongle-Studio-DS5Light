@@ -60,7 +60,7 @@ code+=extract('void state_report_sent(')+'\n'
 code+=extract('bool lightbar_fixed_wants_report(')+'\n'
 code+=extract('bool state_prepare_report(')+'\n'
 code+=extract('bool state_rumble_wants_report(')+'\n'
-code+=extract('void state_output_test(')+'\n'
+code+=extract('bool state_output_test(')+'\n'
 code+=r'''
 static bool legacy_prepare(uint8_t *data,bool force) {
     if(force || player_led_wants_report() || lightbar_fixed_wants_report() || state_rumble_wants_report()) {
@@ -209,7 +209,7 @@ int main() {
     uint8_t release_only[63]{};release_only[1]=8;
     state_report_sent(release_only,false);
     assert(player_led_wants_report());send();assert(!player_led_wants_report());
-    // Host release clears the player cache, not RGB. Explicit LIGHT_OUT clears RGB.
+    // Reset commands carry no RGB. Restore the last explicit RGB afterwards.
     memset(state.bytes,0,63);state.bytes[1]=0x14;state.bytes[43]=4;state.bytes[44]=90;
     uint8_t command[63]{};command[1]=8;
     state_host_led_update(command,1);assert(state.bytes[44]==90);
@@ -219,9 +219,35 @@ int main() {
     state_report_sent(data,false);state_set(data,63);assert(!(data[1]&8));
     command[1]=0;command[38]=2;command[41]=2;state.bytes[1]=4;state.bytes[44]=90;
     state_host_led_update(command,41);assert(state.bytes[44]==90);
-    state_host_led_update(command,42);assert(state.bytes[44]==0&&!(state.bytes[1]&4));
-    state_set(data,63);assert((data[38]&2)&&data[41]==2);
-    state_report_sent(data,false);state_set(data,63);assert(!(data[38]&2));
+    state_host_led_update(command,42);assert(state.bytes[44]==90&&(state.bytes[1]&4));
+    state_set(data,63);assert((data[38]&2)&&data[41]==2&&!(data[1]&0x14));
+    state_report_sent(data,false);state_set(data,63);
+    assert(!(data[38]&2)&&(data[1]&0x14)==0x14&&data[44]==90);
+    send();
+
+    // LIGHT_OUT and a switch from player-off to default share one restore.
+    memset(state.bytes,0,63);lightbar_fixed_policy.reset();player_led_sent.reset();
+    player_led_previous_mode=0;player_led_restore_pending=false;
+    config.player_led_mode=1;
+    assert(state_prepare_report(data,false));send();
+    config.player_led_mode=0;state_host_led_update(command,42);
+    assert(state_prepare_report(data,false));
+    assert((data[38]&2)&&data[41]==2&&!(data[1]&0x14));
+    state_report_sent(data,false);
+    assert(player_led_restore_pending&&state_prepare_report(data,false));
+    assert(!(data[38]&2)&&(data[1]&0x14)==0x14&&data[46]==255&&(data[43]&31)==4);
+    uint8_t stale_setup[63];memcpy(stale_setup,data,63);
+    stale_setup[38]|=2;stale_setup[41]=2;
+    state_report_sent(stale_setup,false);assert(player_led_restore_pending);
+    send();assert(!player_led_restore_pending&&!state_prepare_report(data,false));
+
+    // A host RGB of zero survives setup and is distinct from an absent colour.
+    uint8_t black[63]{};black[1]=4;
+    state_host_led_update(black,63);memset(state.bytes+44,0,3);send();
+    state_host_led_update(command,42);send();
+    state_set(data,63);
+    assert((data[1]&4)&&data[44]==0&&data[45]==0&&data[46]==0);
+    send();
     // No game running: native startup -> brown/off audio profile -> native startup.
     memset(state.bytes,0,63);lightbar_fixed_policy.reset();player_led_sent.reset();
     player_led_previous_mode=0;player_led_restore_pending=false;

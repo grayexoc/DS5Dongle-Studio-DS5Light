@@ -247,6 +247,7 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0xc5: { uint8_t mode{}; if (!read_config_value(mode, buffer, bufsize) || mode > 1) return false; new_config.usb_gamepad_mode = mode; break; }
 #endif
         case 0xc4: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize) || v > 2)return false; new_config.rumble_release=v; break; }
+        case 0xc6: { uint8_t v{}; if (!read_config_value(v, buffer, bufsize) || v > 2) return false; new_config.rumble_mode = v; break; }
         case 0xc2: { // Atomic RGB, u32 little-endian value 0x00RRGGBB.
             uint32_t v{};
             if (!read_config_value(v,buffer,bufsize) || v > 0xffffffu) return false;
@@ -417,6 +418,7 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0xc5: return write_config_value(buffer, bufsize, config.usb_gamepad_mode);
 #endif
         case 0xc4: return write_config_value(buffer, bufsize, config.rumble_release);
+        case 0xc6: return write_config_value(buffer, bufsize, config.rumble_mode);
         case 0xc2: return write_config_value(buffer, bufsize,
             (uint32_t(config.lightbar_r) << 16) | (uint32_t(config.lightbar_g) << 8) | config.lightbar_b);
         case 0xbb: { extern volatile uint8_t g_diag_pled_bits;  return write_config_value(buffer, bufsize, g_diag_pled_bits); }
@@ -1097,6 +1099,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     memcpy(reply + 48, &g_diag_rear_left_peak, 2);
                     memcpy(reply + 50, &g_diag_rear_right_peak, 2);
                     memcpy(reply + 52, &g_diag_usb_audio_blocks, 4);
+                    reply[56] = 1; // extended rumble test selectors
                 } else if (buffer[0] == 1) {
                     reply[2] = 0; bt_diagnostic_snapshot(reply + 9);
                 }
@@ -1109,11 +1112,10 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             uint8_t reply[63]{0x66, 0x1f, 1, 1};
             if (bufsize >= 5) {
                 reply[4] = buffer[0]; memcpy(reply + 5, buffer + 1, 4);
-                if (buffer[0] <= 6 && (buffer[0] == 0 ||
-                    (bt_is_ready() && !audio_processing_active() && get_config().auto_haptics_enable == 0 &&
-                     manual_power_state() == ManualPowerState::Idle))) {
+                if ((buffer[0] == 0 ||
+                     (bt_is_ready() && !audio_processing_active() && get_config().auto_haptics_enable == 0 &&
+                      manual_power_state() == ManualPowerState::Idle)) && state_output_test(buffer[0])) {
                     reply[2] = 0;
-                    state_output_test(buffer[0]);
                     manual_power_note_activity(5000);
                 }
             }

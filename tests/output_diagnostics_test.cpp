@@ -17,13 +17,16 @@ int main() {
     std::memset(out, 0x55, 47);
     uint8_t original[47];std::memcpy(original, out, 47);
     test.apply(out, 0);assert(std::memcmp(out, original, 47) == 0);
-    for (uint8_t kind = 1; kind <= 6; ++kind) {
+    for (uint8_t kind = 1; kind <= 15; ++kind) {
         test.reset();test.start(kind, 0xfffffff0);
         std::memcpy(out, original, 47);
         test.apply(out, 0xfffffff0);
         assert(test.pending());
-        assert(out[2] == (kind == 2 || kind == 3 ? 64 : 0));
-        assert(out[3] == (kind == 1 || kind == 3 ? 64 : 0));
+        const int left[] =  {0,64, 0,64,0,0,0,128,  0,128,64, 0,64,128,  0,128};
+        const int right[] = {0, 0,64,64,0,0,0,  0,128,128, 0,64,64,  0,128,128};
+        assert(out[2] == right[kind] && out[3] == left[kind]);
+        assert((out[0] & 3) == (kind >= 10 ? 2 : (left[kind] || right[kind] ? 3 : 1)));
+        assert(bool(out[38] & 4) == (kind >= 10));
         assert(out[10] == (kind == 5 ? 0x21 : 5));
         assert(out[21] == (kind == 4 ? 0x21 : 5));
         for (unsigned i : {1u, 4u, 5u, 6u, 7u, 8u, 9u, 36u, 39u, 43u, 44u, 45u, 46u})

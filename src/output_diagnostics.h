@@ -32,10 +32,14 @@ struct OutputTest {
     void apply(uint8_t *data, uint32_t now) {
         if (kind && uint32_t(now - started) >= 2000) { kind = 0; release = true; }
         if (!pending()) return;
-        data[0] = (data[0] & ~3u) | (kind >= 1 && kind <= 3 ? 3u : 1u);
-        data[38] &= ~4u;
-        data[2] = kind == 2 || kind == 3 ? 64 : 0; // right motor
-        data[3] = kind == 1 || kind == 3 ? 64 : 0;
+        // 1..3: classic 64; 7..9: classic 128; 10..12: improved 64; 13..15: improved 128.
+        const bool improved = kind >= 10;
+        const uint8_t sides = kind >= 7 ? (kind - 7) % 3 + 1 : (kind <= 3 ? kind : 0);
+        const uint8_t strength = (kind >= 7 && kind <= 9) || kind >= 13 ? 128 : 64;
+        data[0] = (data[0] & ~3u) | (improved ? 2u : (sides ? 3u : 1u));
+        data[38] = (data[38] & ~4u) | (improved ? 4u : 0u);
+        data[2] = sides & 2 ? strength : 0; // right motor
+        data[3] = sides & 1 ? strength : 0;
         // Tests never leave trigger resistance behind; restore the profile after ACK.
         data[0] |= 0x0c;
         std::memset(data + 10, 0, 22);
