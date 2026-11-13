@@ -46,6 +46,7 @@ void bt_blacklist_persist_if_dirty();
 
 // Core0 only: invalidate audio belonging to a closed stream.
 void bt_discard_audio();
+void bt_discard_speaker_audio();
 
 bool bt_control_send(const uint8_t *data, uint16_t len);
 void bt_diagnostic_snapshot(uint8_t *data); // nine LE32 counters + LE16 queue depth

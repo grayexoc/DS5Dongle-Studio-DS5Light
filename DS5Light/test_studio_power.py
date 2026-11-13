@@ -62,7 +62,7 @@ class StateTests(unittest.TestCase):
         self.identity=DeviceIdentity(b'p','serial')
         self.app=NS(studio=NS(busy=False,binding=NS(snapshot=lambda:self.identity),observed_profile={},discover=Mock(),
                               _show_disconnected=Mock()),
-                    studio_settings=NS(busy=False,built=False,stop_live=Mock()),engine=None,
+                    studio_settings=NS(busy=False,built=False,stop_live=Mock(),invalidate_slot_cache=Mock()),engine=None,
                     _closing=False,_close_requested=False,_stopping=False,status=NS(set=Mock()),
                     battery=NS(generation=0),brand_wordmark=NS(show_status=Mock()),render=Mock())
         self.power=StudioPower(self.app);self.app.studio_power=self.power

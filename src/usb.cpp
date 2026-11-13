@@ -46,6 +46,21 @@ float volume[2] = {-100.0f,0.0f}; // 0: SPEAKER(0x02) 1: MIC(0x05)
 #define UAC1_ENTITY_SPK_FEATURE_UNIT    0x02
 #define UAC1_ENTITY_MIC_FEATURE_UNIT    0x05
 
+// UAC1 transmits signed dB in units of 1/256 dB.
+static constexpr int speaker_volume_span = 100 * 256;
+static constexpr int controller_volume_max = 127;
+
+static uint8_t speaker_level_from_usb(int16_t db_q8) {
+    const int offset = std::clamp(speaker_volume_span + db_q8, 0, speaker_volume_span);
+    return (offset * controller_volume_max + speaker_volume_span / 2) / speaker_volume_span;
+}
+
+static int16_t speaker_level_to_usb(uint8_t level) {
+    const int clamped = std::min<int>(level, controller_volume_max);
+    return (clamped * speaker_volume_span + controller_volume_max / 2) / controller_volume_max -
+           speaker_volume_span;
+}
+
 /*int main() {
     board_init();
 
@@ -96,22 +111,26 @@ static bool audio10_set_req_entity(tusb_control_request_t const *p_request, uint
 
             case AUDIO10_FU_CTRL_VOLUME:
                 switch (p_request->bRequest) {
-                    case AUDIO10_CS_REQ_SET_CUR:
+                    case AUDIO10_CS_REQ_SET_CUR: {
                         // Only 1st form is supported
                         TU_VERIFY(p_request->wLength == 2);
 
-                        volume[index] = static_cast<float>(*reinterpret_cast<int16_t const *>(pBuff)) / 256;
-                        if (index == 1) volume[index] = std::clamp(volume[index], 0.0f, 48.0f);
-                        if (entityID == UAC1_ENTITY_SPK_FEATURE_UNIT) {
-                            const auto level = static_cast<uint8_t>(std::clamp(100.0f + volume[index], 0.0f, 100.0f));
+                        const auto db_q8 = static_cast<int16_t>(pBuff[0] | (uint16_t(pBuff[1]) << 8));
+                        if (index == 0) {
                             auto &c = get_config();
+                            if (c.lock_volume) return true;
+                            const auto level = speaker_level_from_usb(db_q8);
                             c.speaker_volume = level;
                             if (c.sync_spk_headset_volume) c.headset_volume = level;
                             set_volume(c.speaker_volume, c.headset_volume);
+                            volume[index] = speaker_level_to_usb(level) / 256.0f;
+                        } else {
+                            volume[index] = std::clamp(db_q8 / 256.0f, 0.0f, 48.0f);
                         }
 
-                        TU_LOG2("    Set Volume: %d dB of entity: %u\r\n", volume[index], entityID);
+                        TU_LOG2("    Set Volume: %d dB of entity: %u\r\n", static_cast<int>(volume[index]), entityID);
                         return true;
+                    }
 
                     default:
                         return false; // not supported
@@ -146,10 +165,8 @@ static bool audio10_get_req_entity(uint8_t rhport, tusb_control_request_t const 
                 switch (p_request->bRequest) {
                     case AUDIO10_CS_REQ_GET_CUR:
                         TU_LOG2("    Get Volume of entity: %u\r\n", entityID); {
-                            if (entityID == UAC1_ENTITY_SPK_FEATURE_UNIT) {
-                                volume[index] = std::min(static_cast<int>(get_config().speaker_volume),100) - 100;
-                            }
-                            int16_t vol = volume[index] * 256; // convert to 1/256 dB units
+                            int16_t vol = index == 0 ? speaker_level_to_usb(get_config().speaker_volume) :
+                                static_cast<int16_t>(volume[index] * 256);
                             return tud_audio_buffer_and_schedule_control_xfer(rhport, p_request, &vol, sizeof(vol));
                         }
 
@@ -243,10 +260,11 @@ void tud_suspend_cb(bool remote_wakeup_en) {
 namespace {
 bool profile_event_subscribed = false;
 uint8_t profile_event_data[15] = {'S','L','P','1',1};
-uint8_t profile_event_state[4] = {255,255,255,255};
+uint8_t profile_event_state[6] = {255,255,255,255,255,255};
 uint32_t profile_event_seq = 0, profile_event_next = 0, profile_event_lease = 0;
-bool profile_event_pending = false;
+bool profile_event_pending = false, profile_event_slot_dirty = false;
 }
+void usb_profile_event_slot_saved() { profile_event_slot_dirty = true; }
 uint16_t usb_profile_event_get(uint8_t *buffer, uint16_t length) {
     if (length < sizeof(profile_event_data)) return 0;
     profile_event_subscribed = true;
@@ -263,18 +281,22 @@ void usb_profile_event_task() {
         profile_event_next = now + 100;
         uint8_t slot; bool edited;
         active_profile_get(slot, edited, nullptr);
-        const uint8_t state[4] = {slot, uint8_t(edited), get_config().auto_haptics_enable,
+        const auto &cfg = get_config();
+        const uint8_t state[6] = {slot, uint8_t(edited), cfg.auto_haptics_enable,
 #ifdef ENABLE_WAKE_HID
-            uint8_t(macro_uses_mute_button())
+            uint8_t(macro_uses_mute_button()),
 #else
-            0
+            0,
 #endif
+            cfg.mix_native_level, cfg.ah_dsp_source
         };
-        if (memcmp(state, profile_event_state, sizeof(state))) {
+        if (profile_event_slot_dirty || memcmp(state, profile_event_state, sizeof(state))) {
+            profile_event_slot_dirty = false;
             memcpy(profile_event_state, state, sizeof(state));
             ++profile_event_seq;
             memcpy(profile_event_data + 5, &profile_event_seq, 4);
-            memcpy(profile_event_data + 9, state, sizeof(state));
+            // Keep the v1 wire layout. New clients read the extra state via 0x67.
+            memcpy(profile_event_data + 9, state, 4);
             profile_event_pending = true;
         }
     }

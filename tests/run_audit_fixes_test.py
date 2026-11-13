@@ -154,21 +154,30 @@ run('usb-controls',r"""
 #define AUDIO10_CS_REQ_GET_MAX 0x83
 #define AUDIO10_CS_REQ_GET_RES 0x84
 struct tusb_control_request_t{uint16_t wValue,wIndex,wLength;uint8_t bRequest;};
-struct Config{uint8_t speaker_volume=60,headset_volume=70,sync_spk_headset_volume=0;}cfg;
+struct Config{uint8_t speaker_volume=60,headset_volume=70,sync_spk_headset_volume=0,lock_volume=0;}cfg;
 Config&get_config(){return cfg;}
 uint8_t speaker=0,headset=0,mute[2]{};
 float volume[2]{};uint8_t reply[8]{};
 void set_volume(uint8_t s,uint8_t h){speaker=s;headset=h;}
 bool tud_audio_buffer_and_schedule_control_xfer(uint8_t,const tusb_control_request_t*,const void*p,unsigned n){memcpy(reply,p,n);return true;}
-"""+extract(s,'static bool audio10_set_req_entity(')+'\n'+extract(s,'static bool audio10_get_req_entity(')+r"""
+"""+s[s.index('static constexpr int speaker_volume_span'):s.index('/*int main()')]+extract(s,'static bool audio10_set_req_entity(')+'\n'+extract(s,'static bool audio10_get_req_entity(')+r"""
 int main(){
  tusb_control_request_t q{2<<8,2<<8,2,1};int16_t input=-20*256;
  assert(audio10_set_req_entity(&q,reinterpret_cast<uint8_t*>(&input)));
- assert(speaker==80&&headset==70&&cfg.speaker_volume==80);
- q.bRequest=0x81;assert(audio10_get_req_entity(0,&q));int16_t got;memcpy(&got,reply,2);assert(got==input);
+ assert(speaker==102&&headset==70&&cfg.speaker_volume==102);
+ q.bRequest=0x81;assert(audio10_get_req_entity(0,&q));int16_t got;memcpy(&got,reply,2);assert(got==speaker_level_to_usb(102));
+ cfg.lock_volume=1;cfg.sync_spk_headset_volume=1;input=0;q.bRequest=1;
+ assert(audio10_set_req_entity(&q,reinterpret_cast<uint8_t*>(&input)));
+ assert(speaker==102&&headset==70&&cfg.speaker_volume==102&&cfg.headset_volume==70);
+ q.bRequest=0x81;assert(audio10_get_req_entity(0,&q));memcpy(&got,reply,2);assert(got==speaker_level_to_usb(102));
+ cfg.lock_volume=0;
  cfg.sync_spk_headset_volume=1;input=-100*256;q.bRequest=1;
  assert(audio10_set_req_entity(&q,reinterpret_cast<uint8_t*>(&input)));assert(speaker==0&&headset==0);
- input=0;assert(audio10_set_req_entity(&q,reinterpret_cast<uint8_t*>(&input)));assert(speaker==100&&headset==100);
+ input=0;assert(audio10_set_req_entity(&q,reinterpret_cast<uint8_t*>(&input)));assert(speaker==127&&headset==127);
+ assert(speaker_level_from_usb(-32768)==0&&speaker_level_from_usb(32767)==127);
+ assert(speaker_level_from_usb(-12800)==64);
+ for(int level=0;level<=127;++level)
+  assert(speaker_level_from_usb(speaker_level_to_usb(level))==level);
  q.wLength=1;assert(!audio10_set_req_entity(&q,reinterpret_cast<uint8_t*>(&input)));
  q={1<<8,5<<8,1,1};uint8_t on=1;assert(audio10_set_req_entity(&q,&on));assert(mute[1]==1);
  puts("PASS: actual USB volume round trip, sync on/off, bounds, malformed length, mic mute command");
@@ -206,21 +215,47 @@ uint32_t mic_stream_generation=0, mic_now_mock=0;
 bool mic_active=true;
 uint32_t get_absolute_time(){return mic_now_mock;} uint32_t to_ms_since_boot(uint32_t t){return t;}
 float volume[2]{};
-int stale_mic=0;int mic_decode_fifo;uint8_t mute[2]{};int16_t captured[960]{};
+int stale_mic=0, playback_ticks=0;int mic_decode_fifo;uint8_t mute[2]{};int16_t captured[960]{};
 bool queue_try_remove(int*,mic_decode_element*p){if(!p)return false;for(int i=0;i<480;i++)p->data[i]=i+1;p->len=960;p->generation=mic_stream_generation-stale_mic;return true;}
 unsigned write_limit=1920,capture_bytes=0;
 uint16_t tud_audio_write(const void*p,uint16_t n){n=std::min<unsigned>(n,write_limit);memcpy(captured,p,n);capture_bytes=n;return n;}
 void process(){
 """+s[a:b]+r"""
+ ++playback_ticks;
 }
 int main(){process();assert(captured[0]==1&&captured[1]==1&&captured[959]==480);mute[1]=1;process();for(auto x:captured)assert(x==0);mute[1]=0;process();assert(captured[0]==1);volume[1]=20;process();assert(captured[959]==4800);volume[1]=48;process();assert(captured[959]==32767);volume[1]=-20;process();assert(captured[959]==480);volume[1]=0;write_limit=400;process();assert(captured[199]==100);process();assert(captured[0]==101);
  mic_active=false;capture_bytes=0;process();assert(capture_bytes==0);mic_active=true;++mic_stream_generation;write_limit=1920;process();assert(captured[0]==1);
  write_limit=0;process();mic_now_mock+=20;write_limit=1920;process();assert(captured[0]==1);
- capture_bytes=0;stale_mic=1;process();assert(capture_bytes==0);stale_mic=0;process();assert(capture_bytes>0);
+ capture_bytes=0;stale_mic=1;int before=playback_ticks;process();assert(capture_bytes==0&&playback_ticks==before+1);stale_mic=0;process();assert(capture_bytes>0);
  puts("PASS: USB mic gain/mute, partial writes, close/reopen, bounded pending age");}
 """)
 
 s=(root/'src/audio.cpp').read_text(encoding='utf-8')
+idle=s[s.index('    if (!connected) {\n        if (link_changed)'):s.index('    // Mic playback')]
+run('audio-idle',r"""
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+bool connected=false,link_changed=false,discard_usb=false,headset_state_known=true;
+unsigned mic_stream_generation=0,mic_fifo=0,mic_decode_fifo=0,usb_bytes=0,clears=0;
+uint8_t g_oled_ah_input_peak=1,g_oled_ah_output_peak=1;
+bool queue_is_empty(unsigned *q){return *q==0;}
+bool queue_try_remove(unsigned *q,void *){if(!*q)return false;--*q;return true;}
+unsigned tud_audio_available(){return usb_bytes;}
+void tud_audio_clear_ep_out_ff(){++clears;usb_bytes=0;}
+void tick(){
+"""+idle+r"""
+}
+int main(){
+ tick();assert(!mic_stream_generation&&!clears);
+ mic_fifo=2;mic_decode_fifo=2;link_changed=true;discard_usb=true;tick();
+ assert(mic_stream_generation==1&&!headset_state_known&&!mic_fifo&&!mic_decode_fifo&&!clears);
+ link_changed=false;discard_usb=false;mic_decode_fifo=1;usb_bytes=12;tick();tick();
+ assert(!mic_decode_fifo&&!usb_bytes&&clears==1&&mic_stream_generation==1);
+ assert(!g_oled_ah_input_peak&&!g_oled_ah_output_peak);
+ puts("PASS: disconnect resets once; late mic frames and new USB bytes still discarded");
+}
+""")
 a=s.index('    const bool connected = bt_is_ready();',s.index('void __not_in_flash_func(audio_loop)'))
 b=s.index('    const bool speaker_enabled',a)
 run('stream-reset',r"""
@@ -443,20 +478,42 @@ run('native-continuity',continuity_code)
 
 # Consume actual encoded frames once, in order; never wait for core1.
 s=(root/'src/audio.cpp').read_text(encoding='utf-8')
+run('speaker-payload-route-change',r"""
+#include <cstdint>
+#include <cstring>
+#include <cassert>
+"""+s[s.index('#define REPORT_SIZE'):s.index('// #define VOLUME_GAIN')]+extract(s,'bool audio_strip_speaker_payload(')+r"""
+int main() {
+ for (int native=0;native<2;++native) {
+  uint8_t report[REPORT_SIZE];memset(report,0xa5,sizeof(report));
+  report[0]=REPORT_ID;
+  int tag=native?77:142;
+  report[tag]=native?0x93:0x96;report[tag+1]=200;
+  assert(!audio_strip_speaker_payload(report,sizeof(report)-1,native));
+  assert(audio_strip_speaker_payload(report,sizeof(report),native));
+  assert(!audio_strip_speaker_payload(report,sizeof(report),native));
+  for(int i=1;i<REPORT_SIZE;++i)
+   assert(report[i]==(i>=tag&&i<tag+202?0:0xa5));
+ }
+}
+""")
 run('speaker-result-queue',r"""
 #include <cstdint>
 #include <cstring>
 #include <cassert>
 #include <cstdio>
+#include <atomic>
 using critical_section_t=int;
 int locked=0;void critical_section_enter_blocking(int*){assert(!locked);locked=1;}
 void critical_section_exit(int*){assert(locked);locked=0;}
 uint32_t now=0;uint32_t get_absolute_time(){return now;}uint32_t to_ms_since_boot(uint32_t x){return x;}
 """+s[s.index('struct SpeakerFrame'):s.index('static uint8_t opus_silence_buf')]+extract(s,'static void publish_speaker_frame(')+'\n'+extract(s,'static bool take_speaker_frame(')+r"""
 bool speaker_enabled=true,speaker_was_enabled=true,reset_stream=false,speaker_filters_reset=false;
+bool plug_headset=false,speaker_was_headset=false;
+unsigned audio_buf_pos=0;
 int discards=0;void discard_speaker_queue(){++discards;}
 void transition(){
-"""+s[s.index('    if (speaker_enabled != speaker_was_enabled || reset_stream)'):s.index('\n#endif',s.index('    if (speaker_enabled != speaker_was_enabled || reset_stream)'))]+r"""
+"""+s[s.index('    const bool speaker_route_changed'):s.index('\n#endif',s.index('    const bool speaker_route_changed'))]+r"""
 }
 """+r"""
 int main(){
@@ -482,6 +539,11 @@ int main(){
   publish_speaker_frame(data,speaker_generation,++seq);assert(take_speaker_frame(out));
  }
  assert(discards==100&&g_speaker_stats.resets==100);
+ const uint32_t old=speaker_generation;
+ reset_stream=false;audio_buf_pos=10;plug_headset=true;transition();
+ assert(audio_buf_pos==0&&speaker_generation==old+1&&speaker_was_headset);
+ publish_speaker_frame(data,old,++seq);assert(!take_speaker_frame(out));
+ transition();assert(speaker_generation==old+1);
  assert(!locked);puts("PASS: FIFO, one-shot consumption, capacity, stale skip, generation and timer wrap");
 }
 """)
@@ -564,10 +626,10 @@ bool queue_try_add(std::deque<uint8_t>*q,uint8_t*p){unsigned cap=q==&audio_fifo?
 bool queue_is_full(std::deque<uint8_t>*q){return q->size()==2;}
 void release_speaker_block(uint8_t i){assert(queue_try_add(&free_speaker_blocks,&i));}
 """+extract(s,'static void __not_in_flash_func(publish_speaker_block)')+r"""
-int main(){float pcm[1024]{};for(int i=0;i<5;i++)publish_speaker_block(pcm,1);
+int main(){float pcm[1024]{};for(int i=0;i<5;i++)publish_speaker_block(pcm,1,1+i%2);
  assert(g_speaker_stats.pcm_created==5&&g_speaker_stats.pcm_dropped==3);
- uint8_t i;assert(queue_try_remove(&audio_fifo,&i));assert(speaker_blocks[i].sequence==4);
- release_speaker_block(i);assert(queue_try_remove(&audio_fifo,&i));assert(speaker_blocks[i].sequence==5);
+ uint8_t i;assert(queue_try_remove(&audio_fifo,&i));assert(speaker_blocks[i].sequence==4&&speaker_blocks[i].channels==2);
+ release_speaker_block(i);assert(queue_try_remove(&audio_fifo,&i));assert(speaker_blocks[i].sequence==5&&speaker_blocks[i].channels==1);
  puts("PASS: source identities survive PCM overflow; drops counted before encoder");}
 """)
 

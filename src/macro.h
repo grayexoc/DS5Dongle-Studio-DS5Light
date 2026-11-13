@@ -317,6 +317,7 @@ static_assert(sizeof(MacroTable) <= 4096, "macro table must fit one flash sector
 
 #include "macro_layer.h"
 bool macro_take_profile(uint8_t &slot, bool &chime, uint32_t &source);
+bool macro_take_power_off();
 void macro_block_until_release(uint32_t source);
 uint32_t macro_shift_key();
 

@@ -114,6 +114,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
     def invalidate_profile(self):
         # Keep drafts, but never apply the previous profile's cached values.
         self.external_stale=True;self.write_ready=False
+        self.invalidate_slot_cache()
         self.standby_policy=(None,None)
         if self.built:
             self.identity.set(_ui_tr('프로필 변경됨 · 다시 조회 필요'))
@@ -670,10 +671,20 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
     def choose_device(self,event=None):
         i=self.device_choice.current()
         if 0<=i<len(self.device_rows):
-            if self.doc.dirty and not messagebox.askyesno(_ui_tr('편집 취소'),_ui_tr('다른 장치를 읽으면 미적용 변경이 취소됩니다.'),parent=self.parent):return
             target=self.device_rows[i]['path']
+            if target==self.path and self.loaded and self.write_ready and not self.external_stale:return
+            if target!=self.path and self.doc.dirty and not messagebox.askyesno(_ui_tr('편집 취소'),_ui_tr('다른 장치를 읽으면 미적용 변경이 취소됩니다.'),parent=self.parent):
+                previous=next((n for n,row in enumerate(self.device_rows) if row['path']==self.path),None)
+                if previous is None:self.device_choice.set('')
+                else:self.device_choice.current(previous)
+                return
+            if target==self.path:
+                self.read()
+                return
             def choose():
-                self.doc=SettingsDocument();self.profile_stamp=None;self.path=target;self.external_stale=False;self.loaded=False;self.write_ready=False;self.read(confirm=False)
+                self.doc=SettingsDocument();self.profile_stamp=None;self.slots=[]
+                self.path=target;self.external_stale=False;self.loaded=False;self.write_ready=False
+                self.read(confirm=False)
             if self.app.engine and target!=self.path:self.app.stop(on_complete=choose)
             else:choose()
     def read(self,confirm=True):
@@ -694,6 +705,9 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             if self.built:self.progress.configure(text=_ui_tr('프로필 조회가 끝난 후 다시 시도하세요.'))
             return
         self.stop_live()
+        if kind in ('read','slots','restore','slot_save','recommended','bootloader'):
+            self.invalidate_slot_cache()
+        if kind=='slots':self.entry_attempts.add('slots')
         self.progress.clear()
         self._transfer_job=kind if kind in ('backup','restore') else None
         self.busy=True;self.cancel.clear()
@@ -876,6 +890,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         except queue.Empty:self.poll_id=self.parent.after(60,self.poll);return
         if kind=='progress':
             if isinstance(result,dict) and result.get('reconnecting'):
+                self.invalidate_slot_cache()
                 self.reconnect_wait=True;self.write_ready=False
                 self.progress.configure(text=_ui_tr('Pico 재연결 대기 중'))
                 self.update_state()
@@ -915,7 +930,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             self.device_rows=result['rows'];self.device_choice.configure(values=[d.get('product_string','DualSense')+f' · {i+1:02d}' for i,d in enumerate(self.device_rows)])
             if result.get('choose'):self.progress.configure(text=_ui_tr('연결 장치를 선택한 뒤 새로 고침을 누르세요.'));self.loaded=False
             else:
-                if self.path is not None and self.path!=result['path']:self.doc=SettingsDocument()
+                if self.path!=result['path']:
+                    self.doc=SettingsDocument();self.slots=[]
                 self.path=result['path'];self.device_choice.current(next(i for i,d in enumerate(self.device_rows) if d['path']==self.path));self.doc.revert();self.doc.load(result['values']);self.doc.effects={};self.doc.effect_baseline={};self.doc.macros={};self.doc.macro_baseline={};self.invalid.clear();self.loaded=True
                 self.entry_attempts.discard('macros')
                 self._policy_save_errors={}
@@ -973,6 +989,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 state.update({key:self.doc.baseline[key] for key in ('mix_native_level','ah_dsp_source') if key in self.doc.baseline})
                 self.app.studio._observe_profile(self.path,state)
             if result.get('profile_saved'):
+                self.invalidate_slot_cache()
                 self.profile_save_needed=False
                 self.app.studio.catalog_invalid=True;self.app.studio.last_read=-1e9
                 target=result.get('target')
@@ -1012,14 +1029,20 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             self.progress.configure(text=ui_text('Pico 현재 상태','Current Pico status')+f' · {side} · {status} · '+
                                     ui_text(f'공통 반동 신호 {signal}/255',f'Shared recoil signal {signal}/255'),kind='action')
         elif kind=='chime_preview':self.progress.configure(text=_ui_tr('전환 신호음 요청 완료 · 프로필은 바뀌지 않았습니다.'),kind='info')
-        elif kind=='slots':self.slots=result;self.progress.configure(text=_ui_tr('슬롯 목록 새로 고침 완료'),kind='info')
+        elif kind=='slots' and not self.external_stale:
+            self.slots=result;self.slots_cache_path=self.path
+            self.progress.configure(text=_ui_tr('슬롯 목록 새로 고침 완료'),kind='info')
         elif kind=='slot_save':
             self.profile_save_needed=False;self.progress.configure(text=_ui_tr('프로필 슬롯 저장 응답 확인'));self.app.studio.last_read=-1e9;self.app.studio.catalog_invalid=True
             if isinstance(result,dict):
                 from studio_slots import Slot
                 self.slots=[Slot(s.index,'saved',result['name']) if s.index==result['index'] else s for s in self.slots]
         elif kind=='bootloader':self.progress.configure(text=_ui_tr('Pico UF2 설치 모드 요청 완료'));self.loaded=False;self.write_ready=False;self.path=None;self.pico_recognized=False
-        elif kind=='restore':self.progress.configure(text=_ui_tr('프로필 {0}개 복원 응답 확인').format(f'{len(result)}'));self.app.studio.last_read=-1e9;self.loaded=False
+        elif kind=='restore':
+            self.slots=[]
+            self.external_stale=True;self.write_ready=False
+            self.entry_attempts.discard('fields')
+            self.progress.configure(text=_ui_tr('프로필 {0}개 복원 응답 확인').format(f'{len(result)}'));self.app.studio.last_read=-1e9;self.loaded=False
         elif kind=='backup':
             name=filedialog.asksaveasfilename(parent=self.parent,defaultextension='.json',initialfile='ds5dongle-slots.json',filetypes=[('JSON','*.json')])
             if name:
@@ -1053,7 +1076,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         if kind=='profile_data' and not error and not self.app._close_requested:
             callback,self.after_records=self.after_records,None
             if callback:self.parent.after_idle(callback)
-        if kind in ('read','entry_read','slots','macros'):self.schedule_entry()
+        if kind in ('read','entry_read','slots','macros') or not error and kind in ('apply','recommended','slot_save','restore','shared_save'):
+            self.schedule_entry()
         if resume and not error and not self.app._close_requested:
             token=getattr(self,'_resume_token',None)
             def resume_audio():
@@ -1096,6 +1120,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         pass # Per-profile switches live beside the definitions they enable.
     def render_macros(self):
         from studio_macro_design import category,populated
+        from studio_shift import POWER_OFF
         box=self.card(_ui_tr('Pico 매핑·매크로'))
         ttk.Button(box,text=_ui_tr('매핑 목록 새로 고침'),command=self.read_macro_table).grid(row=1,column=0,sticky='w',pady=(0,8))
         ttk.Button(box,text=_ui_tr('+ 매핑·매크로 추가'),style='Accent.TButton',command=self.new_macro,state='normal' if self.loaded and not self.busy else 'disabled').grid(row=1,column=1,sticky='e',pady=(0,8))
@@ -1127,9 +1152,10 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             if source:
                 symbols=tk.Frame(index_box,bg=CARD);symbols.pack(side='top',pady=(0,2))
                 GlyphStrip(symbols,source,limit=3).pack(side='left')
-                if data[17] and data[17]<len(OUT_BUTTONS):
+                output=data[17]
+                if 0<output<len(OUT_BUTTONS) or output==POWER_OFF:
                     tk.Label(symbols,text='→',bg=CARD,fg=GOLD).pack(side='left',padx=6)
-                    GlyphStrip(symbols,[OUT_BUTTONS[data[17]]]).pack(side='left')
+                    GlyphStrip(symbols,[_ui_tr('듀얼센스 전원') if output==POWER_OFF else OUT_BUTTONS[output]]).pack(side='left')
             tk.Label(summary,text=self.macro_summary(data),bg=CARD,fg=MUTED,wraplength=255,justify='left',anchor='w').pack(anchor='w')
             tk.Label(row,textvariable=status,bg=CARD,fg=GOLD,font=(_ui_tr('맑은 고딕'),8),anchor='w').grid(row=2,column=1,sticky='w',pady=(3,0))
             ttk.Button(row,text=_ui_tr('편집'),command=lambda i=i:self.edit_macro(i),width=5).grid(row=0,column=2,rowspan=3,padx=4)
@@ -1203,7 +1229,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         mode = values.get(prefix + 'mode', 0)
         shape = values.get(prefix + 'shape', 0)
         enabled = not self.busy and prefix + 'mode' in values and prefix + 'shape' in values
-        box = self.card(ui_text('커스텀 트리거', 'Custom triggers'))
+        title = ui_text('커스텀 트리거', 'Custom triggers')
+        box = self.card(title)
         tabs = tk.Frame(box, bg=CARD)
         tabs.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(0, 8))
 
@@ -1272,8 +1299,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             self.progress.clear()
             self.refresh_read_extras()
             self.update_state()
-            if values.get(prefix+'mode'):
-                self.reveal_trigger_field(fast_depth if selected.get()==fast_name else prefix+'strength')
+            card = self.search_targets[title]
+            self.restore_scroll_offset(card.winfo_rooty()-self.body.winfo_rooty()-8)
 
         choice.bind('<<ComboboxSelected>>', select)
         row = 3

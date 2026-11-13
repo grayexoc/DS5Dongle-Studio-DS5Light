@@ -1,6 +1,6 @@
 import copy,unittest
 from unittest.mock import patch
-from studio_shift import set_shift_key,shift_key,validate_extension
+from studio_shift import POWER_OFF,set_shift_key,shift_key,validate_extension
 from studio_macro_design import MacroDraft,OUTPUTS,conflicts
 from studio_records import macro_records
 from studio_settings_protocol import SettingsClient
@@ -51,6 +51,22 @@ class ShiftModelTests(unittest.TestCase):
         with patch.object(client,'command',return_value=bytes([0x66,24,0,0])) as command:
             client.write_macro(0,row);self.assertEqual(command.call_count,1)
             self.assertEqual(command.call_args.args[0],24)
+
+    def test_power_off_mapping_round_trip_and_capability_gate(self):
+        row=[0]*35;row[0]=1
+        draft=MacroDraft(row)
+        record=draft.build(dict(draft.initial,output_kind='controller',output=POWER_OFF),strict=True)
+        self.assertEqual(MacroDraft(macro_records({'0':record})['0']).initial['output_kind'],'controller')
+        for bits in (0x0f,0x1f):
+            client=SettingsClient(object())
+            capability=bytes([0x66,0x20,0,1,0,0,0,0,0,bits])
+            with patch.object(client,'command',side_effect=[capability,bytes([0x66,24,0])]) as command:
+                if bits==0x0f:
+                    with self.assertRaises(RuntimeError):client.write_macro(0,record)
+                    self.assertEqual([c.args[0] for c in command.call_args_list],[0x20])
+                else:
+                    client.write_macro(0,record)
+                    self.assertEqual([c.args[0] for c in command.call_args_list],[0x20,24])
 
 
 import test_studio_settings as fixture
@@ -117,6 +133,27 @@ class ShiftUITests(unittest.TestCase):
             editor.preview_chime();self.assertEqual(task.call_args.args[0],'chime_preview');hid.assert_not_called()
             editor.commit();hid.assert_not_called()
         self.assertEqual(ui.doc.macros['0'][5]&96,96)
+
+    def test_power_off_editor_stages_and_reopens_under_controller_outputs(self):
+        from studio_macro_editor import MacroEditor
+        ui=self.prepare();row=[0]*35;row[0]=1
+        editor=MacroEditor(ui,0,initial=row)
+        editor.output_kind.set(OUTPUTS['controller'])
+        self.assertEqual(len(editor.output_kind_buttons),4)
+        editor.output_control.toggle()
+        for name in ('Create','Options','듀얼센스 전원'):
+            index=editor.output_control.values.index(name)
+            self.assertIsNotNone(editor.output_control.tiles[index].image)
+        editor.output_control.choose(editor.output_control.values.index('듀얼센스 전원'))
+        self.assertFalse(editor.output_record.winfo_manager())
+        with patch.object(ui,'with_client') as hid:
+            editor.commit()
+            hid.assert_not_called()
+        self.assertEqual(ui.doc.macros['0'][17],POWER_OFF)
+        editor=MacroEditor(ui,0)
+        self.assertEqual(editor.output_kind.get(),OUTPUTS['controller'])
+        self.assertEqual(editor.output.get(),'듀얼센스 전원')
+        editor.close()
 
     def test_inline_choice_has_icons_and_creates_no_window(self):
         from controller_glyphs import ControllerChoice

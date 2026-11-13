@@ -1,3 +1,31 @@
+# v1.0.12 Experimental · Local test build / 로컬 시험 빌드
+
+DS5Light-win-x64-v1.0.12-Experimental.zip · ds5-studio-light_v43.uf2 (Pico 2 W)
+
+- Device Diagnostics lists Windows audio outputs without the Studio HID, distinguishes the speaker and headset routes, and checks speaker pipeline counters on Studio v43.
+- Studio v43 continues USB playback when a stale mic frame is discarded and avoids redundant disconnected audio resets.
+
+- 장치 진단에서 Studio HID 없이 Windows 오디오 출력을 조회합니다. Studio v43에서는 스피커·헤드셋 경로와 오디오 처리 카운터를 확인할 수 있습니다.
+- Studio v43은 오래된 마이크 프레임을 폐기해도 USB 재생 처리를 이어가고, 미연결 대기 중 반복 초기화를 줄입니다.
+
+# v1.0.11 Experimental · Local app build / 앱 시험 빌드
+
+- Device Diagnostics can reconnect a verified Pico audio output and explain when Windows needs attention.
+- Mapping offers **DualSense power** under DualSense button outputs. Saving this action requires supporting Studio firmware.
+- Create and Options use SVG icons. Touchpad click choices appear together, and changing a custom trigger effect reveals its section heading.
+
+- 장치 진단에서 Pico 오디오 출력 연결을 복구하고 Windows에서 확인할 항목을 안내합니다.
+- 매핑의 듀얼센스 버튼 출력에 **듀얼센스 전원**을 추가했습니다. 이 동작을 저장하려면 지원 펌웨어가 필요합니다.
+- Create·Options 아이콘을 SVG로 통일하고, 터치패드 클릭 항목을 모았습니다. 커스텀 트리거 효과를 선택하면 섹션 제목이 보입니다.
+
+# v1.0.9 Experimental · Local test build / 로컬 시험 빌드
+
+`DS5Light-win-x64-v1.0.9-Experimental.zip` · `ds5-studio-light_v38.uf2` (Pico 2 W)
+
+- Studio v38 separates LED setup from restoration and adds selectable V1/V2 game rumble.
+- DS5Light shows the rumble selector on supported firmware and retains the basic diagnostic test on v36.
+- Studio v38 defaults converted rumble strength in Mix to 100%. Saved profiles retain their values.
+
 # v1.0.6 — Mapping and audio device compatibility / 매핑·오디오 장치 호환성
 
 **DS5Light v1.0.6 · Studio v34 · Windows x64 · Pico 2 W**

@@ -66,20 +66,26 @@ def confirm_bootloader(parent):
     return _confirm(parent,_ui_tr('Pico 부트로더'),_ui_tr('부트로더로 재시작할까요?'),
                     _ui_tr('Pico를 UF2 설치 모드(RPI-RP2)로 재시작합니다.\n듀얼센스 연결이 해제됩니다.'),_ui_tr('재시작'))
 
-def profile_switch(parent,shared=False):
+def profile_switch(parent,*,profile,shared,profile_applied,shared_applied):
     owner=parent.winfo_toplevel();dialog=tk.Toplevel(owner);dialog.withdraw()
     dialog.title(_ui_tr('프로필 전환'));dialog.configure(bg='#151515');dialog.transient(owner);dialog.resizable(False,False);_styles(dialog)
     result=[None]
     def finish(value=None):result[0]=value;dialog.destroy()
     box=tk.Frame(dialog,bg='#151515',padx=24,pady=22);box.pack()
     tk.Label(box,text=_ui_tr('저장하지 않은 변경이 있습니다.'),bg='#151515',fg='#d6ad52',font=(_ui_tr('맑은 고딕'),12,'bold')).pack(anchor='w')
-    text=_ui_tr('변경을 저장한 뒤 다른 프로필로 전환할까요?')
-    if shared:text+=_ui_tr('\nPico 매핑·매크로 변경도 저장하며, 모든 프로필에 영향을 줍니다.')
-    tk.Label(box,text=text,bg='#151515',fg='#eee9df',wraplength=420,justify='left').pack(anchor='w',pady=(12,20))
+    lines=[]
+    if profile:lines.append(_ui_tr('현재 프로필 설정')+
+                            (_ui_tr(' · 임시 적용값 포함') if profile_applied else ''))
+    if shared:lines.append(_ui_tr('Pico 공용 매핑·매크로 · 모든 프로필에 적용')+
+                           (_ui_tr(' · 임시 적용값 포함') if shared_applied else ''))
+    tk.Label(box,text='\n'.join(lines),bg='#151515',fg='#eee9df',wraplength=420,justify='left').pack(anchor='w',pady=(12,20))
     actions=tk.Frame(box,bg='#151515');actions.pack()
     focus=None
-    for caption,value in [(_ui_tr('취소'),None),(_ui_tr('변경 버리기'),'discard'),(_ui_tr('저장 후 전환'),'save')]:
+    save_label=_ui_tr('프로필과 공용 매크로 저장 후 전환') if profile and shared else (
+        _ui_tr('공용 매크로 저장 후 전환') if shared else _ui_tr('현재 프로필 저장 후 전환'))
+    for caption,value in [(_ui_tr('취소'),None),(_ui_tr('변경 버리기'),'discard'),(save_label,'save')]:
         button=ttk.Button(actions,text=caption,style='Accent.Dialog.TButton' if value=='save' else 'Dialog.TButton',command=lambda v=value:finish(v))
+        if value=='discard' and shared_applied:button.configure(state='disabled')
         button.pack(side='left',padx=4)
         if focus is None:focus=button
     dialog.protocol('WM_DELETE_WINDOW',finish);dialog.bind('<Escape>',lambda e:finish())

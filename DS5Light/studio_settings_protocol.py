@@ -342,15 +342,23 @@ class SettingsClient(StudioClient):
             raise RuntimeError(_ui_tr('듀얼센스를 연결하고 PC 절전을 해제한 뒤 미리듣기를 눌러 주세요.'))
         if row[2] or len(row)<10 or row[3]!=1 or not preview and row[9]&7!=7:
             raise RuntimeError(_ui_tr('시프트·프로필 전환은 v31 이상 실험 펌웨어가 필요합니다.'))
-        self._macro_extensions=True
-        self._macro_feature_bits=row[9]
+        if not preview:
+            self._macro_extensions=True
+            self._macro_feature_bits=row[9]
         return row
 
     def require_macro_features(self, records):
-        from studio_shift import extended,validate_extension
+        from studio_shift import POWER_OFF,POWER_OFF_CAPABILITY,extended,validate_extension
         for row in records:validate_extension(row)
+        needs_power_off=any(row[17] == POWER_OFF for row in records)
+        power_off_error=_ui_tr('듀얼센스 전원 끄기는 지원 펌웨어 업데이트 후 사용할 수 있습니다.')
         if any(extended(row) for row in records) and not getattr(self,'_macro_extensions',False):
-            self.macro_features()
+            try:self.macro_features()
+            except RuntimeError as exc:
+                if needs_power_off:raise RuntimeError(power_off_error) from exc
+                raise
+        if needs_power_off and not getattr(self, '_macro_feature_bits', 0) & POWER_OFF_CAPABILITY:
+            raise RuntimeError(power_off_error)
         if any(r[4]&128 and not r[4]&48 and r[5]&4 for r in records):
             if not hasattr(self,'_macro_feature_bits'):self.macro_features()
             if not self._macro_feature_bits&8:

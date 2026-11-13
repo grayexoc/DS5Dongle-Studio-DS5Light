@@ -170,6 +170,25 @@ class PresentationTests(unittest.TestCase):
         self.assertGreaterEqual(title.winfo_rooty(),e.canvas.winfo_rooty())
         self.assertLess(title.winfo_rooty(),e.canvas.winfo_rooty()+e.canvas.winfo_height())
 
+    def test_effect_selection_reveals_custom_trigger_title_and_effect(self):
+        e=self.editor()
+        self.root.geometry('900x690')
+        self.root.deiconify()
+        e.select_category(2)
+        self.root.update_idletasks()
+        for name in ('단축 트리거','2단계 저항','끔'):
+            e.canvas.yview_moveto(1)
+            effect=next(w for w in walk(e.body) if isinstance(w,ttk.Combobox) and '단축 트리거' in w.cget('values'))
+            effect.set(name)
+            effect.event_generate('<<ComboboxSelected>>')
+            self.root.update_idletasks()
+            title=next(w for w in walk(e.body) if isinstance(w,tk.Label) and w.cget('text')=='커스텀 트리거')
+            effect=next(w for w in walk(e.body) if isinstance(w,ttk.Combobox) and '단축 트리거' in w.cget('values'))
+            top=e.canvas.winfo_rooty()
+            self.assertGreaterEqual(title.winfo_rooty(),top)
+            self.assertLessEqual(effect.winfo_rooty()+effect.winfo_height(),top+e.canvas.winfo_height())
+            self.assertEqual(effect.get(),name)
+
     def test_new_trigger_starts_at_defaults_and_marker_resets_live_value(self):
         e=self.editor()
         e.doc.values['at_l2_strength']=24

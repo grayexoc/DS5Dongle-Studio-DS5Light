@@ -39,6 +39,8 @@
 #define SAMPLE_SIZE       64
 #define REPORT_SIZE       398
 #define REPORT_ID         0x36
+constexpr uint16_t speaker_tag_offset = 142;
+constexpr uint16_t speaker_payload_size = 200;
 // #define VOLUME_GAIN       2
 // #define BUFFER_LENGTH     48
 #define MIC_CHANNELS      1
@@ -52,6 +54,7 @@ static WDL_Resampler resampler;
 static uint8_t reportSeqCounter = 0;
 static uint8_t packetCounter = 0;
 static bool plug_headset = false;
+static bool headset_state_known = false;
 static uint32_t mic_stream_generation = 0;
 static bool mic_active = false; // host has opened the mic IN interface (alt != 0)
 alignas(8) static uint32_t audio_core1_stack[8192];
@@ -110,15 +113,16 @@ struct SpeakerStats {
     uint32_t published = 0, consumed = 0, overflow = 0, stale = 0, underrun = 0;
     uint32_t rejected_generation = 0, last_sequence = 0, resets = 0;
     // Single writer per field: PCM counters on core0, encode failures on core1.
-    uint32_t pcm_created = 0, pcm_dropped = 0, encode_failed = 0;
+    uint32_t pcm_created = 0, pcm_dropped = 0;
+    std::atomic<uint32_t> encode_failed{0};
 };
-SpeakerStats g_speaker_stats;
+static SpeakerStats g_speaker_stats;
 critical_section_t opus_cs;
 // Protected by opus_cs. Only core0 changes the generation; core1 tags results.
 static uint32_t speaker_generation = 1;
 // All result queue access, including reset, is protected by opus_cs.
-static uint8_t opus_silence_buf[200]{};
-static bool opus_silence_valid = false;
+static uint8_t opus_silence_buf[2][speaker_payload_size]{};
+static std::atomic<uint8_t> opus_silence_mask{0};
 static bool speaker_was_enabled = true;
 static bool speaker_filters_reset = false;
 static std::atomic<bool> audio_link_active{false};
@@ -178,6 +182,7 @@ bool audio_processing_active() {
 struct audio_raw_element {
     uint32_t sequence;
     uint32_t generation;
+    uint8_t channels;
     float data[512 * 2];
 };
 // Three fixed blocks: at most two waiting and one owned by the encoder.
@@ -194,7 +199,7 @@ static void __not_in_flash_func(discard_speaker_queue)() {
     while (queue_try_remove(&audio_fifo, &index)) release_speaker_block(index);
 }
 
-static void __not_in_flash_func(publish_speaker_block)(const float *samples, uint32_t generation) {
+static void __not_in_flash_func(publish_speaker_block)(const float *samples, uint32_t generation, uint8_t channels) {
     const uint32_t sequence = ++g_speaker_stats.pcm_created;
     uint8_t index;
     bool free = queue_try_remove(&free_speaker_blocks, &index);
@@ -205,6 +210,7 @@ static void __not_in_flash_func(publish_speaker_block)(const float *samples, uin
     if (!free) { ++g_speaker_stats.pcm_dropped; return; }
     speaker_blocks[index].sequence = sequence;
     speaker_blocks[index].generation = generation;
+    speaker_blocks[index].channels = channels;
     memcpy(speaker_blocks[index].data, samples, sizeof(speaker_blocks[index].data));
     if (queue_is_full(&audio_fifo)) {
         uint8_t old;
@@ -222,8 +228,41 @@ struct mic_decode_element {
     uint16_t len;
 };
 
+uint8_t audio_diagnostic_route() {
+#if DISABLE_SPEAKER_PROC
+    return 0;
+#else
+    return bt_is_ready() && headset_state_known ? (plug_headset ? 2 : 1) : 0;
+#endif
+}
+
+void audio_diagnostic_snapshot(uint8_t *data) {
+    // Core0 owns PCM drops. Core1 owns encode failures. The output queue
+    // counters share the queue's lock with its publisher and consumer.
+    critical_section_enter_blocking(&opus_cs);
+    const uint32_t counters[] = {g_speaker_stats.pcm_dropped,
+        g_speaker_stats.encode_failed.load(std::memory_order_relaxed),
+        g_speaker_stats.underrun, g_speaker_stats.stale};
+    critical_section_exit(&opus_cs);
+    memcpy(data, counters, sizeof(counters));
+}
+
 void set_headset(bool state) {
+    headset_state_known = true;
+    if (plug_headset == state) return;
     plug_headset = state;
+#if !DISABLE_SPEAKER_PROC
+    bt_discard_speaker_audio();
+#endif
+}
+
+bool audio_strip_speaker_payload(uint8_t *report, uint16_t length, bool native) {
+    // Native reports remove the 65-byte SetStateData segment.
+    const uint16_t tag = speaker_tag_offset - (native ? 65 : 0);
+    if (length != REPORT_SIZE || report[0] != REPORT_ID || report[tag + 1] != speaker_payload_size ||
+        (report[tag] != 0x93 && report[tag] != 0x96)) return false;
+    memset(report + tag, 0, 2 + speaker_payload_size);
+    return true;
 }
 
 // Called from tud_audio_set_itf_cb when the host opens/closes the mic IN
@@ -302,10 +341,11 @@ void __not_in_flash_func(audio_loop)() {
     static uint usb_remainder_bytes = 0;
     static uint8_t previous_mode = 0xff;
     const uint8_t mode = get_config().auto_haptics_enable;
-    const bool reset_stream = stream_reset_requested || connected != was_connected ||
+    const bool link_changed = connected != was_connected;
+    const bool reset_stream = stream_reset_requested || link_changed ||
         previous_mode != mode || (audio_input_seen &&
         to_ms_since_boot(get_absolute_time()) - last_audio_input_ms >= 60);
-    const bool discard_usb = stream_reset_requested || connected != was_connected;
+    const bool discard_usb = stream_reset_requested || link_changed;
     previous_mode = mode;
     stream_reset_requested = false;
     if (reset_stream) {
@@ -326,9 +366,13 @@ void __not_in_flash_func(audio_loop)() {
 #if !DISABLE_SPEAKER_PROC
     // Observe transitions even when no USB audio arrives. Never reset core1's
     // encoder/resampler here: the worker owns those objects.
-    if (speaker_enabled != speaker_was_enabled || reset_stream) {
+    static bool speaker_was_headset = false;
+    const bool speaker_route_changed = speaker_was_headset != plug_headset;
+    if (speaker_enabled != speaker_was_enabled || reset_stream || speaker_route_changed) {
         speaker_was_enabled = speaker_enabled;
+        speaker_was_headset = plug_headset;
         speaker_filters_reset = true;
+        audio_buf_pos = 0;
         critical_section_enter_blocking(&opus_cs);
         ++speaker_generation;
         opus_head = opus_count = 0;
@@ -338,12 +382,14 @@ void __not_in_flash_func(audio_loop)() {
     }
 #endif
     if (!connected) {
-        ++mic_stream_generation;
-        // Wake-enabled USB identities may still receive host audio. Discard it
-        // without DSP/encoding and without carrying backlog into the next link.
-        tud_audio_clear_ep_out_ff();
-        while (queue_try_remove(&mic_fifo, nullptr)) {}
-        while (queue_try_remove(&mic_decode_fifo, nullptr)) {}
+        if (link_changed) {
+            headset_state_known = false;
+            ++mic_stream_generation;
+            while (queue_try_remove(&mic_fifo, nullptr)) {}
+        }
+        // A core1 decode may complete after disconnect. Flush it if it arrives.
+        while (!queue_is_empty(&mic_decode_fifo) && queue_try_remove(&mic_decode_fifo, nullptr)) {}
+        if (!discard_usb && tud_audio_available()) tud_audio_clear_ep_out_ff();
         g_oled_ah_input_peak = 0;
         g_oled_ah_output_peak = 0;
         return;
@@ -361,8 +407,8 @@ void __not_in_flash_func(audio_loop)() {
     }
     if (!mic_active) {
         while (queue_try_remove(&mic_decode_fifo, nullptr)) {}
-    } else if (!mic_pending && queue_try_remove(&mic_decode_fifo, &mic_pb)) {
-        if (mic_pb.generation != mic_stream_generation) return;
+    } else if (!mic_pending && queue_try_remove(&mic_decode_fifo, &mic_pb) &&
+               mic_pb.generation == mic_stream_generation) {
         // The controller mic is mono, but the USB descriptor presents a 2-channel
         // mic (matching the real DS5) so Windows doesn't conflict with its cached
         // DS5 audio format. Duplicate each mono sample into L and R.
@@ -787,7 +833,7 @@ void __not_in_flash_func(audio_loop)() {
         audio_buf[audio_buf_pos++] = spk_l_out;
         audio_buf[audio_buf_pos++] = spk_r_out;
         if (audio_buf_pos == 512 * 2) {
-            publish_speaker_block(audio_buf, speaker_generation);
+            publish_speaker_block(audio_buf, speaker_generation, plug_headset ? 2 : 1);
             audio_buf_pos = 0;
         }
         }
@@ -1037,11 +1083,14 @@ void __not_in_flash_func(audio_loop)() {
         // speaker/headset (config.disable_speaker), so the controller's speaker
         // amp isn't driven (mirrors the Pico W no-speaker report).
         if (speaker_enabled) {
-            pkt[142] = (plug_headset ? 0x16 : 0x13) | 0x80;
-            pkt[143] = 200;
-            if (!take_speaker_frame(pkt + 144)) {
-                if (opus_silence_valid) memcpy(pkt + 144, opus_silence_buf, 200);
-                else { pkt[142] = 0; pkt[143] = 0; }
+            pkt[speaker_tag_offset] = plug_headset ? 0x96 : 0x93;
+            pkt[speaker_tag_offset + 1] = speaker_payload_size;
+            auto *payload = pkt + speaker_tag_offset + 2;
+            if (!take_speaker_frame(payload)) {
+                const unsigned route = plug_headset ? 1 : 0;
+                if (opus_silence_mask.load(std::memory_order_acquire) & (1u << route))
+                    memcpy(payload, opus_silence_buf[route], speaker_payload_size);
+                else { pkt[speaker_tag_offset] = 0; pkt[speaker_tag_offset + 1] = 0; }
             }
         }
 #endif
@@ -1094,10 +1143,14 @@ static void __not_in_flash_func(encode_speaker_block)(const audio_raw_element &a
     const bool current = audio_element.generation == speaker_generation;
     critical_section_exit(&opus_cs);
     if (!current) return;
-    static uint32_t worker_generation = 1;
+    static uint32_t worker_generation = 0;
     if (worker_generation != audio_element.generation) {
         resampler_audio.Reset();
-        if (opus_encoder_ctl(encoder, OPUS_RESET_STATE) != OPUS_OK) return;
+        if (opus_encoder_ctl(encoder, OPUS_RESET_STATE) != OPUS_OK ||
+            opus_encoder_ctl(encoder, OPUS_SET_FORCE_CHANNELS(audio_element.channels)) != OPUS_OK) {
+            ++g_speaker_stats.encode_failed;
+            return;
+        }
         worker_generation = audio_element.generation;
     }
     // 将 512 frames 重采样成 480 frames 以解决噪音问题。感谢 @Junhoo
@@ -1196,19 +1249,19 @@ void __not_in_flash_func(core1_entry)() {
         audio_worker_failed.store(true, std::memory_order_release);
         return;
     }
-    // Generate one valid CBR silence packet for encoder starvation/error gaps.
+    // Generate route-matched CBR silence for encoder starvation/error gaps.
     // Startup-only read from flash; this adds no permanent PCM scratch buffer.
     static const float silent_pcm[480 * 2]{};
-    uint8_t silent_packet[200];
-    const int silence_bytes = opus_encode_float(encoder, silent_pcm, 480,
-                                               silent_packet, sizeof(silent_packet));
-    const int reset_status = opus_encoder_ctl(encoder, OPUS_RESET_STATE);
-    critical_section_enter_blocking(&opus_cs);
-    if (silence_bytes == sizeof(silent_packet) && reset_status == OPUS_OK) {
-        memcpy(opus_silence_buf, silent_packet, sizeof(silent_packet));
-        opus_silence_valid = true;
+    uint8_t silence_mask = 0;
+    for (int channels = 1; channels <= 2; ++channels) {
+        auto &packet = opus_silence_buf[channels - 1];
+        if (opus_encoder_ctl(encoder, OPUS_RESET_STATE) == OPUS_OK &&
+            opus_encoder_ctl(encoder, OPUS_SET_FORCE_CHANNELS(channels)) == OPUS_OK &&
+            opus_encode_float(encoder, silent_pcm, 480, packet, sizeof(packet)) == sizeof(packet))
+            silence_mask |= 1u << (channels - 1);
     }
-    critical_section_exit(&opus_cs);
+    const int reset_status = opus_encoder_ctl(encoder, OPUS_RESET_STATE);
+    if (reset_status == OPUS_OK) opus_silence_mask.store(silence_mask, std::memory_order_release);
     if (reset_status != OPUS_OK) {
         opus_encoder_destroy(encoder);
         encoder = nullptr;
@@ -1247,7 +1300,7 @@ void __not_in_flash_func(core1_entry)() {
 // In RAM (consistent with the BT-receive path) and validates len so a short
 // or malformed report can't over-read past the packet buffer.
 void __not_in_flash_func(mic_add_queue)(uint8_t *data, uint16_t len) {
-    if (!mic_active || len < MIC_OPUS_SIZE) return;
+    if (!mic_active || !bt_is_ready() || len < MIC_OPUS_SIZE) return;
     static mic_element mic_packet{};
     mic_packet.generation = mic_stream_generation;
     memcpy(mic_packet.data, data, MIC_OPUS_SIZE);

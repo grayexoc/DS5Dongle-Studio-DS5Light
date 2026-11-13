@@ -21,7 +21,9 @@ class SaveFlow:
         if self.busy:return
         profile_pending=self.profile_changes_pending();shared_pending=self.shared_changes_pending()
         if not (profile_pending or shared_pending):callback();return
-        decision=profile_switch(self.parent,shared_pending)
+        decision=profile_switch(self.parent,profile=profile_pending,shared=shared_pending,
+                                profile_applied=self.doc.unsaved or self.profile_save_needed,
+                                shared_applied=self.doc.macros_pending_flash)
         if decision=='discard':
             if self.doc.macros_pending_flash:
                 messagebox.showinfo(_ui_tr('공유 매크로'),_ui_tr('이미 장치에 임시 적용된 공유 매크로는 프로필 전환으로 되돌릴 수 없습니다. Pico 매핑·매크로를 먼저 저장하거나 새로 고침으로 확인하세요.'),parent=self.parent)

@@ -1225,9 +1225,7 @@ void __not_in_flash_func(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16
         } else if (!dock_disconnect_requested && bt_is_ready()) {
             dock_disconnect_requested = bt_disconnect();
         }
-        if ((data[56] & 1) != (interrupt_in_data[53] & 1)) {
-            set_headset(data[56] & 1);
-        }
+        set_headset(data[56] & 1);
 
         // Wake-on-PS must observe every BT input report regardless of polling
         // mode: the wake feature has its own state to maintain (button-byte
@@ -1585,6 +1583,7 @@ int main() {
         #ifdef ENABLE_WAKE_HID
         ps_shortcut_task();
         macro_task();
+        if (macro_take_power_off() && bt_is_ready()) bt_power_off_controller();
         uint8_t macro_slot; bool macro_chime; uint32_t macro_source;
         if (macro_take_profile(macro_slot, macro_chime, macro_source)) {
             uint8_t active; bool edited; uint8_t name[SLOT_NAME_LEN];

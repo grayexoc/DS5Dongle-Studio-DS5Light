@@ -13,12 +13,16 @@ class EntryTests(unittest.TestCase):
     def editor(self,category=0):
         e=EntryQueries();e.closed=False;e.entry_failed=False;e.unsupported_fields=set();e.entry_generation=1;e.entry_job=None;e.entry_attempts=set()
         e.busy=False;e.app=SimpleNamespace(selected_tab=2,studio=SimpleNamespace(busy=False))
+        e.slots_cache_path=None
         e.category=category;e.path=b'device';e.doc=SettingsDocument();e.doc.load({k:0 for k in EDITABLE});e.task=Mock()
         return e
-    def test_slots_once_per_entry(self):
+    def test_slots_reused_until_cache_is_invalidated(self):
         e=self.editor(5);e.entry_step(1);e.entry_step(1)
         self.assertEqual(e.task.call_count,1);self.assertEqual(e.task.call_args.args[0],'slots')
+        e.slots_cache_path=e.path
         e.entry_generation=2;e.entry_attempts=set();e.entry_step(2)
+        self.assertEqual(e.task.call_count,1)
+        e.invalidate_slot_cache();e.entry_step(2)
         self.assertEqual(e.task.call_count,2)
     def test_missing_values_each_category_and_zero_is_valid(self):
         for category in range(6):

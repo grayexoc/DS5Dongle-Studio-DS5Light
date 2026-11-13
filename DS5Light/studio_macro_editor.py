@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 from itertools import permutations
 from studio_macro_design import MacroDraft,KINDS,CONDITIONS,OUTPUTS,conflicts
+from studio_shift import POWER_OFF
 from studio_range import RangeSlider
 from ui_controls import AutoScrollbar,widget_trace
 from studio_macro_capture import InlineCapture
@@ -15,7 +16,10 @@ class MacroEditor(InlineCapture):
     def __init__(self,ui,index,embedded=False,initial=None):
         from studio_settings_ui import BUTTONS,OUT_BUTTONS,HID_KEYS,CircleCheck
         self.ui=ui;self.index=index;self.draft=MacroDraft(initial if initial is not None else ui.doc.macros[str(index)])
-        self.BUTTONS=BUTTONS;self.OUT_BUTTONS=list(OUT_BUTTONS)+[_ui_tr('프로필 {0}번').format(i) for i in range(1,9)];OUT_BUTTONS=self.OUT_BUTTONS;self.HID_KEYS=HID_KEYS
+        self.BUTTONS=BUTTONS;self.HID_KEYS=HID_KEYS
+        self.OUT_BUTTONS=list(OUT_BUTTONS)+[_ui_tr('프로필 {0}번').format(i) for i in range(1,9)]
+        self.OUT_BUTTONS.extend(['',_ui_tr('듀얼센스 전원')])  # Shift marker, then power output.
+        OUT_BUTTONS=self.OUT_BUTTONS
         self.updating=False;self.closed=False;self.step=0;self.step_hosts=[]
         old=self.draft.initial
         self.embedded=embedded
@@ -80,7 +84,8 @@ class MacroEditor(InlineCapture):
         tk.Label(choice_caption,text=_ui_tr('버튼 선택:'),bg=CARD,fg=FG).pack(side='left')
         ui.help_icon(choice_caption,_ui_tr('선택판에서 아이콘과 이름을 보고 여러 버튼을 조합할 수 있습니다. 선택한 버튼을 다시 누르면 해제됩니다. 선택 초기화는 전체 선택을 지웁니다.')).pack(side='left',padx=4)
         self.button_choice=tk.StringVar(value=_ui_tr('버튼을 선택하세요'))
-        self.button_dropdown=ControllerChoice(bar,textvariable=self.button_choice,values=NAMES,multiple=True,
+        display_names=[*NAMES[:17], *NAMES[18:23], NAMES[17], *NAMES[23:]]
+        self.button_dropdown=ControllerChoice(bar,textvariable=self.button_choice,values=display_names,multiple=True,
             selected=lambda value:self.buttons[self.button_names.index(value)].get())
         self.button_dropdown.grid(row=0,column=1,sticky='ew')
         self.button_dropdown.bind('<<ComboboxSelected>>',self.choose_button)
@@ -98,13 +103,16 @@ class MacroEditor(InlineCapture):
         self.mode_widgets=one.grid_slaves(row=4)
         self.swipe_click_row=tk.Frame(one,bg=CARD)
         self.swipe_click_row.grid(row=4,column=0,columnspan=2,sticky='ew',pady=6)
-        CircleCheck(self.swipe_click_row,text=_ui_tr('터치패드 클릭을 게임에 전달하지 않기'),variable=self.hide,command=lambda:None,background=CARD).pack(anchor='w')
-        tk.Label(self.swipe_click_row,text=_ui_tr('현재 프로필·레이어에서 이 스와이프가 활성인 동안 클릭만 차단합니다. 스와이프 성공 여부와 관계없이 적용하며, 터치 위치와 이동은 유지합니다.'),bg=CARD,fg=MUTED,wraplength=480,justify='left').pack(anchor='w',pady=4)
+        CircleCheck(self.swipe_click_row,text=_ui_tr('터치패드 클릭 차단'),variable=self.hide,command=lambda:None,background=CARD).pack(anchor='w')
+        tk.Label(self.swipe_click_row,text=_ui_tr('게임으로 전달되는 물리 클릭을 차단합니다. Pico의 클릭 매핑은 계속 작동합니다.'),bg=CARD,fg=MUTED,wraplength=480,justify='left').pack(anchor='w',pady=4)
 
         two=self.card(_ui_tr('▶ 실행 동작'));self.output_kind_control=tk.Frame(two,bg=CARD);self.output_kind_buttons=[]
-        for i,(key,title) in enumerate(OUTPUTS.items()):
-            button=ttk.Button(self.output_kind_control,text=title,command=lambda title=title:self.output_kind.set(title),style='Filter.TButton');button.grid(row=0,column=i,sticky='ew',padx=(0,5));self.output_kind_control.columnconfigure(i,weight=1,uniform='out');self.output_kind_buttons.append((title,button))
-        self.form(two,1,_ui_tr('출력 종류'),_ui_tr('듀얼센스 버튼, 최대 4개의 키 조합, 마우스 버튼·스크롤 중 하나를 실행합니다. 스틱 방향 매핑은 키보드로 출력합니다.'),self.output_kind_control)
+        for i,title in enumerate(OUTPUTS.values()):
+            button=ttk.Button(self.output_kind_control,text=title,command=lambda title=title:self.output_kind.set(title),style='Filter.TButton')
+            button.grid(row=0,column=i,sticky='ew',padx=(0,5))
+            self.output_kind_control.columnconfigure(i,weight=1,uniform='out')
+            self.output_kind_buttons.append((title,button))
+        self.form(two,1,_ui_tr('출력 종류'),_ui_tr('스틱 방향 매핑은 키보드로 출력합니다.'),self.output_kind_control)
         self.output_area=tk.Frame(two,bg=CARD);self.output_area.columnconfigure(1,weight=1);self.output_area.grid(row=2,column=0,columnspan=2,sticky='ew')
         self.output_control=ControllerChoice(self.output_area,textvariable=self.output,values=[]);self.form(self.output_area,0,_ui_tr('실행할 동작'),_ui_tr('원래 버튼 대신 보낼 단일 버튼 또는 마우스 동작입니다. 듀얼센스 출력 조합키는 현재 펌웨어 형식에서 지원하지 않습니다.'),self.output_control)
         self.output_record=ttk.Button(self.output_area,text=_ui_tr('버튼 눌러 지정'),command=lambda:self.start_capture('output'));self.output_record.grid(row=1,column=1,sticky='e',pady=6)
@@ -230,14 +238,17 @@ class MacroEditor(InlineCapture):
             self.input_summary.set(' + '.join(name for name,v in zip(self.button_names,self.buttons) if v.get()) or _ui_tr('실행할 버튼을 선택하세요.'))
             self.input_glyphs.set_values(name for name,v in zip(self.button_names,self.buttons) if v.get())
             self.button_dropdown.refresh()
-            indices=list(range(11,16)) if outkind=='mouse' else list(range(23,31)) if outkind=='profile' else [*range(1,11),*range(16,23)]
+            indices=list(range(11,16)) if outkind=='mouse' else list(range(23,31)) if outkind=='profile' else [*range(1,11),*range(16,23),POWER_OFF]
             choices=[self.OUT_BUTTONS[i] for i in indices];self.output_control.configure(values=choices)
             if outkind!=self.last_output_kind:
                 self.stop_capture()
                 if outkind!='keyboard':self.output.set(choices[0])
             self.last_output_kind=outkind
             self.output_area.grid_remove() if outkind=='keyboard' else self.output_area.grid()
-            self.output_record.grid() if outkind=='controller' else self.output_record.grid_remove()
+            power_selected=outkind=='controller' and self.output.get()==self.OUT_BUTTONS[POWER_OFF]
+            if power_selected and self.capture and self.capture['mode']=='output':
+                self.stop_capture()
+            self.output_record.grid() if outkind=='controller' and not power_selected else self.output_record.grid_remove()
             self.chime_area.grid() if outkind=='profile' else self.chime_area.grid_remove()
             self.key_area.grid() if outkind=='keyboard' else self.key_area.grid_remove()
             self.record_key_button.grid_remove() if kind=='stick' else self.record_key_button.grid()
@@ -251,6 +262,8 @@ class MacroEditor(InlineCapture):
             self.release_row.grid() if outkind=='keyboard' and kind!='stick' else self.release_row.grid_remove()
             self.rules.set((_ui_tr('입력을 놓으면 유지한 출력을 해제합니다. 조건 버튼 숨기기를 켜도 지정한 동작은 게임에 전달됩니다.') if held else _ui_tr('조건이 맞으면 한 번 실행하고 출력을 해제합니다. 조건 버튼 숨기기는 누르는 동안 유지에서 사용할 수 있습니다.'))+(_ui_tr('\n키보드·마우스로 동작을 보내면 게임 화면의 버튼 안내가 키보드·마우스용으로 바뀔 수 있습니다.') if outkind in ('keyboard','mouse') else ''))
             if kind=='swipe':self.rules.set(_ui_tr('스와이프를 감지하면 지정한 동작을 한 번 실행합니다. 클릭 차단은 이 프로필·레이어에서 해당 매핑이 활성인 동안 계속 적용됩니다.'))
+            if power_selected:
+                self.rules.set(self.rules.get()+'\n'+_ui_tr('조건이 충족되면 듀얼센스 전원을 끕니다. 실수로 끄지 않으려면 길게 누르기를 선택하세요.'))
             self.rules.set(self.rules.get()+'\n'+_ui_tr('마이크 버튼을 Pico 매핑·시프트로 사용하면 PC로 보내는 기본 음소거 입력과 마이크 LED 표시를 억제합니다. Edge FN 기본 조합과 PS + Create는 사용할 수 없습니다.'))
             self.release_name.set(next((k for k,v in self.orders.items() if v==int(self.release.get())),_ui_tr('기존 순서 {0}').format(f'{self.release.get()}')))
             preview=self.draft.build(self.state());self.summary.set(self.ui.macro_summary(preview).replace('\n',' · '))

@@ -67,20 +67,27 @@ class StudioClient:
                 return raw
         raise TimeoutError('Studio metadata unavailable')
 
-    def profile(self, include_mute=False):
+    def profile(self, include_mute=False, include_state=False):
         raw = self.metadata(103)
         if raw[3] != 0 or raw[5] not in (0, 1):
             raise RuntimeError('Invalid active profile response')
         profile = dict(index=None if raw[4] == 255 else raw[4], edited=bool(raw[5]), name=raw[6:22].decode('utf-8', errors='replace').rstrip('\x00').strip())
         if include_mute and len(raw) > 22 and raw[22] in (1, 2):
             profile['mute_macro'] = raw[22] == 2
+        if include_state and len(raw) >= 30 and raw[23:27] == b'SLP2':
+            mode, mix_level, dsp_source = raw[27:30]
+            if mode in (0,1,2) and mix_level <= 100 and dsp_source in (0,1):
+                profile['auto_haptics_enable'] = mode
+                if mode == 1:
+                    profile.update(mix_native_level=mix_level, ah_dsp_source=dsp_source)
         return profile
 
-    def profile_state(self):
+    def profile_state(self, header=None):
         # Read the active RAM configuration, not a merely highlighted saved slot.
         # Bracket the field read with metadata to reject a concurrent slot change.
+        before=header if header is not None else self.profile(include_mute=True,include_state=True)
         for _ in range(2):
-            before=self.profile()
+            if 'auto_haptics_enable' in before:return before
             packet=bytes([0x80,0x66,4,0x12])+bytes(60)
             self.check_cancel()
             if self.device.send_feature_report(packet)!=64:
@@ -111,12 +118,14 @@ class StudioClient:
                 return None
             mix_level=optional_field(0x55,100) if mode==1 else None
             dsp_source=optional_field(0x64,1) if mix_level else None
-            after=self.profile()
-            if before==after:
+            after=self.profile(include_mute=True,include_state=True)
+            if 'auto_haptics_enable' in after:return after
+            if all(before[key]==after[key] for key in ('index','name','edited')):
                 state=dict(after,auto_haptics_enable=mode)
                 if mix_level is not None:state['mix_native_level']=mix_level
                 if dsp_source is not None:state['ah_dsp_source']=dsp_source
                 return state
+            before=after
         raise RuntimeError('Studio profile changed during read; refresh again')
 
     def battery(self):

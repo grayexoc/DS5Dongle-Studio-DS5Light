@@ -4,7 +4,7 @@
 
 ## 패키지와 펌웨어
 
-로컬 시험 빌드는 `DS5Light-win-x64-v1.0.9-Experimental.zip`과 Pico 2 W용 `ds5-studio-light_v38.uf2`를 함께 사용합니다. 아래 설치 절차는 공개 버전에도 적용됩니다.
+로컬 시험 빌드는 `DS5Light-win-x64-v1.0.12-Experimental.zip`과 Pico 2 W용 `ds5-studio-light_v43.uf2`를 함께 사용합니다. 아래 설치 절차는 공개 버전에도 적용됩니다.
 
 Windows 10/11 x64에서 `DS5Light-win-x64-v1.0.6.zip` 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행하세요. 실행 파일 옆의 `_internal` 폴더를 함께 유지해야 합니다. 실행 배포본에는 Python 설치가 필요하지 않습니다.
 

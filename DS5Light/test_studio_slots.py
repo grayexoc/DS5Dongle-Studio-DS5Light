@@ -96,6 +96,22 @@ class ProfileTests(unittest.TestCase):
             self.assertEqual(state.get('ah_dsp_source'),0 if current==1 else None)
             self.assertEqual(len(device.sent),5 if current==1 else 3)
 
+    def test_extended_snapshot_is_one_request_and_default_profile_stays_legacy(self):
+        extended=self.reply()[:22]+b'\x02SLP2'+bytes((1,75,1))+bytes(34)
+        device=Fake([extended,extended])
+        c=StudioClient(device,sleep=lambda _:None)
+        self.assertEqual(c.profile_state(),dict(index=3,edited=True,name='Audio Haptics',
+            mute_macro=True,auto_haptics_enable=1,mix_native_level=75,ah_dsp_source=1))
+        self.assertEqual(len(device.sent),1)
+        self.assertEqual(c.profile(),dict(index=3,edited=True,name='Audio Haptics'))
+
+    def test_legacy_profile_state_reuses_supplied_header(self):
+        device=Fake([bytes((129,102,4,0x12,0)),self.reply()])
+        c=StudioClient(device,sleep=lambda _:None)
+        header=dict(index=3,edited=True,name='Audio Haptics')
+        self.assertEqual(c.profile_state(header),dict(header,auto_haptics_enable=0))
+        self.assertEqual([packet[2] for packet in device.sent],[4,103])
+
     def reply(self, index=3, edited=1, status=0):
         return bytes([129, 102, 103, status, index, edited]) + b'Audio Haptics'.ljust(16, b'\x00') + bytes(42)
 

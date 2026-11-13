@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from device_binding import DeviceIdentity
 from device_diagnostics import (CONTROL_BYTES, ReportTiming, collect_snapshot,
-    decode_status, decode_transport, run_output_test, tagged_command, tone_block)
+    decode_status, decode_transport, run_output_test, tagged_command, tone_block, audio_recovery_candidates)
 
 
 def response(page=0):
@@ -41,6 +41,59 @@ class DiagnosticTests(unittest.TestCase):
             self.assertTrue(result['blocked_reason'])
             self.assertEqual(result['speaker_settings'],values)
             self.assertEqual(command.call_count,1)
+
+    def test_headset_test_uses_headset_volume(self):
+        data = response()
+        data[57:59] = bytes((1, 2))
+        values = dict(disable_speaker=0, speaker_volume=0, headset_volume=80)
+        with patch('device_diagnostics.tagged_command', return_value=data), \
+             patch('device_diagnostics.speaker_settings', return_value=values) as settings, \
+             patch('device_diagnostics.audio_test', side_effect=lambda *args: args[-1]()):
+            result = run_output_test(None, 'speaker', threading.Event(), None,
+                                     DeviceIdentity(), dict(endpoint_id='same'))
+            self.assertTrue(result['completed'])
+            self.assertEqual(result['output_route'], 'headset')
+            self.assertEqual(settings.call_args.args[1], 'headset')
+            values['headset_volume'] = 0
+            self.assertIn('헤드셋', run_output_test(None, 'speaker', threading.Event(), None,
+                          DeviceIdentity(), dict(endpoint_id='same'))['blocked_reason'])
+
+    def test_old_firmware_preserves_speaker_test_without_route_flag(self):
+        from device_diagnostics import speaker_block_reason, speaker_settings
+        client = Mock()
+        client.read_one.side_effect = [0, 50, 1]
+        values = speaker_settings(client)
+        self.assertNotIn('headset_volume', values)
+        self.assertIsNone(speaker_block_reason(values))
+        client.read_one.side_effect = [0, 0, 1, 80]
+        self.assertIsNone(speaker_block_reason(speaker_settings(client)))
+        self.assertNotIn('speaker_diagnostics', decode_status(response()))
+
+    def test_speaker_counter_wrap_and_optional_pages(self):
+        from device_diagnostics import finish_speaker_measurement
+        client = Mock()
+        client.metadata.return_value = b'fw'
+        status = response()
+        status[57:59] = bytes((1, 1))
+        struct.pack_into('<I', status, 43, 1000)
+        counters = response(2)
+        struct.pack_into('<4I', counters, 9, 0xffffffff, 10, 20, 30)
+        with patch('device_diagnostics.SettingsClient', return_value=client), \
+             patch('device_diagnostics.tagged_command', side_effect=[status, TimeoutError('BT'), counters]):
+            report = collect_snapshot(None, DeviceIdentity())
+        self.assertTrue(report['status']['ready'])
+        self.assertNotIn('diagnostic_error', report)
+        self.assertEqual(report['page_errors'], {'transport': 'BT'})
+        status = bytearray(status)
+        struct.pack_into('<I', status, 43, 6000)
+        struct.pack_into('<4I', counters, 9, 1, 10, 22, 31)
+        with patch('device_diagnostics.tagged_command', side_effect=[status, counters]):
+            finish_speaker_measurement(None, report, 7000, lambda: False)
+        self.assertEqual(list(report['speaker_delta'].values()), [2, 0, 2, 1])
+        status[58] = 2
+        with patch('device_diagnostics.tagged_command', side_effect=[status, counters]):
+            with self.assertRaises(RuntimeError):
+                finish_speaker_measurement(None, report, 7000, lambda: False)
 
     def test_support_probe_distinguishes_explicit_rejection_and_timeout(self):
         from device_diagnostics import probe_support, DiagnosticsUnsupported
@@ -97,13 +150,18 @@ class DiagnosticTests(unittest.TestCase):
 
     def test_tones_route_only_to_requested_channels_and_ramp_to_zero(self):
         import numpy as np
-        for kind, expected in [('haptic_left', {2}), ('haptic_right', {3}), ('speaker', {0, 1})]:
+        for kind, expected in [('haptic_left', {2}), ('haptic_right', {3}), ('speaker', {0})]:
             pcm = np.frombuffer(tone_block(kind, 2400), dtype='<i2').reshape(-1, 4)
             actual = {i for i in range(4) if pcm[:, i].any()}
             self.assertEqual(actual, expected)
             self.assertLessEqual(abs(pcm.astype('i4')).max(), 3933)
             self.assertFalse(np.frombuffer(tone_block(kind, 0), dtype='<i2')[:4].any())
-            self.assertFalse(np.frombuffer(tone_block(kind, 95760), dtype='<i2')[-4:].any())
+            self.assertFalse(np.frombuffer(tone_block(kind, 71760), dtype='<i2')[-4:].any())
+        speaker = np.frombuffer(tone_block('speaker', 0, 72000), dtype='<i2').reshape(-1, 4)
+        present = abs(speaker).reshape(300, 240, 4).max(axis=1) > 0
+        pulse_starts = present & ~np.vstack((np.zeros((1, 4), dtype=bool), present[:-1]))
+        self.assertEqual(list(pulse_starts.sum(axis=0)), [2, 3, 0, 0])
+        self.assertFalse((present[:, 0] & present[:, 1]).any())
 
     def test_unsupported_snapshot_is_exportable_and_no_profile_write_occurs(self):
         class Unsupported:
@@ -284,12 +342,35 @@ class DiagnosticTests(unittest.TestCase):
             self.assertEqual(command.call_count, 1)
 
 
+class AudioRecoveryTests(unittest.TestCase):
+    def test_only_verified_active_four_channel_output_is_rebound(self):
+        identity = DeviceIdentity(container_id='pico')
+        other = dict(name='DualSense', endpoint_id='other', container_id='other', maxOutputChannels=4)
+        pico = dict(other, endpoint_id='pico', container_id='pico')
+        endpoint = dict(id='pico', container_id='pico', state=1, mix_channels=4)
+        inventory = dict(endpoints=[endpoint], complete=True)
+        self.assertEqual(audio_recovery_candidates(identity, [other, pico, pico], inventory), ('matched', [pico]))
+        endpoint['mix_channels'] = 2
+        self.assertEqual(audio_recovery_candidates(identity, [other, pico], inventory), ('channels', []))
+        endpoint['state'] = 2
+        self.assertEqual(audio_recovery_candidates(identity, [other], inventory), ('disabled', []))
+        inventory['endpoints'] = []
+        self.assertEqual(audio_recovery_candidates(identity, [other], inventory), ('missing', []))
+        unknown = dict(other, container_id=None)
+        self.assertEqual(audio_recovery_candidates(identity, [unknown], inventory), ('choose', [unknown]))
+        identified = DeviceIdentity(usb_parent_id='pico-usb')
+        foreign = dict(other, usb_parent_id='foreign-usb')
+        self.assertEqual(audio_recovery_candidates(identified, [foreign], inventory), ('missing', []))
+        self.assertEqual(audio_recovery_candidates(identity, [], inventory), ('missing', []))
+
+
 class DialogTests(unittest.TestCase):
     def test_manual_output_requires_selection_and_same_hid(self):
         from tkinter import ttk
         identity=DeviceIdentity(hid_path=b'a',container_id='pico')
         self.app.studio.binding._identity=identity
         row=dict(name='DualSense',endpoint_id='audio',container_id='other',maxOutputChannels=4)
+        self.app.use_recovered_pico_output=Mock()
         for changed in (False,True):
             self.app.studio.binding._identity=identity
             with patch.object(tk.Toplevel,'grab_set'):
@@ -303,6 +384,7 @@ class DialogTests(unittest.TestCase):
             if changed:self.app.studio.binding._identity=DeviceIdentity(hid_path=b'b')
             button.invoke()
             self.assertEqual(self.app.studio.binding.snapshot().endpoint_id,None if changed else 'audio')
+        self.app.use_recovered_pico_output.assert_called_once_with(row)
 
     def setUp(self):
         from device_binding import DeviceBinding
@@ -325,7 +407,26 @@ class DialogTests(unittest.TestCase):
         self.assertFalse(self.dialog.available('snapshot'))
         self.assertFalse(self.dialog.busy)
 
+    def test_audio_inventory_works_without_hid_and_cannot_rebind(self):
+        inventory = dict(endpoints=[dict(id='test', name='Speaker', state=1, mix_channels=4)],
+                         complete=True)
+        self.assertTrue(self.dialog.available('audio_outputs'))
+        with patch.object(self.dialog, 'start') as start, patch('windows_audio.snapshot', return_value=inventory):
+            self.dialog.select_audio_output()
+            kind, operation = start.call_args.args
+            self.assertEqual(kind, 'audio_outputs')
+            value = operation(None, DeviceIdentity())
+        self.app.use_recovered_pico_output = Mock()
+        self.dialog.show_audio_outputs(value)
+        popup = next(w for w in self.dialog.window.winfo_children() if isinstance(w, tk.Toplevel))
+        output_list = next(w for frame in popup.winfo_children() for w in frame.winfo_children()
+                           if isinstance(w, tk.Listbox))
+        self.assertIn('4 ch', output_list.get(0))
+        self.app.use_recovered_pico_output.assert_not_called()
+        self.assertTrue(all(str(button.cget('state')) == 'disabled' for button in self.dialog.output_buttons))
+
     def test_rumble_choice_falls_back_on_legacy_firmware(self):
+        self.app.studio.binding._identity = DeviceIdentity(hid_path=b'pico')
         status = dict(ready=True, auto_haptics=0, rumble_comparison=True)
         self.dialog.report = dict(status=status)
         self.dialog.update_test_buttons()
@@ -483,7 +584,8 @@ class DialogTests(unittest.TestCase):
         from device_diagnostics_ui import update_diagnostics_button
         button = ttk.Button(self.root)
         self.app.device_diagnostics_button = button
-        self.app._diagnostics_support = dict(identity=(None, None), supported=False, hint='unsupported')
+        self.app.studio.binding._identity = DeviceIdentity(hid_path=b'old')
+        self.app._diagnostics_support = dict(identity=(b'old', None), supported=False, hint='unsupported')
         update_diagnostics_button(self.app)
         self.assertEqual(str(button.cget('state')), 'disabled')
         self.app.studio.binding._identity = DeviceIdentity(hid_path=b'new')

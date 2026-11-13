@@ -28,5 +28,6 @@ bool usb_reconnect_pending();
 void usb_reconnect_task();
 uint16_t usb_profile_event_get(uint8_t *buffer, uint16_t length);
 void usb_profile_event_task();
+void usb_profile_event_slot_saved();
 
 #endif //DS5_BRIDGE_USB_H

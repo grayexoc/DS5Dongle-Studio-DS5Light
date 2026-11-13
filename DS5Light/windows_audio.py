@@ -141,7 +141,7 @@ def _read_sessions(endpoint,channel_pid=None):
         _release(enumerator); _release(manager)
 
 
-def snapshot(include_sessions=True,channel_pid=None):
+def snapshot(include_sessions=True,channel_pid=None,*,include_inactive=False):
     result={'endpoints':[],'sessions':{},'complete':False}
     if os.name!='nt': return result
     ole=C.WinDLL('ole32')
@@ -156,7 +156,7 @@ def snapshot(include_sessions=True,channel_pid=None):
     try:
         hr=ole.CoCreateInstance(C.byref(ENUMERATOR_CLASS),None,1,C.byref(ENUMERATOR_IID),C.byref(enumerator))
         if hr<0: return result
-        _call(enumerator,3,(C.c_int,W.DWORD,C.POINTER(C.c_void_p)),0,1,C.byref(collection))
+        _call(enumerator,3,(C.c_int,W.DWORD,C.POINTER(C.c_void_p)),0,0xf if include_inactive else 1,C.byref(collection))
         count=W.UINT(); _call(collection,3,(C.POINTER(W.UINT),),C.byref(count))
         complete=True
         for index in range(count.value):
@@ -164,11 +164,21 @@ def snapshot(include_sessions=True,channel_pid=None):
             try:
                 _call(collection,4,(W.UINT,C.POINTER(C.c_void_p)),index,C.byref(endpoint))
                 _call(endpoint,5,(C.POINTER(C.c_void_p),),C.byref(identifier))
-                name=_endpoint_name(endpoint,ole)
-                entry={'id':C.wstring_at(identifier),'name':name,'container_id':_endpoint_container(endpoint,ole)}
-                if not include_sessions:entry.update(_endpoint_format(endpoint,ole))
+                entry={'id':C.wstring_at(identifier)}
+                if include_inactive:
+                    state=W.DWORD()
+                    _call(endpoint,6,(C.POINTER(W.DWORD),),C.byref(state))
+                    entry['state']=state.value
+                try:
+                    entry['name']=_endpoint_name(endpoint,ole)
+                except OSError:
+                    if entry.get('state',1)==1:raise
+                    entry['name']=''
+                entry['container_id']=_endpoint_container(endpoint,ole)
+                if not include_sessions and entry.get('state',1)==1:
+                    entry.update(_endpoint_format(endpoint,ole))
                 result['endpoints'].append(entry)
-                if include_sessions:
+                if include_sessions and entry.get('state',1)==1:
                     sessions,sessions_complete=_read_sessions(endpoint,channel_pid)
                     complete=complete and sessions_complete
                     for pid,session in sessions.items():

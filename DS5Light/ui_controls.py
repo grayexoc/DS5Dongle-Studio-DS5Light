@@ -114,60 +114,6 @@ class RoundedCard(tk.Frame):
             canvas.create_line(*points, fill=self._outline)
 
 
-class GlobalCaptureOverlay(tk.Frame):
-    """A static layered child: real alpha over the table, no polling or snapshots."""
-    def __init__(self, parent, text):
-        super().__init__(parent, bg='#695020', borderwidth=0,
-                         highlightthickness=0, takefocus=0)
-        self._visible = False
-        self._alpha_ready = False
-        self.label = tk.Label(self, text=text, bg='#695020', fg='#ffe5ac',
-                              font=('맑은 고딕', 28, 'bold'), takefocus=0,
-                              borderwidth=0, highlightthickness=0)
-        self.label.place(relx=.5, rely=.5, anchor='center')
-
-    def set_visible(self, visible):
-        visible = bool(visible)
-        if visible == self._visible:
-            return
-        self._visible = visible
-        if not visible:
-            self.place_forget()
-            return
-        if not self._alpha_ready:
-            self._alpha_ready = True
-            self._set_alpha()
-        self.place(x=1, y=1, relwidth=1, relheight=1, width=-2, height=-2)
-        self.lift()
-
-    def _set_alpha(self):
-        import ctypes
-        import os
-        if os.name == 'nt':
-            try:
-                from ctypes import wintypes
-                user32 = ctypes.WinDLL('user32', use_last_error=True)
-                get_style = user32.GetWindowLongW
-                get_style.argtypes = [wintypes.HWND, ctypes.c_int]
-                get_style.restype = ctypes.c_long
-                set_style = user32.SetWindowLongW
-                set_style.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long]
-                set_style.restype = ctypes.c_long
-                alpha = user32.SetLayeredWindowAttributes
-                alpha.argtypes = [wintypes.HWND, wintypes.DWORD,
-                                  ctypes.c_ubyte, wintypes.DWORD]
-                hwnd = self.winfo_id()
-                set_style(hwnd, -20, get_style(hwnd, -20) | 0x00080000)
-                if alpha(hwnd, 0, 174, 2):
-                    return
-                set_style(hwnd, -20, get_style(hwnd, -20) & ~0x00080000)
-            except (AttributeError, OSError):
-                pass
-        # Readable fallback if layered child windows are unavailable.
-        self.configure(bg='#493b20')
-        self.label.configure(bg='#493b20', fg='#d9bf88')
-
-
 class AutoScrollbar(ttk.Scrollbar):
     """A grid-managed scrollbar shown only while its content overflows."""
     def set(self, first, last):

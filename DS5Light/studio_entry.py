@@ -10,6 +10,7 @@ class EntryQueries:
         self.entry_queries_enabled='--smoke-test' not in sys.argv
         self.entry_generation=0;self.entry_attempts=set();self.entry_job=None
         self.entry_failed=False;self.unsupported_fields=set()
+        self.slots_cache_path=None
     def begin_entry(self):
         if not self.entry_queries_enabled:return
         self.entry_generation+=1;self.entry_attempts=set();self.entry_failed=False;self.schedule_entry()
@@ -33,7 +34,7 @@ class EntryQueries:
             self.entry_attempts.add('fields');self.task('entry_read',self.entry_snapshot);return
         if getattr(self,'external_stale',False):return
         if not self.path:return
-        if self.category==5 and 'slots' not in self.entry_attempts:
+        if self.category==5 and self.slots_cache_path!=self.path and 'slots' not in self.entry_attempts:
             self.entry_attempts.add('slots');self.task('slots',lambda:self.with_client(lambda c:c.slots()));return
         if self.category==4 and not self.doc.macros and 'macros' not in self.entry_attempts:
             self.entry_attempts.add('macros');self.task('macros',lambda:self.with_client(lambda c:c.read_macros()))
@@ -44,6 +45,9 @@ class EntryQueries:
             return snapshot(binding.snapshot().hid_path or self.app.studio.profile_path,self.cancel.is_set,binding=binding)
         selected_binding=binding if self.path is None or self.path==binding.snapshot().hid_path else None
         return snapshot(self.path or self.app.studio.profile_path,self.cancel.is_set,binding=selected_binding)
+    def invalidate_slot_cache(self):
+        self.slots_cache_path=None
+        self.entry_attempts.discard('slots')
     def merge_entry_snapshot(self,result):
         """Keep staged values and read only missing values into their baseline."""
         self.lightbar_supported=all(k in result.get('values',{}) for k in ('lightbar_fixed','lightbar_rgb'))
@@ -63,6 +67,9 @@ class EntryQueries:
         if changed and not self.doc.dirty:
             from studio_document import SettingsDocument
             self.doc=SettingsDocument()
+        if self.path!=result['path']:
+            self.slots=[]
+            self.invalidate_slot_cache()
         if 'disable_usb_sn' not in result['values'] and 'disable_usb_sn' not in self.doc.changes:
             self.doc.baseline.pop('disable_usb_sn',None)
             self.doc.values.pop('disable_usb_sn',None)

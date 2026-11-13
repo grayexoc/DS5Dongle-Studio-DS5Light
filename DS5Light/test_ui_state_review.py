@@ -12,6 +12,45 @@ class StateReviewTests(unittest.TestCase):
     tearDown=fixture.NativeUITests.tearDown
     editor=fixture.NativeUITests.editor
 
+    def test_cancel_device_switch_restores_picker_and_preserves_draft(self):
+        editor=self.editor();editor.path=b'A'
+        editor.device_rows=[{'path':b'A'},{'path':b'B'}]
+        editor.device_choice.configure(values=('Pico A','Pico B'))
+        value=editor.doc.baseline['auto_haptics_gain']+1
+        editor.doc.values['auto_haptics_gain']=value
+        editor.device_choice.current(1)
+        with patch('studio_settings_ui.messagebox.askyesno',return_value=False),patch.object(editor,'read') as read:
+            editor.choose_device()
+            self.assertEqual(editor.device_choice.current(),0)
+            editor.choose_device()
+            read.assert_not_called()
+        self.assertEqual(editor.path,b'A')
+        self.assertEqual(editor.doc.changes['auto_haptics_gain'],value)
+
+    def test_start_without_process_skips_studio_check_and_reveals_table(self):
+        app=self.ui
+        app.scope.set('device');app.render()
+        self.assertEqual(app.process_table_frame.winfo_manager(),'')
+        self.assertIn('전역 캡쳐',app.capture_summary.cget('text'))
+        app.scope.set('process');app.scope_changed();app.game.set('');app.game_map.clear()
+        app.select_tab(1)
+        with patch.object(app.studio,'check_before_start') as check:
+            app.start()
+            check.assert_not_called()
+        self.assertEqual(app.selected_tab,0)
+        self.assertEqual(app.process_table_frame.winfo_manager(),'grid')
+        self.assertIn('게임을 실행하고',app.status.get())
+        app.studio.auto_haptics_mode=0;app.render()
+        self.assertEqual(app.process_table_frame.winfo_manager(),'grid')
+        self.assertIn('네이티브 햅틱',app.capture_summary.cget('text'))
+
+    def test_profile_switch_reports_separate_save_scopes(self):
+        editor=self.editor()
+        editor.doc.unsaved=True;editor.doc.macros_pending_flash=True
+        with patch('studio_save_flow.profile_switch',return_value=None) as dialog:
+            editor.request_profile_switch(lambda:self.fail('Cancelled switch continued'))
+        self.assertEqual(dialog.call_args.kwargs,dict(profile=True,shared=True,profile_applied=True,shared_applied=True))
+
     def test_duplicate_process_hint_is_empty_and_owned_message_is_removed(self):
         app=self.ui;app.scope.set('process');app.desired_game='Game.exe'
         app.game.set('');app.game_map={};app.game_names={'one':'Game.exe','two':'game.exe'}

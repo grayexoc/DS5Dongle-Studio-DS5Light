@@ -25,14 +25,20 @@ The vendor collection separates notifications from the Windows gamepad input
 queue, so DS5Light does not consume ordinary gamepad reports.
 
 DS5Light pins the collection to the selected serial, or exact collection-normalized
-HID interface path when serial is absent. Ambiguous matches are not opened.
+HID interface path when serial is absent or the selected Edge has hidden its serial.
+Ambiguous matches are not opened.
 It verifies framing/version/length/ranges and confirms current profile through
 the existing locked feature-query path after a notification. Duplicates are ignored.
 DS5Light handles notifications on a 200 ms UI callback. An occupied command
-channel is retried without losing the forced mode check. The safety checks read
-the profile header every three seconds and confirm the mode on a ten-second
-schedule, without reading the slot list. Collection discovery retries briefly
-after reconnect, then uses the same safety checks on legacy firmware.
+channel is retried without losing the forced mode check. The 0x67 response on
+report 0x81 may include ASCII SLP2 at offsets 23..26 (including the report ID)
+followed by audio-haptics mode, native Mix level and DSP input source at 27..29.
+The event sequence also advances on a profile save or either Mix field change, retaining the
+v1 event layout and reserved bytes. A valid SLP2 snapshot and confirmed event
+input allow 30-second safety reads. Each lease renewal must yield an input
+report within three seconds, including an unchanged sequence as acknowledgement.
+Legacy or failed notifications retain the three-second header and ten-second
+mode checks. These paths do not enumerate the slot list.
 A notification cannot activate a slot, write settings or restart a manually stopped engine.
 Studio drafts remain intact; visible clean settings can be re-read, dirty drafts are marked stale.
 

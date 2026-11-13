@@ -1109,8 +1109,16 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     memcpy(reply + 50, &g_diag_rear_right_peak, 2);
                     memcpy(reply + 52, &g_diag_usb_audio_blocks, 4);
                     reply[56] = 1; // extended rumble test selectors
+#if !DISABLE_SPEAKER_PROC
+                    reply[57] = 1; // optional speaker pipeline counters
+                    reply[58] = audio_diagnostic_route();
+#endif
                 } else if (buffer[0] == 1) {
                     reply[2] = 0; bt_diagnostic_snapshot(reply + 9);
+#if !DISABLE_SPEAKER_PROC
+                } else if (buffer[0] == 2) {
+                    reply[2] = 0; audio_diagnostic_snapshot(reply + 9);
+#endif
                 }
             }
             feature_data[0x84].assign(reply, reply + sizeof(reply));
@@ -1135,7 +1143,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             uint8_t reply[63]{0x66, 0x20, 1, 1};
             if (bufsize >= 5) {
                 reply[4] = buffer[0]; memcpy(reply + 5, buffer + 1, 4);
-                if (buffer[0] == 0) { reply[2] = 0; reply[9] = 15; }
+                if (buffer[0] == 0) { reply[2] = 0; reply[9] = 0x1f; }
                 else if (buffer[0] == 1) {
                     manual_power_note_activity(1000);
                     reply[2] = audio_profile_chime() ? 0 : 2;
@@ -1157,7 +1165,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
         }
 
         case 0x67: {
-            // Read the currently-loaded profile (RAM only, set by slot_activate /
+            // Read the currently-loaded profile (set by slot_activate /
             // slot_save - so it reflects loads from the portal AND the automation).
             // Reply: 0x66 0x67 status active_slot(0xFF=none/unknown) edited name[16]
             uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x67; buf[2] = 0x00;
@@ -1167,9 +1175,13 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             buf[4] = edited ? 1 : 0;
             memcpy(buf + 5, nm, SLOT_NAME_LEN);
             buf[21] = macro_uses_mute_button() ? 2 : 1; // 0 on older firmware (unsupported)
-            // Reply on 0x81 (the poll/GET buffer), NOT 0x84: this read is polled
-            // once a second, and 0x84 is reserved for slot commands (activate/save/
-            // info) precisely so a periodic poll can't consume their replies.
+            // Optional state extension. Older clients ignore these trailing bytes.
+            memcpy(buf + 22, "SLP2", 4);
+            const auto &cfg = get_config();
+            buf[26] = cfg.auto_haptics_enable;
+            buf[27] = cfg.mix_native_level;
+            buf[28] = cfg.ah_dsp_source;
+            // Keep metadata replies on 0x81; 0x84 carries slot commands.
             feature_data[0x81].assign(buf, buf + sizeof(buf));
             break;
         }

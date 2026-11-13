@@ -1070,8 +1070,12 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                     if (auto *queued = pending_send.data[1] == 0x36
                             ? const_cast<uint8_t *>(output_report_state(pending_send.data + 1, pending_send.len - 1))
                             : nullptr) {
+                        // The enqueue checksum is still valid unless a motor field changed.
+                        const uint8_t flags = queued[0], right = queued[2], left = queued[3], flags2 = queued[38];
                         state_refresh_rumble(queued);
-                        fill_output_report_checksum(pending_send.data + 1, pending_send.len - 1);
+                        if (flags != queued[0] || right != queued[2] ||
+                            left != queued[3] || flags2 != queued[38])
+                            fill_output_report_checksum(pending_send.data + 1, pending_send.len - 1);
                     }
                     const uint8_t status = l2cap_send(hid_interrupt_cid, pending_send.data, pending_send.len);
                     if (audio) {
@@ -1147,6 +1151,21 @@ void bt_discard_audio() {
     for (uint i=0; i<count; ++i) {
         if (!queue_try_remove(&send_fifo, &item)) break;
         if (item.data[1] != 0x36) queue_try_add(&send_fifo, &item);
+    }
+}
+
+void bt_discard_speaker_audio() {
+    const auto strip = [](send_element &packet) {
+        if (audio_strip_speaker_payload(packet.data + 1, packet.len - 1, packet.native_audio))
+            fill_output_report_checksum(packet.data + 1, packet.len - 1);
+    };
+    if (pending_send_valid) strip(pending_send);
+    const uint count = queue_get_level(&send_fifo);
+    static send_element item;
+    for (uint i = 0; i < count; ++i) {
+        if (!queue_try_remove(&send_fifo, &item)) break;
+        strip(item);
+        queue_try_add(&send_fifo, &item);
     }
 }
 

@@ -16,7 +16,7 @@ CROPS={
     'L3':(0,126),'R3':(0,210),_ui_tr('왼쪽 스틱'):(0,294),_ui_tr('오른쪽 스틱'):(0,378),
     _ui_tr('십자키 위'):(0,462),_ui_tr('십자키 아래'):(42,462),
     _ui_tr('십자키 왼쪽'):(84,462),_ui_tr('십자키 오른쪽'):(126,462),
-    _ui_tr('터치패드 클릭'):(126,504),'Options':(0,630),'Create':(42,630),
+    _ui_tr('터치패드 클릭'):(126,504),
 }
 ALIASES={'△':_ui_tr('트라이앵글'),'○':_ui_tr('서클'),'×':_ui_tr('크로스'),'□':_ui_tr('스퀘어'),
     '↑':_ui_tr('십자키 위'),'↓':_ui_tr('십자키 아래'),'←':_ui_tr('십자키 왼쪽'),'→':_ui_tr('십자키 오른쪽'),
@@ -44,7 +44,8 @@ def icon_key(value):
 def glyph(master,value,size=28):
     size=max(1,px(master,size))
     extra={_ui_tr('왼쪽 Fn'):'FN',_ui_tr('오른쪽 Fn'):'FN',
-           _ui_tr('왼쪽 패들'):'LB',_ui_tr('오른쪽 패들'):'RB',_ui_tr('PS 버튼'):'PS',_ui_tr('마이크 버튼'):'Mute'}
+           _ui_tr('왼쪽 패들'):'LB',_ui_tr('오른쪽 패들'):'RB',_ui_tr('PS 버튼'):'PS',_ui_tr('마이크 버튼'):'Mute',
+           _ui_tr('듀얼센스 전원'):'Power','Create':'Create','Options':'Options'}
     filename=extra.get(readable(value))
     if filename:
         root=master._root()
@@ -52,9 +53,10 @@ def glyph(master,value,size=28):
         cache=root._extra_controller_glyph_cache;key=(filename,size)
         if key not in cache:
             try:
+                folder=SOURCE.parent/'edge'
                 root.tk.call('lappend','auto_path',str(SOURCE.parent.parent/'vendor'/'tksvg0.16'))
                 root.tk.call('package','require','tksvg','0.16')
-                cache[key]=tk.PhotoImage(master=root,data=(SOURCE.parent/'edge'/(filename+'.svg')).read_text(encoding='utf-8'),format=('svg','-scaletoheight',size))
+                cache[key]=tk.PhotoImage(master=root,data=(folder/(filename+'.svg')).read_text(encoding='utf-8'),format=('svg','-scaletoheight',size))
             except (OSError,tk.TclError):cache[key]=None
         return cache[key]
     key=icon_key(value)
@@ -72,13 +74,6 @@ def glyph(master,value,size=28):
             scale=atlas.height()/662
             images={}
             for name,(x,y) in CROPS.items():
-                if name in ('Options','Create'):
-                    # The sprite's tiny English captions become noise at UI
-                    # size; render only the button silhouette from the vector.
-                    fragment=svg.replace('width="158" height="662" viewBox="0 0 158 662"',
-                        f'width="{size}" height="{size}" viewBox="{x+10} {y+13} 12 18"',1)
-                    images[name]=tk.PhotoImage(master=root,data=fragment,format=('svg','-scaletoheight',size))
-                    continue
                 image=tk.PhotoImage(master=root,width=size,height=size)
                 left,top=round(x*scale),round(y*scale)
                 right,bottom=min(left+size,atlas.width()),min(top+size,atlas.height())

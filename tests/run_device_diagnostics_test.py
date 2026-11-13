@@ -50,6 +50,10 @@ bool bt_is_connected(){return true;}
 bool bt_is_ready(){return ready;}
 bool audio_processing_active(){return processing;}
 bool audio_haptics_stream_active(){return false;}
+uint8_t audio_diagnostic_route(){return 2;}
+void audio_diagnostic_snapshot(uint8_t *p){
+ const uint32_t counters[]={0xffffffff,2,3,4};memcpy(p,counters,sizeof(counters));
+}
 bool bt_signal_valid(){return true;}
 bool usb_xinput_active(){return true;}
 void bt_get_signal_strength(int8_t *p){*p=-42;}
@@ -72,13 +76,16 @@ int main(){
  assert(r.size()==63&&r[2]==0&&r[3]==1&&r[4]==0&&!memcmp(r.data()+5,payload+1,4));
  assert(r[9]==19&&r[10]==1&&r[12]==4&&r[13]==100&&r[15]==200&&r[17]==uint8_t(-42));
  assert(r[18]==3&&r[19]==3&&r[27]==1&&r[35]==1&&r[43]==uint8_t(1234));
- assert(r[47]==1&&r[48]==100&&r[50]==200&&r[52]==0x78&&r[55]==0x12&&r[56]==1);
+ assert(r[47]==1&&r[48]==100&&r[50]==200&&r[52]==0x78&&r[55]==0x12&&r[56]==1&&r[57]==1&&r[58]==2);
  assert(starts==0&&activity==0);
  g_audio_transport_stats.sent=0xffffffff;g_audio_transport_stats.retries=9;
  payload[0]=1;command(0x1e,payload,5);r=feature_data[0x84];
  assert(r[9]==255&&r[12]==255&&r[41]==9&&r[45]==5);
  for(unsigned n=0;n<5;++n){command(0x1e,payload,n);assert(feature_data[0x84][2]==1);}
- payload[0]=2;command(0x1e,payload,5);assert(feature_data[0x84][2]==1);
+ payload[0]=2;command(0x1e,payload,5);r=feature_data[0x84];
+ assert(r[2]==0&&r[4]==2&&!memcmp(r.data()+5,payload+1,4));
+ assert(r[9]==255&&r[12]==255&&r[13]==2&&r[17]==3&&r[21]==4);
+ payload[0]=3;command(0x1e,payload,5);assert(feature_data[0x84][2]==1);
  for(unsigned kind=1;kind<=15;++kind){
   payload[0]=kind;command(0x1f,payload,5);
   assert(feature_data[0x84][2]==0&&output_test.kind==kind);
@@ -93,7 +100,7 @@ int main(){
  assert(feature_data[0x84][2]==0&&output_test.kind==0&&output_test.release&&starts==before);
  // Capability and preview requests must reach the real command dispatch.
  payload[0]=0;before=activity;command(0x20,payload,5);r=feature_data[0x84];
- assert(r.size()==63&&r[0]==0x66&&r[1]==0x20&&r[2]==0&&r[3]==1&&r[4]==0&&r[9]==15);
+ assert(r.size()==63&&r[0]==0x66&&r[1]==0x20&&r[2]==0&&r[3]==1&&r[4]==0&&r[9]==0x1f);
  assert(!memcmp(r.data()+5,payload+1,4)&&chimes==0&&activity==before);
  for(unsigned n=0;n<5;++n){command(0x20,payload,n);assert(feature_data[0x84][2]==1);}
  payload[0]=2;command(0x20,payload,5);assert(feature_data[0x84][2]==1&&chimes==0);

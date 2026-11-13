@@ -25,7 +25,7 @@ stub='''
 #define SLOT_NAME_LEN 16
 #define ENABLE_WAKE_HID
 uint32_t clock_ms=0;bool ready=true,reconnect=false,accept=true;unsigned sent=0;uint8_t slot=1;bool edited=false,mute=false;
-struct Config{uint8_t auto_haptics_enable=1;} cfg;
+struct Config{uint8_t auto_haptics_enable=1,mix_native_level=0,ah_dsp_source=0;} cfg;
 Config&get_config(){return cfg;}
 bool active_profile_get(uint8_t&s,bool&e,uint8_t*){s=slot;e=edited;return true;}
 bool macro_uses_mute_button(){return mute;}
@@ -44,8 +44,12 @@ clock_ms=200;mute=true;cfg.auto_haptics_enable=0;usb_profile_event_task();assert
 clock_ms=300;accept=false;slot=3;usb_profile_event_task();assert(sent==3);
 accept=true;usb_profile_event_task();assert(sent==4);
 assert(profile_event_data[9]==3&&profile_event_data[11]==0&&profile_event_data[12]==1);
-clock_ms=65000;slot=4;usb_profile_event_task();assert(sent==4);
-usb_profile_event_get(b,15);usb_profile_event_task();assert(sent==5);
+clock_ms=400;cfg.mix_native_level=80;usb_profile_event_task();assert(sent==5);
+clock_ms=500;cfg.ah_dsp_source=1;usb_profile_event_task();assert(sent==6);
+assert(profile_event_data[4]==1&&profile_event_data[13]==0&&profile_event_data[14]==0);
+clock_ms=600;usb_profile_event_slot_saved();usb_profile_event_task();assert(sent==7);
+clock_ms=65000;slot=4;usb_profile_event_task();assert(sent==7);
+usb_profile_event_get(b,15);usb_profile_event_task();assert(sent==8);
 }
 '''
 p=out/'event.cpp';p.write_text(stub+code+checks,encoding='utf-8')
@@ -56,10 +60,10 @@ print('PASS firmware event state, idle, dedupe, backpressure and mode/mute chang
 from test_support import firmware_build
 rows=json.loads((firmware_build(r)/'compile_commands.json').read_text())
 with (out/'arm-syntax.log').open('w',encoding='utf-8') as log:
- for name in ('main.cpp','usb.cpp','usb_descriptors.cpp','config.cpp'):
+ for name in ('main.cpp','usb.cpp','usb_descriptors.cpp','config.cpp','cmd.cpp','bt.cpp'):
   row=next(e for e in rows if Path(e['file']).name==name)
   cmd,n=re.subn(r' -o \S+ -c ',' -fsyntax-only ',row['command']);assert n==1
   subprocess.run(cmd,cwd=row['directory'],stdout=log,stderr=log,check=True,shell=False)
-print('PASS ARM syntax main.cpp usb.cpp usb_descriptors.cpp config.cpp; no firmware build')
+print('PASS ARM syntax for USB, profile metadata and Bluetooth transport; no firmware build')
 
 

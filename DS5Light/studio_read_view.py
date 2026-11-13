@@ -5,7 +5,6 @@ import tkinter as tk
 from tkinter import ttk
 from studio_fields import FIELDS
 from studio_help import options
-from studio_scope import trigger_display
 
 READ_JOBS=('read','entry_read','slots','macros')
 
@@ -61,10 +60,10 @@ class StableReadView:
                     selected=bool(int(value or 0)&(1<<index))
                     if bitvar.get()!=selected:bitvar.set(selected)
                 if key in ('trigger_reduce','rumble_gain') and key not in self.invalid:
-                    entry=controls[0]
-                    display='' if value is None else f'{trigger_display(value) if key=="trigger_reduce" else value/100:g}'
-                    name=str(entry.cget('textvariable'))
-                    if str(self.parent.getvar(name))!=display:self.parent.setvar(name,display)
+                    entry, slider = controls
+                    display = '' if value is None else f'{slider.display(value):g}'
+                    if entry.display_variable.get() != display:
+                        entry.display_variable.set(display)
                 valid=key in self.doc.values and self.enabled_for(key)
                 enabled=valid and not self.busy
                 for control in controls:

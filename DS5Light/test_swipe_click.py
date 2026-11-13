@@ -52,4 +52,16 @@ class SwipeClickUITests(unittest.TestCase):
         self.assertFalse(e.swipe_click_row.winfo_manager())
         e.close()
 
+    def test_click_picker_reorders_labels_without_changing_wire_bits(self):
+        from studio_button_names import NAMES
+        ui,e=self.macro(record(gesture=0,keys=[9]))
+        values=e.button_dropdown.values
+        self.assertEqual(values[-3:],tuple(NAMES[i] for i in (17,23,24)))
+        e.clear_buttons()
+        for bit in (17,23,24):
+            e.button_dropdown.choose(values.index(NAMES[bit]))
+            self.assertEqual(e.state()['chord'],1<<bit)
+            e.clear_buttons()
+        e.close()
+
 if __name__=='__main__':unittest.main()

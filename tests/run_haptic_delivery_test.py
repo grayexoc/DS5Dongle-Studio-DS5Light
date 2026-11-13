@@ -52,7 +52,8 @@ code+=r'''
 struct {uint8_t data[100]{};unsigned len=79;} pending_send;
 '''+extract(bt,'static const uint8_t *output_report_state(')+r'''
 void state_refresh_rumble(uint8_t *p){p[0]&=~3u;p[38]&=~4u;p[2]=p[3]=0;}
-void fill_output_report_checksum(uint8_t *,unsigned){}
+unsigned checksum_updates=0;
+void fill_output_report_checksum(uint8_t *,unsigned){++checksum_updates;}
 void check_control_transition(){
  for(uint8_t id: {uint8_t(0x31),uint8_t(0x36)}) {
   pending_send.data[1]=id;pending_send.len=100;
@@ -61,7 +62,10 @@ void check_control_transition(){
   pending_send.data[motor]=120;
 '''+refresh+r'''
   assert(pending_send.data[motor]==(id==0x31?120:0));
+  assert(checksum_updates==(id==0x31?0:1));
  }
+'''+refresh+r'''
+ assert(checksum_updates==1); // The already-refreshed retry retains its checksum.
 }
 '''
 code='#include <initializer_list>\n'+code

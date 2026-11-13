@@ -6,6 +6,7 @@ constexpr uint8_t MACRO_FLAG_CHIME = 0x40;
 constexpr uint8_t MACRO_PROFILE_FIRST = 23;
 constexpr uint8_t MACRO_PROFILE_LAST = 30;
 constexpr uint8_t MACRO_SHIFT_KEY = 31;
+constexpr uint8_t MACRO_POWER_OFF = 32;
 inline bool macro_is_profile(uint8_t out) {
     return out >= MACRO_PROFILE_FIRST && out <= MACRO_PROFILE_LAST;
 }

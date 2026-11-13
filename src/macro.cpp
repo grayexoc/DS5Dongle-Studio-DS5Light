@@ -72,17 +72,22 @@ static bool       g_loaded    = false;
 static bool       g_suspended = false;
 static bool g_shifted = false, g_layer_dirty = true;
 static uint32_t g_layer_disabled = 0xffffffffu, g_effective_disable = 0xffffffffu;
-static int g_profile_request = -1;
+static uint8_t g_action_request = 0;
 static bool g_profile_chime = false;
 static uint32_t g_profile_source = 0, g_profile_block = 0;
 static uint32_t g_profile_release_ms = 0;
 static bool g_profile_releasing = false;
 
 bool macro_take_profile(uint8_t &slot, bool &chime, uint32_t &source) {
-    if (g_profile_request < 0) return false;
-    slot = static_cast<uint8_t>(g_profile_request);
+    if (!macro_is_profile(g_action_request)) return false;
+    slot = g_action_request - MACRO_PROFILE_FIRST;
     chime = g_profile_chime; source = g_profile_source;
-    g_profile_request = -1;
+    g_action_request = 0;
+    return true;
+}
+bool macro_take_power_off() {
+    if (g_action_request != MACRO_POWER_OFF) return false;
+    g_action_request = 0;
     return true;
 }
 void macro_block_until_release(uint32_t source) {
@@ -101,9 +106,9 @@ uint32_t macro_shift_key() {
             return g_table.rec[i].entry.chord;
     return 0;
 }
-static void queue_profile(const MacroEntry &entry) {
-    if (g_profile_request >= 0 || g_profile_block) return;
-    g_profile_request = entry.out_btn - MACRO_PROFILE_FIRST;
+static void queue_action(const MacroEntry &entry) {
+    if (g_action_request || g_profile_block) return;
+    g_action_request = entry.out_btn;
     g_profile_chime = (entry.flags & MACRO_FLAG_CHIME) != 0;
     g_profile_source = entry.chord;
     macro_block_until_release(entry.chord);
@@ -398,7 +403,9 @@ bool macro_get(uint8_t idx, MacroRecord &out) {
 bool macro_set_entry(uint8_t idx, const MacroRecord &rec) {
     if (idx >= MACRO_COUNT) return false;
     if (!g_loaded) macro_load();
-    if (rec.entry.out_btn > MACRO_SHIFT_KEY) return false;
+    if (rec.entry.out_btn > MACRO_POWER_OFF ||
+        (rec.entry.out_btn == MACRO_POWER_OFF &&
+         ((rec.entry.gesture & (GEST_MOTION | GEST_STICK)) || (rec.entry.flags & MACRO_FLAG_CHIME)))) return false;
     if (rec.entry.out_btn == MACRO_SHIFT_KEY &&
         (rec.entry.gesture || !rec.entry.chord ||
          (rec.entry.chord & (rec.entry.chord - 1)) ||
@@ -697,8 +704,8 @@ static void hold_task(const uint8_t *r, uint16_t len, uint32_t mask, uint32_t di
         // Mouse outputs never reach g_inject: that mask is indexed by the
         // T2Button enum and main.cpp walks it up to T2BTN_COUNT, so a value of
         // 11+ would either be ignored or, worse, alias a controller button.
-        if (macro_is_profile(e.out_btn)) {
-            if (!(g_scroll_latch & (1u << i))) { g_scroll_latch |= 1u << i; queue_profile(e); }
+        if (macro_is_profile(e.out_btn) || e.out_btn == MACRO_POWER_OFF) {
+            if (!(g_scroll_latch & (1u << i))) { g_scroll_latch |= 1u << i; queue_action(e); }
             if (e.flags & MACRO_FLAG_REPLACE) g_suppress |= e.chord;
             continue;
         }
@@ -719,6 +726,7 @@ static void hold_task(const uint8_t *r, uint16_t len, uint32_t mask, uint32_t di
         // conventions in one file, with the only note at the CONSUMER
         // (macro_apply_buttons in main.cpp). Verified end to end by
         // t_out_btn_maps_to_the_chosen_button in tools/macro-tests.
+        if (e.out_btn >= MACRO_SHIFT_KEY) continue;
         if (e.out_btn != 0) {
             g_inject |= (1u << (e.out_btn - 1));
             // ANALOG PASSTHROUGH. Remapping one trigger onto the other is the
@@ -775,7 +783,7 @@ static void hold_flush() {
 static void fire(int idx) {
     if (idx < 0 || g_suspended) return;
     const MacroEntry &e = g_table.rec[idx].entry;
-    if (macro_is_profile(e.out_btn)) { queue_profile(e); return; }
+    if (macro_is_profile(e.out_btn) || e.out_btn == MACRO_POWER_OFF) { queue_action(e); return; }
     if (e.out_btn >= MACRO_SHIFT_KEY) return;
     // A controller or mouse button output is a report STATE, not a keyboard
     // sequence, so it cannot travel through playback at all - that path only
@@ -1322,7 +1330,7 @@ void macro_task() {
 
 void macro_reset() {
     g_shifted = false; g_layer_dirty = true;
-    g_profile_request = -1; macro_block_until_release(0);
+    g_action_request = 0; macro_block_until_release(0);
     motion_clear();
     // Everything held must be released, not merely forgotten: a suspend with a
     // key still down leaves it stuck at the host.

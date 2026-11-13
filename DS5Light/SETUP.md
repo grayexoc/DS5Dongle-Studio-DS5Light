@@ -4,7 +4,7 @@
 
 ## Package and firmware
 
-For the local test build, use `DS5Light-win-x64-v1.0.9-Experimental.zip` with `ds5-studio-light_v38.uf2` on Pico 2 W. The instructions below also cover the published release.
+For the local test build, use `DS5Light-win-x64-v1.0.12-Experimental.zip` with `ds5-studio-light_v43.uf2` on Pico 2 W. The instructions below also cover the published release.
 
 Use the complete `DS5Light-win-x64-v1.0.6.zip` package on Windows 10/11 x64. Extract it into a writable folder, keep `_internal` beside `DS5Light.exe`, and run the executable. Python is not required for the packaged app.
 

@@ -88,6 +88,8 @@ class EnglishRevisionTests(unittest.TestCase):
       self.assertIsNotNone(glyph(root,value),value)
    from studio_button_names import NAMES
    for name in NAMES:self.assertIsNotNone(glyph(root,name),name)
+   self.assertEqual(text('듀얼센스 전원'),'DualSense power')
+   self.assertIsNotNone(glyph(root,text('듀얼센스 전원')))
   finally:root.destroy()
  def test_shift_flags_and_profile_outputs_are_translated(self):
   # The complete editor is exercised by EnglishUI; check the previously hidden captions too.

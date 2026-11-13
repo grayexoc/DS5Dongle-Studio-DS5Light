@@ -1,6 +1,7 @@
 """Explicit device checks in a modal dialog; idle application does no extra work."""
 from thread_start import start_thread
 import json
+import os
 import queue
 import threading
 import time
@@ -12,7 +13,8 @@ from pathlib import Path
 from studio_i18n import text as tr
 from studio_power import blocked
 from device_diagnostics import (collect_snapshot, measure_reports, run_output_test,
-                                with_selected_device, RUMBLE_TEST_MODES)
+                                with_selected_device, RUMBLE_TEST_MODES, audio_recovery_candidates,
+                                finish_speaker_measurement)
 
 
 TEST_NAMES = dict(haptic_left='왼쪽 햅틱', haptic_right='오른쪽 햅틱', speaker='스피커',
@@ -112,8 +114,11 @@ class DeviceDiagnosticsDialog:
             tk.Label(line,textvariable=var,bg='#151515',fg='#d6ad52',font=('맑은 고딕',10,'bold')).pack(side='right')
             tk.Frame(state,bg='#383835',height=1).pack(fill='x')
         button = ttk.Button(state, text=tr('상태 새로 고침'), command=self.snapshot, style='Diagnostic.TButton')
-        button.pack(fill='x', pady=(10, 0));self.buttons.append(button)
-        button = ttk.Button(state, text=tr('오디오 출력 연결'), command=self.select_audio_output, style='Diagnostic.TButton')
+        button.pack(fill='x', pady=(10, 0));self.buttons.append(button);self.snapshot_button=button
+        self.speaker_meter_button = ttk.Button(state, text=tr('오디오 전송 5초 검사'),
+            command=lambda:self.snapshot(measure_speaker=True), style='Diagnostic.TButton')
+        self.speaker_meter_button.pack(fill='x', pady=(6,0));self.buttons.append(self.speaker_meter_button)
+        button = ttk.Button(state, text=tr('Pico 오디오 연결 복구'), command=self.select_audio_output, style='Diagnostic.TButton')
         button.pack(fill='x', pady=(6,0));self.buttons.append(button)
         timing_host = self.card(right, tr('◷ 입력 수신 검사'))
         timing_host.pack(fill='both', expand=True)
@@ -165,6 +170,7 @@ class DeviceDiagnosticsDialog:
         self.update_test_buttons()
         from studio_settings_ui import FieldTip
         FieldTip(self.diagram,lambda:tr('XInput 모드에서는 입력 수신 검사를 사용할 수 없습니다.') if (self.report or {}).get('status',{}).get('usb_mode')=='XInput' else tr('버튼·스틱·트리거 입력 시 해당 부분을 강조합니다.'))
+        FieldTip(self.speaker_meter_button, lambda:tr('Pico 스피커 처리 카운터의 증가량을 확인합니다. 버퍼 부족에는 시작·무음 처리도 포함됩니다.'))
         FieldTip(self.measure_button,lambda:tr('XInput 모드에서는 입력 수신 검사를 사용할 수 없습니다.')
                  if (self.report or {}).get('status',{}).get('usb_mode')=='XInput' else
                  tr('5초간 PC의 입력 수신 간격을 확인합니다.'))
@@ -232,7 +238,7 @@ class DeviceDiagnosticsDialog:
                 or getattr(a.studio_settings, 'recording', False) or blocked(a)):
             self.status.set(tr('DS5Light 오디오와 다른 장치 작업을 정지한 뒤 시도하세요.'))
             return False
-        if not a.studio.binding.snapshot().hid_path:
+        if kind != 'audio_outputs' and not a.studio.binding.snapshot().hid_path:
             self.status.set(tr('Pico를 먼저 조회하세요.'))
             return False
         return True
@@ -247,19 +253,35 @@ class DeviceDiagnosticsDialog:
         identity = self.app.studio.binding.snapshot()
         for button in self.buttons:button.configure(state='disabled')
         self.stop_button.configure(state='normal')
-        self.status.set(tr('입력 수신 검사 중 · 5초간 기다리세요.') if kind=='timing' else tr('진단 작업 중…'))
+        self.status.set(tr({'timing': '입력 수신 검사 중 · 5초간 기다리세요.',
+                            'speaker_meter': '오디오 재생을 유지하고 5초간 기다리세요.'}.get(kind, '진단 작업 중…')))
         def work():
             try:
-                value = with_selected_device(self.app.studio.binding, identity,
-                    lambda device:operation(device, identity), self.cancel)
+                binding = self.app.studio.binding
+                started = time.monotonic()
+                if kind == 'audio_outputs':
+                    value = operation(None, identity)
+                else:
+                    value = with_selected_device(binding, identity,
+                        lambda device:operation(device, identity), self.cancel)
+                if kind == 'speaker_meter' and 'speaker_counters' in value and not self.cancel.wait(5):
+                    try:
+                        with_selected_device(binding, identity,
+                            lambda device:finish_speaker_measurement(device, value,
+                                (time.monotonic() - started + 1) * 1000, self.cancel.is_set), self.cancel)
+                    except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
+                        value.setdefault('page_errors', {})['speaker_delta'] = str(exc)
+                if kind in ('snapshot', 'speaker_meter') and binding.snapshot() != identity:
+                    raise RuntimeError('선택한 Pico가 변경됐습니다. 상태를 다시 조회하세요.')
                 self.results.put((kind, value, None))
             except Exception as exc:self.results.put((kind, None, str(exc)))
         start_thread(threading.Thread(target=work, name='DS5Light-device-diagnostics', daemon=True))
         self.job = self.window.after(100, self.poll)
 
-    def snapshot(self):
+    def snapshot(self, measure_speaker=False):
         stats = self.app.engine.stats() if self.app.engine else None
-        self.start('snapshot', lambda device, identity:collect_snapshot(device, identity, stats, self.cancel.is_set))
+        self.start('speaker_meter' if measure_speaker else 'snapshot',
+                   lambda device, identity:collect_snapshot(device, identity, stats, self.cancel.is_set))
 
     def measure(self):
         def operation(device, identity):
@@ -276,18 +298,77 @@ class DeviceDiagnosticsDialog:
         self.start('timing', operation)
 
     def select_audio_output(self):
+        read_only = self.app.engine is not None
         def operation(device, identity):
             from audio import devices
-            rows=[r for r in devices() if r.get('maxOutputChannels',0)>=4
-                  and r.get('endpoint_id') and not r.get('isLoopbackDevice')]
-            return dict(outputs=rows,identity=identity)
+            from windows_audio import snapshot
+            inventory = snapshot(False, include_inactive=True)
+            if read_only or not identity.hid_path:
+                return dict(outputs=inventory['endpoints'], identity=identity, outcome='inventory')
+            try:
+                rows = [r for r in devices() if r.get('maxOutputChannels', 0) >= 4
+                        and r.get('endpoint_id') and not r.get('isLoopbackDevice')]
+            except (OSError, RuntimeError):
+                return dict(outputs=inventory['endpoints'], identity=identity, outcome='inventory')
+            outcome, rows = audio_recovery_candidates(identity, rows, inventory)
+            return dict(outputs=rows, identity=identity, outcome=outcome)
         self.start('audio_outputs',operation)
 
     def show_audio_outputs(self, value):
         rows=value['outputs'];identity=value['identity']
-        if not rows:
-            self.status.set(tr('4채널 출력 장치가 없습니다. Pico 오디오 장치 활성화와 Windows 스피커 구성을 확인하세요.'))
+        outcome=value.get('outcome', 'choose')
+        binding=self.app.studio.binding
+        if self.cancel.is_set():
+            self.status.set(tr('검사 중지됨'))
             return
+        if binding.snapshot()!=identity:
+            self.status.set(tr('선택한 Pico가 변경됐습니다. 다시 연결을 확인하세요.'))
+            return
+        if outcome == 'inventory':
+            self.status.set(tr('Windows 오디오 출력 목록을 열었습니다.'))
+            dialog = tk.Toplevel(self.window)
+            dialog.title(tr('Windows 오디오 출력'))
+            dialog.transient(self.window)
+            tk.Label(dialog, text=tr('Windows 장치 정보입니다. 출력 장치 설정은 변경하지 않습니다.'),
+                     wraplength=550, justify='left').pack(fill='x', padx=12, pady=8)
+            frame = ttk.Frame(dialog)
+            frame.pack(fill='both', expand=True, padx=12)
+            output_list = tk.Listbox(frame, width=70, height=min(10, max(1, len(rows))))
+            output_list.pack(side='left', fill='both', expand=True)
+            scroll = ttk.Scrollbar(frame, command=output_list.yview)
+            scroll.pack(side='right', fill='y')
+            output_list.configure(yscrollcommand=scroll.set)
+            for row in rows:
+                state = {1: '활성', 2: '비활성', 4: '장치 없음', 8: '연결 해제'}.get(row.get('state'), '미확인')
+                channels = str(row['mix_channels']) if row.get('mix_channels') else '—'
+                output_list.insert('end', f"{row.get('name') or row['id']} · {tr(state)} · {channels} ch")
+            if not rows:
+                output_list.insert('end', tr('조회된 Windows 오디오 출력이 없습니다.'))
+            ttk.Button(dialog, text=tr('Windows 소리 설정'),
+                       command=lambda:os.startfile('ms-settings:sound')).pack(pady=12)
+            return
+
+        def reconnect(row):
+            if self.app.engine is not None:
+                self.status.set(tr('DS5Light 오디오와 다른 장치 작업을 정지한 뒤 시도하세요.'))
+                return
+            if binding.confirm_output(row, allow_container_mismatch=True, expected_identity=identity):
+                self.app.use_recovered_pico_output(row)
+                self.status.set(tr('Pico 4채널 출력을 다시 연결했습니다. 왼쪽·오른쪽 햅틱 시험으로 확인하세요.'))
+            else:
+                self.status.set(tr('장치 연결 확인 실패 · 상태를 다시 조회하세요.'))
+        if outcome=='matched':
+            reconnect(rows[0])
+            return
+        if not rows:
+            self.status.set(tr({
+                'disabled': 'Pico 오디오 출력이 비활성화되어 있습니다. Windows 소리 설정에서 활성화한 뒤 다시 시도하세요.',
+                'channels': 'Pico 오디오가 4채널 미만으로 구성되어 있습니다. Windows 스피커 구성을 4채널로 설정하세요.',
+                'missing': 'Windows에서 Pico 오디오 출력을 찾지 못했습니다. Pico USB를 다시 연결하고 상태를 새로 고침하세요.',
+                'unavailable': 'Windows 오디오 장치 상태를 읽지 못했습니다. 상태를 새로 고침하고 다시 시도하세요.',
+            }.get(outcome, '4채널 출력 장치가 없습니다. Pico 오디오 장치 활성화와 Windows 스피커 구성을 확인하세요.')))
+            return
+        self.status.set(tr('Pico 오디오 출력을 하나로 확인할 수 없습니다. 아래 목록에서 확인하세요.'))
         dialog=tk.Toplevel(self.window);dialog.title(tr('Pico 오디오 출력 연결'))
         dialog.transient(self.window);dialog.configure(bg='#151515');dialog.grab_set()
         tk.Label(dialog,text=tr('선택한 Pico에 해당하는 4채널 출력을 선택하세요. 다른 컨트롤러나 서라운드 스피커를 선택하지 마세요. 연결 확인만 하며 시험음은 재생하지 않습니다.'),wraplength=480,justify='left',bg='#151515',fg='#eee9df').pack(padx=16,pady=12)
@@ -297,13 +378,10 @@ class DeviceDiagnosticsDialog:
         box.pack(padx=16,pady=8)
         def confirm():
             if selected.get() not in labels:return
-            binding=self.app.studio.binding
             if binding.snapshot()!=identity:
                 self.status.set(tr('선택한 Pico가 변경됐습니다. 다시 연결을 확인하세요.'));dialog.destroy();return
             row=rows[labels.index(selected.get())]
-            if binding.confirm_output(row,allow_container_mismatch=True,expected_identity=identity):
-                self.status.set(tr('오디오 출력 연결 확인: ')+row['name'])
-            else:self.status.set(tr('장치 연결 확인 실패 · 상태를 다시 조회하세요.'))
+            reconnect(row)
             dialog.destroy()
         ttk.Button(dialog,text=tr('선택한 Pico의 출력으로 연결 확인'),command=confirm).pack(padx=16,pady=12)
 
@@ -335,17 +413,17 @@ class DeviceDiagnosticsDialog:
         if error:
             self.last_test=None
             self.status.set(tr(error))
-            if kind == 'snapshot':self.show(dict(diagnostic_error=error))
+            if kind in ('snapshot', 'speaker_meter'):self.show(dict(diagnostic_error=error))
             self.test_results.append(dict(operation=kind,completed=False,error=error))
             self.test_results=self.test_results[-64:]
         else:
             if value is None:value={}
-            if kind == 'snapshot':self.report = value
+            if kind in ('snapshot', 'speaker_meter'):self.report = value
             elif kind == 'timing':self.timing = value
             if kind=='audio_outputs':self.show_audio_outputs(value)
             else:self.show(value)
             if kind == 'test':
-                self.confirm_prompt.set(tr('소리가 들렸나요?') if value.get('test')=='speaker' else tr('실제 반응이 있었나요?'))
+                self.confirm_prompt.set(tr('왼쪽 2회와 오른쪽 3회가 모두 들렸나요?') if value.get('test')=='speaker' else tr('실제 반응이 있었나요?'))
                 self.last_test = value if value.get('completed') else None
                 if value.get('blocked_reason'):
                     self.test_results.append(value)
@@ -363,15 +441,25 @@ class DeviceDiagnosticsDialog:
                                 if self.last_test else tr(value.get('blocked_reason', '시험 중지됨')))
             elif kind == 'timing':
                 self.status.set(tr('입력 수신 검사 완료') if not value.get('cancelled') else tr('검사 중지됨'))
+            elif kind == 'speaker_meter' and 'speaker_delta' in value:
+                counts = value['speaker_delta']
+                labels = ('PCM 폐기', '인코딩 실패', '버퍼 부족', '만료')
+                keys = ('pcm_dropped', 'encode_failed', 'underrun', 'stale')
+                self.status.set(tr('5초 증가량') + ' · ' + ' / '.join(
+                    f'{tr(label)} {counts[key]}' for label, key in zip(labels, keys)))
             elif kind != 'audio_outputs':
-                self.status.set(tr('상태 조회 실패') if value.get('diagnostic_error') else tr('상태 조회 완료'))
+                self.status.set(tr('검사 중지됨') if self.cancel.is_set() else
+                                tr('상태 조회 실패') if value.get('diagnostic_error') else
+                                tr('일부 진단 정보를 읽지 못했습니다. 진단 로그를 확인하세요.') if value.get('page_errors') else
+                                tr('상태 조회 완료'))
         self.update_test_buttons()
         if self.closing:self.close()
         else:self.start_input_monitor()
 
     def update_test_buttons(self):
         status = (self.report or {}).get('status', {})
-        allowed = (not self.busy and self.app.engine is None and status.get('ready')
+        has_hid = bool(self.app.studio.binding.snapshot().hid_path)
+        allowed = (has_hid and not self.busy and self.app.engine is None and status.get('ready')
                    and status.get('auto_haptics')==0 and not status.get('audio_processing'))
         for button in self.output_buttons:
             button.configure(state='normal' if allowed else 'disabled')
@@ -379,13 +467,19 @@ class DeviceDiagnosticsDialog:
         if not comparison:
             self.rumble_choice.current(0)
         self.rumble_choice.configure(state='readonly' if allowed and comparison else 'disabled')
-        self.measure_button.configure(state='disabled' if self.busy or status.get('usb_mode')=='XInput' else 'normal')
+        self.snapshot_button.configure(state='normal' if has_hid and not self.busy else 'disabled')
+        self.speaker_meter_button.configure(state='normal' if has_hid and not self.busy
+                                            and status.get('ready') and status.get('speaker_diagnostics') else 'disabled')
+        self.measure_button.configure(state='disabled' if self.busy or not has_hid or status.get('usb_mode')=='XInput' else 'normal')
 
     def show(self, value):
         status = value.get('status')
         if status:
             mode = {0:tr('끔'),1:'Mix',2:'Replace'}.get(status.get('auto_haptics'), tr('미확인'))
-            self.identity_text.set('DualSense · '+tr('연결됨' if status.get('connected') else '연결 해제')+'    |    '+str(status.get('usb_mode',''))+' · '+tr('오디오햅틱')+' '+mode)
+            route = {'speaker': '스피커', 'headset': '헤드셋'}.get(status.get('output_route'))
+            self.identity_text.set('DualSense · '+tr('연결됨' if status.get('connected') else '연결 해제')+
+                                   '    |    '+str(status.get('usb_mode',''))+' · '+tr('오디오햅틱')+' '+mode+
+                                   ('    |    '+tr(route) if route else ''))
             connected = tr('연결됨') if status.get('connected') else tr('연결 해제')
             stream = tr('사용 중') if status.get('audio_stream') else tr('사용 안 함')
             errors = value.get('transport',{}).get('send_error')
@@ -424,7 +518,6 @@ class DeviceDiagnosticsDialog:
                     initialfile='ds5light-device-diagnostics.json', filetypes=[('JSON', '*.json')])
         if not path:return
         try:
-            from pathlib import Path
             Path(path).write_text(json.dumps(dict(snapshot=self.report, input_timing=self.timing, output_tests=self.test_results),
                 ensure_ascii=False, indent=2, default=self.json_value), encoding='utf-8')
             self.status.set(tr('진단 파일 저장 완료 · 장치 식별 정보 포함'))
@@ -504,7 +597,7 @@ def update_diagnostics_button(app):
     support = getattr(app, '_diagnostics_support', None)
     same = support is not None and support['identity']==diagnostic_identity(app)
     pending = getattr(app, '_diagnostics_probe', False)
-    disabled = pending or (same and support['supported'] is not True)
+    disabled = pending or (same and support['supported'] is not True and bool(diagnostic_identity(app)[0]))
     state = 'disabled' if disabled else 'normal'
     if str(button.cget('state'))!=state:button.configure(state=state)
     app.device_diagnostics_hint = (tr('진단 지원 확인 중…') if pending else
@@ -522,14 +615,14 @@ def open_diagnostics(app):
         return
     identity = app.studio.binding.snapshot()
     if not identity.hid_path:
-        app.status.set(tr('Pico를 먼저 조회하세요.'))
+        app.device_diagnostics = DeviceDiagnosticsDialog(app)
+        app.device_diagnostics.select_audio_output()
         return
     from device_diagnostics import probe_support, DiagnosticsUnsupported
     app._diagnostics_probe = True
     update_diagnostics_button(app)
     results = queue.SimpleQueue()
     cancel = threading.Event()
-    import time
     deadline = time.monotonic()+5
     def work():
         try:

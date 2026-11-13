@@ -77,4 +77,42 @@ class BatteryLogoTests(unittest.TestCase):
         logo.show_status('no_data',None);self.assertIs(logo._display,logo.unknown);self.assertIsNot(logo._display,full)
         ids=logo.find_all();logo.show_status('no_data',None);self.assertEqual(logo.find_all(),ids)
 
+    def test_sweep_clips_to_remaining_pulse_and_stops_when_unmapped(self):
+        import tkinter as tk
+        self.root.deiconify();self.root.focus_force();self.root.update()
+        logo=self.ui.brand_wordmark
+        logo.show_status('ready',dict(percent=65,state=0))
+        logo._stop_sweep()
+        with patch('battery_logo.time.monotonic',side_effect=(0,.7)):
+            logo._begin_sweep()
+        cached=logo._sweep_sources
+        strip=logo._sweep_strip
+        def composite(image):
+            target=tk.PhotoImage(master=logo,width=logo.full.width(),height=logo.full.height())
+            target.put(logo._background,to=(0,0,target.width(),target.height()))
+            logo.tk.call(target,'copy',logo._display,'-compositingrule','overlay')
+            if image is not None:
+                x=int(logo.coords(logo._sweep_item)[0])
+                logo.tk.call(target,'copy',image,'-to',x,0,'-compositingrule','overlay')
+            return target
+        before,after=composite(None),composite(strip)
+        changed=[(x,y) for y in range(after.height()) for x in range(after.width())
+                 if before.get(x,y)!=after.get(x,y)]
+        self.assertTrue(changed)
+        self.assertTrue(all(int(logo.PULSE_LEFT*logo._scale)<=x<logo._sweep_cutoff and
+                            before.get(x,y)!=before.get(0,0) for x,y in changed))
+        other=tk.Toplevel(self.root);other.update();other.focus_force();self.root.update()
+        self.assertTrue(logo.winfo_viewable())
+        self.assertIsNone(logo._sweep_job)
+        self.assertEqual(logo.itemcget(logo._sweep_item,'state'),'hidden')
+        other.destroy();self.root.focus_force();self.root.update()
+        self.assertIsNotNone(logo._sweep_job)
+        self.root.withdraw();self.root.update()
+        self.assertIsNone(logo._sweep_job)
+        self.root.deiconify();self.root.focus_force();self.root.update()
+        self.assertIsNotNone(logo._sweep_job)
+        self.assertIs(logo._sweep_sources,cached)
+        logo.show_status('no_data',None)
+        self.assertIsNone(logo._sweep_job)
+
 if __name__=='__main__':unittest.main()

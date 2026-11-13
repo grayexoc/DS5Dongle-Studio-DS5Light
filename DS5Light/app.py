@@ -55,7 +55,7 @@ from ui_controls import Switch, circle_image, RadioChoice, CircleCheck, SectionT
 
 from mute_shortcut import MuteShortcut, KEYS, MODIFIERS, binding_label, validate_binding
 
-from ui_controls import GlobalCaptureOverlay, RoundedCard, DiagnosticCanvas, draw_ui_symbol
+from ui_controls import RoundedCard, DiagnosticCanvas, draw_ui_symbol
 from ui_dpi import enable_dpi_awareness,install_dpi,fit_window,px,watch_scale,scale_styles
 
 from battery_status import BatteryMonitor
@@ -873,6 +873,12 @@ class App:
         tablewrap=tk.Frame(capture,bg='#111110',highlightbackground=BORDER,highlightcolor=BORDER,highlightthickness=1,takefocus=0)
 
         tablewrap.grid(row=2,column=0,sticky='nsew')
+        self.process_header=proc_head
+        self.process_table_frame=tablewrap
+        self.capture_summary=ttk.Label(capture,style='Muted.TLabel',anchor='w',width=1)
+        self.capture_summary.grid(row=2,column=0,sticky='ew',pady=(SPACE,0))
+        self.capture_summary.grid_remove()
+        FieldTip(self.capture_summary,lambda:_ui_tr('오디오햅틱을 사용하려면 Studio 프로필의 오디오햅틱 모드를 Mix 또는 Replace로 변경하세요.') if self.studio.auto_haptics_mode==0 else self.capture_summary.cget('text'))
 
         self.process_table=ttk.Treeview(tablewrap,columns=('audio','cpu','started'),show='tree headings',height=5,selectmode='browse',style='Process.Treeview')
 
@@ -905,9 +911,6 @@ class App:
         self.process_table.pack(side='left',fill='both',expand=True); scroll.pack(side='right',fill='y')
 
         self.process_table.bind('<<TreeviewSelect>>',self.process_selected)
-
-        self.global_capture_overlay=GlobalCaptureOverlay(tablewrap,text=_ui_tr('전역 캡쳐'))
-        FieldTip(self.global_capture_overlay.label,lambda:_ui_tr('오디오햅틱을 사용하려면 Studio 프로필의 오디오햅틱 모드를 Mix 또는 Replace로 변경하세요.') if self.studio.auto_haptics_mode==0 else '')
 
         self.game=ttk.Combobox(capture,state='disabled'); self.game.bind('<<ComboboxSelected>>',self.game_selected)
 
@@ -1488,8 +1491,30 @@ class App:
 
         ch=self.capture_channels(); active=bool(self.engine); filtering=self.filter_on.get()
 
-        self.global_capture_overlay.label.configure(text=_ui_tr('네이티브 햅틱') if self.studio.auto_haptics_mode==0 else _ui_tr('전역 캡쳐'))
-        self.global_capture_overlay.set_visible(self.scope.get()=='device' or self.studio.auto_haptics_mode==0)
+        native=self.studio.auto_haptics_mode==0
+        compact=self.scope.get()=='device'
+        summary=''
+        if native:summary=_ui_tr('네이티브 햅틱 · 오디오햅틱 꺼짐')
+        elif compact:
+            phase=getattr(self.engine,'phase',None)
+            if self._stopping:status=_ui_tr('정지 중')
+            elif active and (phase!='running' or self.controller_presence.disconnected):status=_ui_tr('연결 대기 중')
+            else:status=_ui_tr('캡쳐 중') if active else _ui_tr('정지')
+            source=self.source.get()
+            summary=f"{_ui_tr('전역 캡쳐')} · {_ui_tr('자동 선택') if source==AUTO else source} · {status}"
+        if compact==bool(self.process_table_frame.winfo_manager()):
+            for widget in (self.process_header,self.process_table_frame):
+                if compact:widget.grid_remove()
+                else:widget.grid()
+            self.game_page.rowconfigure(0,weight=int(not compact))
+            self.game_page.rowconfigure(3,weight=int(compact))
+        summary_row=2 if compact else 5
+        if summary:
+            if not self.capture_summary.winfo_manager() or self.capture_summary.grid_info()['row']!=summary_row:
+                self.capture_summary.grid(row=summary_row)
+        elif self.capture_summary.winfo_manager():self.capture_summary.grid_remove()
+        if summary!=self.capture_summary.cget('text'):
+            self.capture_summary.configure(text=summary)
 
         if self.scope.get()=='device' and ch in (2,6,8):
 
@@ -1959,6 +1984,11 @@ class App:
 
                     self.root.after(100,self.start)
 
+    def use_recovered_pico_output(self, row):
+        if self.destination.get() != AUTO:
+            self.destination.set(row['name'])
+        self.refresh_devices()
+
     def refresh_devices(self):
 
         if getattr(self,'_device_refresh_running',False): return
@@ -2242,7 +2272,13 @@ class App:
 
             if not self.run_intent.can_resume(route):return
 
-        else:self.run_intent.request(route)
+        if route[0]=='process' and not route[1]:
+            self.run_intent.stop('invalid_route')
+            self.status.set(_ui_tr('게임을 실행하고 새로 고침 후 실제 게임 exe를 선택하세요.'))
+            self.select_tab(0)
+            if self.process_table.winfo_viewable():self.process_table.focus_set()
+            return
+        if not automatic:self.run_intent.request(route)
 
         self.studio.check_before_start(self._start_after_profile_check)
 
@@ -2495,6 +2531,7 @@ class App:
                            for key in ('mix_native_level','ah_dsp_source'))):
 
                 editor.write_ready=False;editor.external_stale=True
+                editor.invalidate_slot_cache()
 
                 if editor.built:
 
@@ -2595,6 +2632,7 @@ class App:
             editor=self.studio_settings
 
             editor.write_ready=False;editor.pico_recognized=False;editor.external_stale=True
+            editor.invalidate_slot_cache()
 
             if editor.built:
 

@@ -3067,7 +3067,17 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '저장 응답 미확인 · 현재 설정만 조회됨 · 새로 고침 후 확인하세요.': 'Save response not confirmed · Only current settings are viewed '
                                             '· Refresh and check.',
  '저장 대상: ': 'Save to:',
- '저장 후 전환': 'Save and Convert',
+ '저장 후 전환': 'Save and Switch',
+ '프로필과 공용 매크로 저장 후 전환': 'Save profile and shared macros, then switch',
+ '공용 매크로 저장 후 전환': 'Save shared macros, then switch',
+ '현재 프로필 저장 후 전환': 'Save current profile, then switch',
+ '현재 프로필 설정': 'Current profile settings',
+ 'Pico 공용 매핑·매크로 · 모든 프로필에 적용': 'Shared Pico mappings and macros · All profiles',
+ ' · 임시 적용값 포함': ' · Includes temporarily applied changes',
+ '네이티브 햅틱 · 오디오햅틱 꺼짐': 'Native haptics · Audio haptics off',
+ '캡쳐 중': 'Capturing',
+ '정지 중': 'Stopping',
+ '연결 대기 중': 'Waiting for connection',
  '저장 후 사용': 'Save and use',
  '저장 전 프로필이 바뀌었습니다. 새로 고침으로 확인하세요.': 'The profile was changed before saving. Please refresh to check.',
  '저장 대상 슬롯이 변경되었습니다. 다시 조회하세요.': 'The save destination slot has been changed. Please check again.',
@@ -4744,8 +4754,9 @@ EN.update({
  'PS 기본 단축키': 'PS default shortcuts',
  '짧게 Win+G · 길게 Win+Tab. PS를 매핑에 쓰려면 끄세요. 변경값은 현재 프로필에 편집되고 임시 적용 또는 저장할 때 Pico에 전송됩니다.':
      'Tap: Win+G. Hold: Win+Tab. Turn off to map PS. The change is staged in the current profile and sent when you apply or save.',
- '현재 프로필·레이어에서 이 스와이프가 활성인 동안 클릭만 차단합니다. 스와이프 성공 여부와 관계없이 적용하며, 터치 위치와 이동은 유지합니다.':
-     'Blocks only the click while this swipe mapping is enabled in the current profile and layer. Touch position and movement still reach the game.',
+ '터치패드 클릭 차단': 'Block touchpad click',
+ '게임으로 전달되는 물리 클릭을 차단합니다. Pico의 클릭 매핑은 계속 작동합니다.':
+     'Blocks physical clicks sent to the game. Pico click mappings still work.',
  '마이크 버튼을 Pico 매핑·시프트로 사용하면 PC로 보내는 기본 음소거 입력과 마이크 LED 표시를 억제합니다. Edge FN 기본 조합과 PS + Create는 사용할 수 없습니다.':
      'Using the microphone button in a Pico mapping or as Shift suppresses its default mute input and LED. Reserved Edge Fn combinations and PS + Create are unavailable.',
 })
@@ -4756,3 +4767,29 @@ EN.update({
     '네이티브 햅틱을 혼합하려면 햅틱 입력 채널을 앞 채널로 선택하세요.':
         'Select the front channels as the haptic input to mix in native haptics.',
 })
+
+EN.update({
+    '듀얼센스 전원': 'DualSense power',
+    '스틱 방향 매핑은 키보드로 출력합니다.': 'Stick direction mappings send keyboard input.',
+    '듀얼센스 전원 끄기는 버튼 또는 터치패드 스와이프에 지정하세요.':
+        'Assign DualSense power-off to a button or touchpad swipe.',
+    '듀얼센스 전원 끄기는 지원 펌웨어 업데이트 후 사용할 수 있습니다.':
+        'Update to firmware that supports turning off DualSense from a mapping.',
+    '조건이 충족되면 듀얼센스 전원을 끕니다. 실수로 끄지 않으려면 길게 누르기를 선택하세요.':
+        'Turns off DualSense when triggered. Choose Long press to avoid accidental shutdown.',
+    'Pico 오디오 연결 복구': 'Repair Pico audio connection',
+    'Pico 4채널 출력을 다시 연결했습니다. 왼쪽·오른쪽 햅틱 시험으로 확인하세요.':
+        'Reconnected the Pico 4-channel output. Verify it with the left and right haptic tests.',
+    'Pico 오디오 출력이 비활성화되어 있습니다. Windows 소리 설정에서 활성화한 뒤 다시 시도하세요.':
+        'Pico audio output is disabled. Enable it in Windows sound settings and try again.',
+    'Pico 오디오가 4채널 미만으로 구성되어 있습니다. Windows 스피커 구성을 4채널로 설정하세요.':
+        'Pico audio has fewer than 4 channels. Select a 4-channel speaker configuration in Windows.',
+    'Windows에서 Pico 오디오 출력을 찾지 못했습니다. Pico USB를 다시 연결하고 상태를 새로 고침하세요.':
+        'Windows did not find Pico audio output. Reconnect the Pico USB and refresh status.',
+    'Windows 오디오 장치 상태를 읽지 못했습니다. 상태를 새로 고침하고 다시 시도하세요.':
+        'Could not read Windows audio device status. Refresh status and try again.',
+    'Pico 오디오 출력을 하나로 확인할 수 없습니다. 아래 목록에서 확인하세요.':
+        'Could not identify a unique Pico audio output. Confirm it in the list.',
+})
+
+EN.update({'오디오 전송 5초 검사': '5-second audio transport check', 'Pico 스피커 처리 카운터의 증가량을 확인합니다. 버퍼 부족에는 시작·무음 처리도 포함됩니다.': 'Shows increases in Pico speaker counters. Underruns can include startup or silence fallback.', '오디오 재생을 유지하고 5초간 기다리세요.': 'Keep audio playing and wait five seconds.', 'Windows 오디오 출력 목록을 열었습니다.': 'Windows audio outputs listed.', 'Windows 오디오 출력': 'Windows audio outputs', 'Windows 장치 정보입니다. 출력 장치 설정은 변경하지 않습니다.': 'Windows device information. Output settings are unchanged.', '조회된 Windows 오디오 출력이 없습니다.': 'No Windows audio outputs were listed.', 'Windows 소리 설정': 'Windows sound settings', '활성': 'Active', '비활성': 'Disabled', '장치 없음': 'Not present', '헤드셋': 'Headset', '왼쪽 2회와 오른쪽 3회가 모두 들렸나요?': 'Did you hear two left and three right tones?', 'PCM 폐기': 'PCM drops', '인코딩 실패': 'Encode failures', '버퍼 부족': 'Underruns', '만료': 'Expired', '5초 증가량': '5-second increase', '일부 진단 정보를 읽지 못했습니다. 진단 로그를 확인하세요.': 'Some diagnostic data could not be read. Check the diagnostic log.', '오디오 경로가 변경됐습니다. 다시 검사하세요.': 'The audio route changed. Run the check again.', '듀얼센스 헤드셋 음량이 0입니다. Studio 설정에서 음량을 조정한 뒤 시험하세요.': 'DualSense headset volume is zero. Adjust it in Studio settings before testing.', '스피커와 헤드셋 음량이 모두 0입니다. Studio 설정에서 음량을 조정한 뒤 시험하세요.': 'Speaker and headset volumes are both zero. Adjust them in Studio settings before testing.'})

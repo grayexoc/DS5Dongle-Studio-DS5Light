@@ -72,6 +72,16 @@ int main(){
  macro_reset();macro_block_until_release(BTN_PAD_CLICK_LEFT);
  touch(true,1500,300);tick(80);assert(!macro_take_profile(slot,chime,source));
  rpt[RPT_BTN2]&=~2;tick(80);rpt[RPT_BTN2]|=2;step(10);assert(macro_take_profile(slot,chime,source));
+ // Power-off is queued once and never leaks into controller or keyboard output.
+ fresh_device();auto power=output(BTN_R3,MACRO_POWER_OFF,MACRO_FLAG_HOLD);
+ assert(macro_set_entry(0,power));enable_only(1);
+ btn_r3(true);step(10);assert(macro_take_power_off());assert(!macro_inject_mask());
+ tick(500);assert(!macro_take_power_off());
+ btn_r3(false);tick(80);btn_r3(true);step(10);assert(macro_take_power_off());
+ macro_reset();assert(!macro_take_power_off());
+ power.entry.gesture=GEST_STICK;assert(!macro_set_entry(0,power));
+ fresh_device();assert(macro_set_entry(0,output(BTN_R3,MACRO_POWER_OFF,0)));enable_only(1);
+ btn_r3(true);step(10);assert(macro_take_power_off());assert(!macro_inject_mask());
  // Shift storage survives commit/reload without altering the record format.
  fresh_device();auto shift=output(BTN_LEFT_FN,MACRO_SHIFT_KEY,6);
  assert(macro_set_entry(0,shift)&&macro_commit());macro_load();MacroRecord loaded{};macro_get(0,loaded);
@@ -109,6 +119,18 @@ int main(){
  assert(!(macro_suppress_mask()&BTN_TOUCHPAD));rpt[RPT_BTN2]|=4;step(80);
  assert(macro_suppress_mask()&BTN_TOUCHPAD);rpt[RPT_BTN2]&=~4;tick(80);
  assert(!(macro_suppress_mask()&BTN_TOUCHPAD));
+ // Swipes suppress the game report while physical clicks still run Pico mappings.
+ for (const uint32_t click : {BTN_TOUCHPAD, BTN_PAD_CLICK_LEFT, BTN_PAD_CLICK_RIGHT}) {
+     fresh_device();
+     swipe.entry.flags = MACRO_FLAG_REPLACE;
+     assert(macro_set_entry(0,swipe));
+     assert(macro_set_entry(1,output(click,T2BTN_CIRCLE,MACRO_FLAG_HOLD)));
+     enable_only(3);
+     touch(true,click == BTN_PAD_CLICK_RIGHT ? 1500 : 200,300);step(10);
+     rpt[RPT_BTN2]|=2;step(10);
+     assert(macro_suppress_mask()&BTN_TOUCHPAD);
+     assert(macro_inject_mask()&(1u<<(T2BTN_CIRCLE-1)));
+ }
  // Cue finishes, starts/stops at zero, does not overrun, and handles timer wrap.
  ProfileChime cue;cue.start(0xfffffff0,1000);assert(cue.active(20));assert(cue.next()==0);
  for(int i=0;i<4000;++i){float x=cue.next();assert(x>=-.061f&&x<=.061f);}

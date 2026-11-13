@@ -1,5 +1,6 @@
 """Presentation-only macro rules. No HID, timers or output engine."""
 from studio_i18n import text as _ui_tr
+from studio_shift import POWER_OFF
 import copy
 
 CONDITIONS={'tap':_ui_tr('짧게 누르기'),'long':_ui_tr('길게 누르기'),'double':_ui_tr('빠르게 두 번 누르기'),'hold':_ui_tr('누르는 동안 유지')}
@@ -88,9 +89,9 @@ class MacroDraft:
             raw[7:11]=s['keys']
         if s['output']!=before['output'] or s['output_kind']!=before['output_kind'] or s['kind']!=before['kind']:
             output=0 if s['kind']=='stick' or s['output_kind']=='keyboard' else s['output']
-            if not 0<=output<=30 or output==0 and s['output_kind']!='keyboard' and s['kind']!='stick':raise ValueError(_ui_tr('출력 동작을 확인하세요.'))
+            if (not 0<=output<=30 and output!=POWER_OFF) or output==0 and s['output_kind']!='keyboard' and s['kind']!='stick':raise ValueError(_ui_tr('출력 동작을 확인하세요.'))
             if s['output_kind']=='mouse' and output not in range(11,16):raise ValueError(_ui_tr('마우스 출력을 선택하세요.'))
-            if s['output_kind']=='controller' and (output in range(11,16) or output>=23):raise ValueError(_ui_tr('듀얼센스 출력을 선택하세요.'))
+            if s['output_kind']=='controller' and output!=POWER_OFF and (output in range(11,16) or output>=23):raise ValueError(_ui_tr('듀얼센스 출력을 선택하세요.'))
             if s['output_kind']=='profile' and output not in range(23,31):raise ValueError(_ui_tr('프로필 1~8을 선택하세요.'))
             raw[17]=output
         raw[5]=(raw[5]&~96)|(32 if s.get('layer',before['layer']) else 0)|(64 if s['output_kind']=='profile' and s.get('chime',before['chime']) else 0)

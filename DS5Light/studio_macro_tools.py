@@ -9,6 +9,7 @@ from studio_dialogs import messagebox
 from studio_records import macro_records
 from studio_slots import _DEVICE_LOCK
 from studio_settings_protocol import SettingsClient
+from studio_shift import POWER_OFF
 
 BG='#151515';FG='#eee9df';MUTED='#aaa393';GOLD='#d6ad52'
 
@@ -155,6 +156,7 @@ class MacroTools:
         keyname=lambda c:next((k for k,v in HID_KEYS.items() if v==c),f'HID {c}') if c else _ui_tr('미지정')
         OUT_BUTTONS=list(OUT_BUTTONS)+[_ui_tr('프로필 {0}번').format(i) for i in range(1,9)]
         target=OUT_BUTTONS[data[17]] if data[17] and data[17]<len(OUT_BUTTONS) else ' + '.join(keyname(c) for c in data[7:11] if c) or _ui_tr('출력 미지정')
+        if data[17]==POWER_OFF:target=_ui_tr('듀얼센스 전원')
         if data[4]&32:
             source=_ui_tr('오른쪽 스틱') if data[4]&64 else _ui_tr('왼쪽 스틱')
             target=' · '.join(d+' '+keyname(c) for d,c in zip(('↑','→','↓','←'),data[7:11]))
@@ -228,6 +230,7 @@ class MacroTools:
         slider=RangeSlider(box,variable,lo,hi,enabled=valid and not self.busy,marker=marker,marker_label=kind,
                            trigger=key=='trigger_reduce',display_scale=100 if key=='rumble_gain' else 1,
                            reset_to_marker=key.startswith(('at_','t2_')) and marker is not None and lo<=marker<=hi)
+        entry.display_variable = varentry
         self.range_controls[key]=(entry,slider,title)
         self.field_views[key]=(title,[entry,slider],[])
         slider.grid(row=1,column=0,columnspan=2,sticky='ew',pady=(4,0))

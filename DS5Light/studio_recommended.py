@@ -192,13 +192,16 @@ class RecommendedPresets:
             self.progress.configure(text=result.get('notice',_ui_tr('저장·전환 상태를 다시 조회하세요.')),kind='warning');return
         fresh=result['reloaded'];self.doc=SettingsDocument();self.invalid.clear();self.uncertain=False;self.external_stale=False
         from studio_slots import Slot
-        self.slots=[Slot(s.index,'saved',result['name']) if s.index==result['index'] else s for s in self.slots]
+        slots = self.slots if self.path in (result.get('old_path'), fresh['path']) else []
         panel=self.app.studio
         for i,slot in enumerate(panel.slots):
             if panel.slot_paths[i] in (result.get('old_path'),fresh['path']):
                 panel.slot_paths[i]=fresh['path']
                 if slot.index==result['index']:panel.slots[i]=Slot(slot.index,'saved',result['name'])
         self.profile_stamp=None;self.merge_entry_snapshot(fresh)
+        saved = Slot(result['index'], 'saved', result['name'])
+        self.slots = sorted([slot for slot in slots if slot.index != saved.index] + [saved],
+                            key=lambda slot: slot.index)
         self.doc.macros=copy.deepcopy(fresh['macros']);self.doc.macro_baseline=copy.deepcopy(fresh['macros'])
         self.doc.unsaved=False;self.doc.save_requested=True;self.profile_save_needed=False
         self.app.studio.catalog_invalid=True;self.app.studio.last_read=-1e9

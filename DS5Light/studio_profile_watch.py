@@ -28,32 +28,40 @@ def read_current(identity,previous=None,full=False):
                 device.close();raise
         try:
             client=StudioClient(device)
-            header=client.profile(include_mute=True)
+            header=client.profile(include_mute=True,include_state=True)
             old={k:previous.get(k) for k in ('index','name','edited')} if previous else None
             stamp={k:header[k] for k in ('index','name','edited')}
-            checked=full or stamp!=old or previous.get('auto_haptics_enable') not in (0,1,2)
-            profile=client.profile_state() if checked else dict(header,auto_haptics_enable=previous['auto_haptics_enable'])
-            if stamp==old and previous.get('auto_haptics_enable')==profile.get('auto_haptics_enable')==1:
+            extended='auto_haptics_enable' in header
+            checked=extended or full or stamp!=old or previous.get('auto_haptics_enable') not in (0,1,2)
+            if extended:
+                profile=header
+            elif checked:
+                profile=client.profile_state(header)
+            else:
+                profile=dict(header,auto_haptics_enable=previous['auto_haptics_enable'])
+            if not extended and stamp==old and previous.get('auto_haptics_enable')==profile.get('auto_haptics_enable')==1:
                 for key in ('mix_native_level','ah_dsp_source'):
                     if key in previous:profile.setdefault(key,previous[key])
-            if stamp == {k:profile[k] for k in stamp} and 'mute_macro' in header:
-                profile['mute_macro'] = header['mute_macro']
-            return dict(path=target['path'] if target else identity.hid_path,row=target,profile=profile,full=checked)
+            return dict(path=target['path'] if target else identity.hid_path,row=target,profile=profile,
+                        full=checked,extended=extended)
         finally:device.close()
     finally:_DEVICE_LOCK.release()
 
 class ProfileWatch:
     INTERVAL=3.
     MODE_INTERVAL=10.
+    EVENT_SAFETY_INTERVAL=30.
     def __init__(self):
         self.events=ProfileEvents()
         self.results=queue.SimpleQueue();self.busy=False;self.closed=False;self.key=None;self.generation=0
         self.next_check=0.;self.next_full=0.;self.profile=None;self.failures=0;self.was_paused=False
+        self.extended=False;self.event_backed=False
     def tick(self,binding,enabled,token,seed=None,paused=False):
         now=time.monotonic();identity=binding.snapshot();key=(token,identity.serial,identity.hid_path) if enabled else None
         if enabled:self.events.tick(identity)
         else:
-            self.events.stop.set();self.events.key=None
+            self.events.stop.set();self.events.key=None;self.events.healthy=False;self.events.changed=False
+        if key!=self.key:self.extended=False
         if key!=self.key or paused!=self.was_paused:
             rebound=bool(key and self.key and key[:2]==self.key[:2] and key[2]!=self.key[2])
             self.key=key;self.was_paused=paused;self.generation+=1
@@ -68,11 +76,18 @@ class ProfileWatch:
             if generation==self.generation and key is not None and not paused:
                 if data:
                     self.profile=data['profile'];self.failures=0;result=data
+                    self.extended=data.get('extended',False)
                     if data['full']:self.next_full=now+self.MODE_INTERVAL
                 elif error:
                     self.failures+=1
                 delay=.2 if not data and not error else min(12.,self.INTERVAL*max(1,self.failures))
+                if data and self.extended and self.events.healthy:delay=self.EVENT_SAFETY_INTERVAL
                 self.next_check=now+delay
+        event_backed=self.extended and self.events.healthy
+        if self.event_backed and not event_backed:
+            self.next_check=min(self.next_check,now+self.INTERVAL)
+            self.next_full=now
+        self.event_backed=event_backed
         if self.events.changed:self.next_check=now;self.next_full=now
         if (self.closed or key is None or paused or self.busy or now<self.next_check or not identity.hid_path):return result
         self.events.changed=False

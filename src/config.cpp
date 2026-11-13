@@ -895,6 +895,7 @@ bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len) {
     uint8_t nm[SLOT_NAME_LEN]; Config_body bd;
     if (!slot_read(idx, nm, bd)) return false;
     active_profile_set(idx);   // the live config now IS this slot
+    usb_profile_event_slot_saved();
     return true;
 }
 

@@ -371,7 +371,7 @@ def format_value(key,value):
 
 from studio_tooltip_ko import TRANSLATED_HELP
 
-REFERENCE=dict(REFERENCE,audio_buffer_length=48) # User-requested starting value.
+REFERENCE=dict(REFERENCE,audio_buffer_length=48,polling_rate_mode=1)
 
 TITLES['Device & Connection']=_ui_tr('장치')
 

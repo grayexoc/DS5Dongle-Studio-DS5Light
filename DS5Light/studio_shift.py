@@ -6,6 +6,8 @@ CHIME = 0x40
 PROFILE_FIRST = 23
 PROFILE_LAST = 30
 SHIFT_KEY = 31
+POWER_OFF = 32
+POWER_OFF_CAPABILITY = 0x10
 
 
 def extended(record):
@@ -39,8 +41,10 @@ def set_shift_key(records, mask, bit):
 
 
 def validate_extension(row):
-    if row[17] > SHIFT_KEY:
+    if row[17] > POWER_OFF:
         raise ValueError('매크로 출력 범위 오류')
+    if row[17] == POWER_OFF and row[4] & 0x30:
+        raise ValueError(_ui_tr('듀얼센스 전원 끄기는 버튼 또는 터치패드 스와이프에 지정하세요.'))
     if row[17] == SHIFT_KEY:
         chord = int.from_bytes(bytes(row[:4]), 'little')
         if row[4] or not chord or chord & (chord - 1) or chord >= 1 << 23 or row[5] & (SHIFT | CHIME):
