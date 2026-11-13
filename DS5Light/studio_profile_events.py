@@ -73,5 +73,6 @@ class ProfileEvents:
             except Exception:self.results.put((token,'failed'))
             finally:
                 if device is not None:device.close()
-        start_thread(threading.Thread(target=listen,name='DS5Light-profile-events',daemon=True))
+        try:start_thread(threading.Thread(target=listen,name='DS5Light-profile-events',daemon=True))
+        except Exception:self.results.put((token,'failed'))
     def close(self):self.closed=True;self.stop.set()

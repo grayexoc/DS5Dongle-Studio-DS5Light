@@ -1,0 +1,16 @@
+spec AudioSleep.tla
+check INVARIANTS TypeOK NoUnsafeCommit TimeoutSafe
+check PROPERTIES EventualReturn TimeoutRecovery CommitParks
+reach Acknowledged | normal
+reach TimedOut | normal
+reach Committed | normal
+reach DelayedWorker | delayed
+reach FailureAfterRead | fail-during
+reach KnownFailure | already-failed
+reach TimeoutAckRace | normal
+run normal attempts=1 | Attempts=1 WorkerMode=0 Disabled=FALSE
+run normal attempts=2 | Attempts=2 WorkerMode=0 Disabled=FALSE
+run delayed attempts=2 | Attempts=2 WorkerMode=1 Disabled=FALSE
+run already-failed | Attempts=1 WorkerMode=2 Disabled=FALSE
+run fail-during attempts=2 | Attempts=2 WorkerMode=3 Disabled=FALSE
+run disabled | Attempts=1 WorkerMode=0 Disabled=TRUE

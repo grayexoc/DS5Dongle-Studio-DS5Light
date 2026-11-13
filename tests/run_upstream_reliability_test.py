@@ -22,17 +22,17 @@ code=r'''
 using hid_report_type_t=int;
 constexpr int HID_REPORT_TYPE_OUTPUT=2;
 struct SetStateData { uint8_t data[63]; };
-int reportSeqCounter=0, sends=0, updates=0, commands=0, features=0;
+int reportSeqCounter=0, sends=0, updates=0, commands=0, features=0, state_sets=0;
 bool spk_active=false, changed=true;
 uint32_t now=0;
 uint32_t get_absolute_time(){return now;}
 uint32_t to_ms_since_boot(uint32_t x){return x;}
-bool state_rumble_wants_report(){return false;}
+bool state_rumble_wants_report(const uint8_t*){return false;}
 struct Config { int auto_haptics_enable=1; int usb_gamepad_mode=0; } config;
 Config &get_config() {return config;}
 uint8_t captured[63]{}, sent[78]{};
 bool state_update(const uint8_t *p,uint8_t n) { ++updates; memset(captured,0,63);memcpy(captured,p,n);return changed; }
-void state_set(uint8_t *p,uint8_t n) {memcpy(p,captured,n);}
+void state_set(uint8_t *p,uint8_t n) {++state_sets;memcpy(p,captured,n);}
 void bt_write(uint8_t *p,uint16_t n) {assert(n==78);++sends;memcpy(sent,p,n);}
 void pico_cmd_set(uint8_t,const uint8_t*,uint16_t) {++commands;}
 void set_feature_data(uint8_t,uint8_t*,uint16_t) {++features;}
@@ -97,8 +97,10 @@ int main() {
  tud_hid_set_report_cb(0,0,0,p,65);
  tud_hid_set_report_cb(0,2,2,p,64);
  tud_hid_set_report_cb(0,2,3,p,63);assert(sends==3);
- spk_active=true;changed=false;tud_hid_set_report_cb(0,2,2,p,63);assert(sends==3);
- changed=true;tud_hid_set_report_cb(0,2,2,p,63);assert(sends==4);
+ spk_active=true;changed=false;state_sets=0;
+ tud_hid_set_report_cb(0,2,2,p,63);assert(sends==3&&state_sets==1);
+ changed=true;state_sets=0;
+ tud_hid_set_report_cb(0,2,2,p,63);assert(sends==4&&state_sets==1);
  config.auto_haptics_enable=0;changed=false;
  tud_hid_set_report_cb(0,2,2,p,63);assert(sends==4); // unchanged ordinary state suppressed
  p[0]=0x0c;now=8;

@@ -221,11 +221,15 @@ if [[ "$CLEAN_BUILD" == "ON" ]]; then
   rm -rf "$BUILD_DIR"
 fi
 
+SOURCE_VERSION=$(sed -n 's/^set(VERSION "\([^"]*\)".*/\1/p' CMakeLists.txt | head -n 1)
+[[ -n "$SOURCE_VERSION" ]] || die "Firmware VERSION not found in CMakeLists.txt"
 CMAKE_ARGS=(
   -S .
   -B "$BUILD_DIR"
   -G Ninja
   -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
+  -DSTUDIO_XINPUT_EXPERIMENT=ON
+  -DVERSION="$SOURCE_VERSION"
   -DPICO_SDK_PATH="$SDK_DIR"
   -DENABLE_WAKE_HID="$ENABLE_WAKE_HID"
 )

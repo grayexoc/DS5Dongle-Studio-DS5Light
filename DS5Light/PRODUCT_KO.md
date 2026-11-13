@@ -39,11 +39,10 @@
 
 ## 다운로드와 실행
 
-로컬 시험 빌드는 `DS5Light-win-x64-v1.0.12-Experimental.zip`과 Pico 2 W용 `ds5-studio-light_v43.uf2`입니다.
 
-**통합 릴리즈 v1.0.6 · DS5Light v1.0.6 · Studio 펌웨어 v34**
+**통합 릴리즈 v1.0.14 · DS5Light v1.0.14 · Studio 펌웨어 v44**
 
-[Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases)에서 `DS5Light-win-x64-v1.0.6.zip` 전체를 받아 풀고 `DS5Light.exe`를 실행하세요. `_internal` 폴더를 함께 유지해야 하며 Python 설치는 필요하지 않습니다. Pico 2 W용 펌웨어는 별도 파일 `ds5-studio-light_v34.uf2`입니다.
+[Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases)에서 `DS5Light-win-x64-v1.0.14.zip` 전체를 받아 풀고 `DS5Light.exe`를 실행하세요. `_internal` 폴더를 함께 유지해야 하며 Python 설치는 필요하지 않습니다. Pico 2 W용 펌웨어는 별도 파일 `ds5-studio-light_v44.uf2`입니다.
 
 앱의 **Studio설정 → 추천 프리셋 → 저장 후 사용**을 이용하세요. 파일은 `Studio Presert/DS_Native.json`, `Studio Presert/Audio_Haptic_01.json`, `Studio Presert/Audio_Haptic_02.json`입니다. 현재 오디오햅틱 항목만 바꾸고 다른 현재 설정을 유지한 구성을 선택한 슬롯에 저장합니다. 슬롯 덮어쓰기 전 대상을 확인하세요.
 
@@ -80,3 +79,8 @@ DS5 Light는 [DS5Dongle-Studio](https://github.com/artzox/DS5Dongle-Studio)와 �
 [영어 번역](LICENSE_EN.txt) · [배포 정책](DISTRIBUTION_POLICY_KO.md)
 
 한국어 라이선스 원문을 기준으로 하며, OSI 승인 오픈소스 라이선스는 아닙니다.
+
+## 음량과 캡처 편의 기능
+
+- 스피커·헤드셋 음량 편집값을 연동하고, 스피커 음량 적용 시 같은 Pico의 Windows 음량을 동기화합니다. Windows 퍼센트는 예상값입니다.
+- 오디오햅틱이 켜진 프로필에서 선택한 프로세스 캡처로 전환하면 목록을 한 번 자동 갱신합니다.

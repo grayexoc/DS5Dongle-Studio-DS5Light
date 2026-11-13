@@ -49,6 +49,32 @@ class BatteryTests(unittest.TestCase):
 class BatteryLogoTests(unittest.TestCase):
     setUp=fixture.ModifiedUITests.setUp
     tearDown=fixture.ModifiedUITests.tearDown
+    def test_native_combobox_popup_focus_does_not_break_sweep(self):
+        from tkinter import ttk
+        errors=[]
+        self.root.report_callback_exception=lambda *error:errors.append(error)
+        self.root.deiconify();self.root.focus_force();self.root.update()
+        logo=self.ui.brand_wordmark
+        logo.show_status('ready',dict(percent=40,state=0))
+        choice=ttk.Combobox(self.root,values=['a','b'],state='readonly')
+        choice.pack();self.root.update()
+        try:
+            self.root.tk.call('ttk::combobox::Post',str(choice))
+            popup=str(self.root.tk.call('ttk::combobox::PopdownWindow',str(choice)))
+            self.root.tk.call('focus','-force',popup+'.f.l')
+            self.root.update()
+            with self.assertRaises(KeyError):self.root.nametowidget(popup+'.f.l')
+            self.assertFalse(logo._foreground())
+            logo._check_focus();logo._begin_sweep();logo._sweep_frame()
+            self.assertIsNone(logo._sweep_job)
+        finally:
+            self.root.tk.call('ttk::combobox::Unpost',str(choice))
+            choice.destroy()
+        self.root.focus_force();self.root.update()
+        self.assertTrue(logo._foreground())
+        self.assertIsNotNone(logo._sweep_job)
+        self.assertFalse(errors)
+        logo.show_status('no_data',None)
     def test_render_levels_have_different_pulse_and_identical_type(self):
         logo=self.ui.brand_wordmark;images=[]
         for percent in (0,20,40,100):

@@ -24,6 +24,7 @@ class OutputGain:
         self.positions=np.arange(1,self.capacity+1,dtype=np.float32)
 
         self._work=None
+        self._slew_work=None
 
         self._pcm=None
 
@@ -73,6 +74,10 @@ class OutputGain:
 
         else:
 
+            if self._slew_work is None or len(self._slew_work)<n:
+                self._slew_work=np.empty((self.capacity,4),dtype=np.float64)
+            y=self._slew_work[:n]
+
             maximum_step=1.5/(48000*.03)
 
             steps=self.positions[:n]*maximum_step
@@ -83,7 +88,8 @@ class OutputGain:
 
             if abs(self.current-target)<1e-6: self.current=float(target)
 
-            y=x.astype(np.float32)*gains[:,None]
+            np.copyto(y,x)
+            np.multiply(y,gains[:,None],out=y)
 
             amplified=target>1 or np.max(gains)>1
 

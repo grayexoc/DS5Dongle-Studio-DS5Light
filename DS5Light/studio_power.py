@@ -76,7 +76,8 @@ class StudioPower:
         def work():
             try:self.results.put((kind,operation(),None))
             except Exception as exc:self.results.put((kind,None,str(exc)))
-        start_thread(threading.Thread(target=work,name='DS5Light-power',daemon=True))
+        try:start_thread(threading.Thread(target=work,name='DS5Light-power',daemon=True))
+        except Exception as exc:self.results.put((kind,None,str(exc)))
 
     def click(self,event=None):
         a=self.app

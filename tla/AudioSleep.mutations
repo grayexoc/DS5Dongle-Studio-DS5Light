@@ -1,0 +1,59 @@
+# Snapshot audit: no prior fix-commit row to restore.
+mutation invalid stop state
+detects TypeOK
+only normal attempts=1
+- /\ state' = 3 /\ cpc' = "commitSEV"
++ /\ state' = 4 /\ cpc' = "commitSEV"
+
+mutation poll treats request as prepared
+detects NoUnsafeCommit
+only normal attempts=1
+- /\ cpc' = IF state = 2 THEN "commit" ELSE "timeoutCAS"
++ /\ cpc' = IF state \in {1, 2} THEN "commit" ELSE "timeoutCAS"
+
+mutation timeout CAS forgets cancellation store
+detects TimeoutSafe
+only normal attempts=1
+- /\ state' = IF state = 1 THEN 0 ELSE state
++ /\ state' = state
+
+mutation timeout ignores observed prepared state
+detects TimeoutSafe
+only normal attempts=1
+- /\ cpc' = IF state = 1 THEN "cancelSEV"
+-                         ELSE IF state = 2 THEN "commit" ELSE "poll"
++ /\ cpc' = IF state \in {1, 2} THEN "cancelSEV" ELSE "poll"
+
+mutation deadline never arrives
+detects EventualReturn
+only fail-during
+- Deadline == /\ cpc \in {"poll", "timeoutCAS"} /\ ~expired
++ Deadline == /\ FALSE /\ cpc \in {"poll", "timeoutCAS"} /\ ~expired
+
+mutation delayed worker blindly acknowledges canceled request
+detects TimeoutSafe
+only delayed
+- /\ state' = IF state = 1 THEN 2 ELSE state
++ /\ state' = 2
+
+mutation worker parks after losing CAS
+detects TimeoutRecovery
+only normal attempts=1
+- /\ wpc' = IF state = 1 THEN "preparedCheck" ELSE "work"
++ /\ wpc' = IF state = 1 THEN "preparedCheck" ELSE "parked"
+
+mutation commit notification removed
+detects CommitParks
+only normal attempts=1
+- CommitSEV == /\ cpc = "commitSEV"
+-              /\ event' = TRUE /\ cpc' = "returned" /\ result' = "true"
++ CommitSEV == /\ cpc = "commitSEV"
++              /\ event' = event /\ cpc' = "returned" /\ result' = "true"
+
+mutation failed worker bypass removed
+detects reach:KnownFailure
+only already-failed
+- /\ cpc' = IF Disabled \/ failed THEN "returned" ELSE "request"
+-          /\ result' = IF Disabled \/ failed THEN "true" ELSE "none"
++ /\ cpc' = IF Disabled THEN "returned" ELSE "request"
++          /\ result' = IF Disabled THEN "true" ELSE "none"

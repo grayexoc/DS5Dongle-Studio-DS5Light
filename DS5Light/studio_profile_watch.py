@@ -96,6 +96,7 @@ class ProfileWatch:
         def work():
             try:self.results.put((generation,read_current(identity,previous,full),None))
             except Exception as exc:self.results.put((generation,None,str(exc)))
-        start_thread(threading.Thread(target=work,name='DS5Light-profile-watch',daemon=True))
+        try:start_thread(threading.Thread(target=work,name='DS5Light-profile-watch',daemon=True))
+        except Exception as exc:self.results.put((generation,None,str(exc)))
         return result
     def close(self):self.closed=True;self.generation+=1;self.events.close()

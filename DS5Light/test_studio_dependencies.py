@@ -59,6 +59,112 @@ class UITests(unittest.TestCase):
     setUp=fixture.NativeUITests.setUp
     tearDown=fixture.NativeUITests.tearDown
     editor=fixture.NativeUITests.editor
+    def test_gyro_choice_header_and_options_are_right_aligned(self):
+        ui=self.editor();ui.select_category(3)
+        control=ui.field_views['gyro_mode'][1][0]
+        self.assertEqual(control.button.cget('anchor'),'e')
+        self.assertEqual(control.button.cget('justify'),'right')
+        control.toggle()
+        self.assertTrue(control.tiles)
+        for tile in control.tiles:
+            self.assertEqual(tile.cget('anchor'),'e')
+            self.assertEqual(tile.cget('justify'),'right')
+        control.build_tiles()
+        self.assertTrue(all(tile.cget('anchor')=='e' for tile in control.tiles))
+    def test_windows_volume_estimate_tracks_edit_sync_and_revert_locally(self):
+        ui=self.editor()
+        ui.doc.load(dict(ui.doc.baseline,speaker_volume=100,headset_volume=80,sync_spk_headset_volume=1,disable_speaker=0))
+        ui.render_fields()
+        title=ui.range_controls['speaker_volume'][2]
+        note=title.winfo_children()[-1]
+        self.assertEqual(note.pack_info()['side'],'left')
+        self.assertIs(note.master,title)
+        self.assertEqual(len(title.pack_slaves()),3)
+        self.assertIn('25%',note.cget('text'))
+        with patch.object(ui,'with_client') as wire:
+            ui.vars['speaker_volume'].set('110')
+            self.assertIn('41%',note.cget('text'))
+            ui.vars['headset_volume'].set('40')
+            self.assertIn('1%',note.cget('text'))
+            ui.vars['speaker_volume'].set('')
+            self.assertIn('—',note.cget('text'))
+            ui.revert()
+            note=ui.range_controls['speaker_volume'][2].winfo_children()[-1]
+            self.assertIn('25%',note.cget('text'))
+            self.assertFalse(ui.doc.changes)
+            wire.assert_not_called()
+    def test_mode_mute_follows_audio_mode_and_preserves_values(self):
+        ui=self.editor()
+        ui.doc.load(dict(ui.doc.baseline,auto_haptics_enable=0,disable_speaker=0,auto_mute_mix=1,auto_mute_replace=0))
+        ui.render_fields()
+        def shown(key):
+            return bool(next(row for _,rows,_,_,_ in ui._option_groups for name,row in rows if name==key).grid_info())
+        with patch.object(ui,'with_client') as wire:
+            for mode in (0,1,2,0):
+                ui.changed('auto_haptics_enable',mode)
+                self.assertEqual(shown('auto_mute_mix'),mode==1)
+                self.assertEqual(shown('auto_mute_replace'),mode==2)
+                self.assertEqual(ui.doc.values['auto_mute_mix'],1)
+                self.assertEqual(ui.doc.values['auto_mute_replace'],0)
+                if mode:
+                    self.assertFalse(ui.enabled_for('auto_mute_mix' if mode==1 else 'auto_mute_replace'))
+            wire.assert_not_called()
+    def test_apply_syncs_windows_only_for_volume_edits_and_keeps_failures_separate(self):
+        from unittest.mock import Mock
+        ui=self.editor()
+        ui.doc.load(dict(ui.doc.baseline,speaker_volume=100,headset_volume=80,disable_speaker=0))
+        ui.render_fields()
+        client=Mock()
+        client.read_fields.side_effect=lambda fields:(dict(ui.doc.baseline),[])
+        client.write_fields.side_effect=lambda changes,current:dict(changes)
+        client.profile.return_value=dict(index=0,name='A',edited=True)
+        ui.profile_stamp=None
+        result=[]
+        with patch.object(ui,'with_client',side_effect=lambda op:op(client)),patch.object(ui,'stopped_task',side_effect=lambda kind,op:result.append(op())),patch('studio_volume.sync_speaker_volume',side_effect=OSError('sync failed')) as sync:
+            ui.changed('speaker_volume',90)
+            ui.apply()
+            self.assertEqual(result[-1]['values']['speaker_volume'],90)
+            self.assertEqual(result[-1]['volume_warning'],'sync failed')
+            self.assertEqual(sync.call_args.args[-1],90)
+            self.assertEqual(sync.call_count,1)
+            ui.doc.revert();ui.changed('headset_volume',70)
+            ui.apply()
+            self.assertEqual(sync.call_count,1)
+            self.assertIsNone(result[-1]['volume_warning'])
+    def test_enabling_volume_sync_uses_speaker_and_revert_restores_values(self):
+        ui=self.editor()
+        ui.doc.load(dict(ui.doc.baseline,sync_spk_headset_volume=0,speaker_volume=100,headset_volume=80))
+        ui.render_fields()
+        with patch.object(ui,'with_client') as wire:
+            ui.changed('sync_spk_headset_volume',1)
+            self.assertEqual(ui.doc.changes,dict(sync_spk_headset_volume=1,headset_volume=100))
+            self.assertEqual(float(ui.vars['headset_volume'].get()),100)
+            self.assertEqual(ui.doc.values['speaker_volume'],100)
+            ui.revert()
+            self.assertFalse(ui.doc.changes)
+            self.assertEqual(float(ui.vars['headset_volume'].get()),80)
+            wire.assert_not_called()
+    def test_volume_sync_updates_both_controls_without_transmission(self):
+        ui=self.editor()
+        ui.doc.load(dict(ui.doc.baseline,sync_spk_headset_volume=1,speaker_volume=100,headset_volume=80,disable_speaker=0))
+        ui.render_fields()
+        self.assertFalse(ui.doc.changes)
+        with patch.object(ui,'with_client') as wire:
+            for key,value in (('speaker_volume',90),('headset_volume',70)):
+                ui.vars[key].set(str(value))
+                for linked in ('speaker_volume','headset_volume'):
+                    self.assertEqual(ui.doc.values[linked],value)
+                    self.assertEqual(float(ui.vars[linked].get()),value)
+                self.assertEqual(ui.doc.changes['speaker_volume'],value)
+                self.assertEqual(ui.doc.changes['headset_volume'],value)
+            ui.revert()
+            self.assertFalse(ui.doc.changes)
+            self.assertEqual(float(ui.vars['speaker_volume'].get()),100)
+            self.assertEqual(float(ui.vars['headset_volume'].get()),80)
+            ui.changed('sync_spk_headset_volume',0)
+            ui.vars['speaker_volume'].set('60')
+            self.assertEqual(ui.doc.values['headset_volume'],80)
+            wire.assert_not_called()
     def test_mix_toggle_links_restore_and_preserves_stored_level(self):
         ui=self.editor();ui.doc.load(dict(ui.doc.baseline,auto_haptics_enable=1,mix_native_level=0,mix_native_filter=1,ah_dsp_source=1))
         ui.render_fields()

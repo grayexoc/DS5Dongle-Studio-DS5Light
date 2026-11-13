@@ -3074,10 +3074,6 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '현재 프로필 설정': 'Current profile settings',
  'Pico 공용 매핑·매크로 · 모든 프로필에 적용': 'Shared Pico mappings and macros · All profiles',
  ' · 임시 적용값 포함': ' · Includes temporarily applied changes',
- '네이티브 햅틱 · 오디오햅틱 꺼짐': 'Native haptics · Audio haptics off',
- '캡쳐 중': 'Capturing',
- '정지 중': 'Stopping',
- '연결 대기 중': 'Waiting for connection',
  '저장 후 사용': 'Save and use',
  '저장 전 프로필이 바뀌었습니다. 새로 고침으로 확인하세요.': 'The profile was changed before saving. Please refresh to check.',
  '저장 대상 슬롯이 변경되었습니다. 다시 조회하세요.': 'The save destination slot has been changed. Please check again.',
@@ -4750,6 +4746,12 @@ FIELD_LABELS.update({'disable_inactive_disconnect':'Disable idle disconnect',
 
 FIELD_LABELS['ps_shortcut_enabled']='PS default shortcuts'
 FIELD_HELP['ps_shortcut_enabled']='Short press sends Win+G; long press sends Win+Tab. Turn this off to use PS in Pico mappings or Shift combinations.'
+FIELD_HELP['speaker_volume']='Apply or save to sync the Windows volume of the same Pico output device. 127 corresponds to 100% Windows device volume.'
+FIELD_HELP['headset_volume']='Volume of a headset connected to the DualSense audio jack. Enabling volume linking matches it to the speaker volume.'
+FIELD_HELP['speaker_gain']='Use this option to effectively increase a quiet DualSense speaker.'
+FIELD_HELP['lock_volume']='Blocks DualSense volume commands from Windows and games. In-game sound levels are separate.'
+FIELD_LABELS['at_pushback_src']='Trigger recoil source'
+FIELD_HELP['at_pushback_src']='Selects game rumble or audio haptics to drive trigger recoil. Adjust recoil strength while configuring a custom trigger effect.'
 EN.update({
  'PS 기본 단축키': 'PS default shortcuts',
  '짧게 Win+G · 길게 Win+Tab. PS를 매핑에 쓰려면 끄세요. 변경값은 현재 프로필에 편집되고 임시 적용 또는 저장할 때 Pico에 전송됩니다.':

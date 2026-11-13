@@ -1,0 +1,25 @@
+mutation reply puts invalid job identity
+detects TypeOK
+- /\ replies' = Append(replies, i)
++ /\ replies' = Append(replies, Requests + 1)
+
+mutation accept old generation
+detects NoStaleApply
+- applies == hasReply /\ capturedGen[id] = g /\ k # None /\ ~p
++ applies == hasReply /\ k # None /\ ~p
+
+mutation accept replies while disabled or paused
+detects NoInactiveApply
+- applies == hasReply /\ capturedGen[id] = g /\ k # None /\ ~p
++ applies == hasReply /\ capturedGen[id] <= g
+
+mutation start another worker while busy
+detects SingleWorker
+only requests=2
+- starts == launch /\ ~b /\ k # None /\ ~p /\ issued < Requests
++ starts == launch /\ k # None /\ ~p /\ issued < Requests
+
+mutation draining an old or error reply leaves busy set
+detects BusyClears
+- b == IF hasReply THEN FALSE ELSE busy
++ b == busy

@@ -86,6 +86,13 @@ class PreferenceStore:
         self.data = default_preferences()
         self.error = None
         self.recovered_backup = None
+        self._backup_pending = False
+
+    def _preserve_corrupt(self):
+        backup = self.path.with_name(self.path.stem + f'.corrupt-{time.time_ns()}' + self.path.suffix)
+        os.replace(self.path, backup)
+        self.recovered_backup = backup
+        self._backup_pending = False
 
     def load(self):
         if not self.path.exists():
@@ -94,10 +101,9 @@ class PreferenceStore:
             self.data = validate(json.loads(self.path.read_text(encoding='utf-8')))
         except Exception as exc:
             self.error = str(exc)
-            backup = self.path.with_name(self.path.stem + f'.corrupt-{int(time.time())}' + self.path.suffix)
+            self._backup_pending = True
             try:
-                os.replace(self.path, backup)
-                self.recovered_backup = backup
+                self._preserve_corrupt()
                 self.error = str(exc) + _ui_tr(' · 손상된 파일을 별도 보관했습니다.')
             except OSError:
                 # Keep the unreadable file intact and avoid replacing it on save.
@@ -109,6 +115,8 @@ class PreferenceStore:
         wrapped = {'version': 1, 'preferences': data}
         clean = validate(wrapped)
         payload = json.dumps({'version': 1, 'preferences': clean}, ensure_ascii=False, allow_nan=False, indent=2)
+        if self._backup_pending:
+            self._preserve_corrupt()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         name = None
         try:

@@ -234,6 +234,17 @@ class MacroTools:
         self.range_controls[key]=(entry,slider,title)
         self.field_views[key]=(title,[entry,slider],[])
         slider.grid(row=1,column=0,columnspan=2,sticky='ew',pady=(4,0))
+        if key=='speaker_volume':
+            from studio_volume import estimated_windows_percent
+            estimate=tk.Label(title,bg=BG,fg=MUTED,anchor='w',font=(_ui_tr('맑은 고딕'),8))
+            estimate.pack(side='left',padx=(8,0))
+            def update_estimate(*_):
+                from localization import LANGUAGE
+                try:percent=str(estimated_windows_percent(int(variable.get())))+'%'
+                except ValueError:percent='—'
+                estimate.configure(text=(_ui_tr('Windows 예상 음량: 약 {0}') if LANGUAGE=='ko' else 'Estimated Windows volume: ~{0}').format(percent))
+            widget_trace(box,variable,update_estimate)
+            update_estimate()
         def changed(*_):
             self.number_changed(key,variable.get())
             if key in ('trigger_reduce','rumble_gain'):

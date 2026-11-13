@@ -7,11 +7,13 @@ reports/
 *.zip
 *.spec
 .env*
+
 .serena/
+.gitnexus/
+*.pyc
 .build-temp/
 logs/
 *.log
 preferences.json
 recommend-slots.json
 ds5dongle-slots.json
-!DS5Light.spec

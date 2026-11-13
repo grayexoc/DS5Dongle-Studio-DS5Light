@@ -363,19 +363,12 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         for section in SECTIONS:
             if not query and (section['title'] not in sections or section['title']=='Rumble → Trigger'):continue
             ordered=[f for f in section['fields'] if f[1] not in FAST_TRIGGER_FIELDS and f[1] not in ('rumble_gain','rumble_mode','rumble_release','enable_wake') and (query or f[1] not in TRIGGER_FIELDS)]
-            if section['title']=='Auto-Haptics & Speaker Effect Leak':
-                ordered=[f for f in ordered if f[1] not in ('auto_mute_mix','auto_mute_replace')]
-            elif section['title']=='General Haptics & Audio':
+            if section['title']=='General Haptics & Audio':
                 gain_at=next(i for i,f in enumerate(ordered) if f[1]=='haptics_gain')+1
                 ordered[gain_at:gain_at]=[FIELDS['rumble_gain'],FIELDS['rumble_mode'],FIELDS['rumble_release']]
-                at=next(i for i,f in enumerate(ordered) if f[1]=='disable_speaker')+1
-                ordered[at:at]=[FIELDS['auto_mute_mix'],FIELDS['auto_mute_replace']]
             if not query and section['title']=='Device & Connection':
                 ordered=[f for f in ordered if f[1] not in self.LIGHTING_FIELDS]
             fields=[f for f in ordered if self.visible(f[1]) and (not query or field_matches(f,section['title'],query))]
-            if section['title']=='General Haptics & Audio' and any(f[1] in ('auto_mute_mix','auto_mute_replace') for f in fields):
-                if not any(f[1]=='disable_speaker' for f in fields):
-                    fields.insert(next(i for i,f in enumerate(fields) if f[1] in ('auto_mute_mix','auto_mute_replace')),FIELDS['disable_speaker'])
             if not fields:continue
             if section['title']=='Macros':
                 if query:
@@ -527,7 +520,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         elif f[4]=='select':
             opts=options(f);mapping={str(v):k for k,v in opts};var.set(dict(opts).get(value,_ui_tr('밝기 선택') if key=='player_led_bright' and value==3 else _ui_tr('미지원') if value is None else str(value)))
             if key=='gyro_mode':
-                control=ControllerChoice(parent,textvariable=var,values=list(mapping),compact=True,state='readonly' if valid and not self.busy else 'disabled')
+                control=ControllerChoice(parent,textvariable=var,values=list(mapping),compact=True,justify='right',state='readonly' if valid and not self.busy else 'disabled')
                 control.grid(row=row,column=1,sticky='ew',pady=6)
             else:
                 control=ttk.Combobox(parent,textvariable=var,values=list(mapping),width=dropdown_width,justify='right',state='readonly' if valid and not self.busy else 'disabled');control.grid(row=row,column=1,sticky='e',pady=6)
@@ -571,6 +564,13 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             self.doc.normalize_haptic_gain(stage=key=='auto_haptics_enable' and previous!=value)
             if self.doc.values.get('auto_haptics_enable') in (1,2):self.invalid.pop('haptics_gain',None)
         self.doc.companion_edit(key,previous,value)
+        if key=='sync_spk_headset_volume' and previous!=1 and value==1:
+            self.invalid.pop('headset_volume',None)
+            self.refresh_read_values(keys=('headset_volume',))
+        if key in ('speaker_volume','headset_volume') and self.doc.values.get('sync_spk_headset_volume')==1:
+            other='headset_volume' if key=='speaker_volume' else 'speaker_volume'
+            self.invalid.pop(other,None)
+            self.refresh_read_values(keys=(other,))
         for child in ('disable_speaker','lightbar_off'):
             variable=self.vars.get(child)
             if variable is not None and child in self.doc.values and bool(variable.get())!=bool(self.doc.values[child]):
@@ -823,6 +823,11 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 for (trig,index) in effects:
                     if actual[str(trig)][index]!=effect_baseline[str(trig)][index]:raise RuntimeError(_ui_tr('효과가 외부에서 변경되었습니다. 새로 고침을 누르세요.'))
             checked=client.write_fields(changes,current)
+            volume_warning=None
+            if 'speaker_volume' in changes:
+                from studio_volume import sync_speaker_volume
+                try:sync_speaker_volume(reconnect_path,binding,self.device_rows,changes['speaker_volume'])
+                except (OSError,ValueError) as exc:volume_warning=str(exc)
             for (trig,index),state in effects.items():client.write_effect(trig,index,state)
             if effects:
                 verified=client.read_effects()
@@ -860,7 +865,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             return dict(values=dict(current,**checked),saved=persist and not save_uncertain,reconnect=reconnect_needed,
                         profile=profile,profile_saved=profile_saved,target=target,macros_pending=pending_macros,
                         trigger_changed=bool(TRIGGER_FIELDS.intersection(changes)),
-                        save_uncertain=save_uncertain,save_error=save_error,reset_uncertain=reset_uncertain,
+                        save_uncertain=save_uncertain,save_error=save_error,reset_uncertain=reset_uncertain,volume_warning=volume_warning,
                         edge_serial_reconnect=edge_serial_changed and reconnect_needed and not save_uncertain)
         def operation():
             result=self.with_client(op)
@@ -999,6 +1004,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 profile=result.get('profile')
                 if profile:
                     self.app.studio._sync_current_profile(self.path,profile)
+            if result.get('volume_warning') and not (result.get('save_uncertain') or result.get('reload_error')):
+                self.progress.configure(text=_ui_tr('Pico 설정 적용됨 · Windows 음량 동기화 실패: ')+result['volume_warning'],kind='warning')
         elif kind=='shared_save':self.finish_shared_save(result)
         elif kind=='recommended':self.finish_recommended(result)
         elif kind=='effects':self.doc.effects=copy.deepcopy(result);self.doc.effect_baseline=copy.deepcopy(result)
@@ -1154,7 +1161,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 GlyphStrip(symbols,source,limit=3).pack(side='left')
                 output=data[17]
                 if 0<output<len(OUT_BUTTONS) or output==POWER_OFF:
-                    tk.Label(symbols,text='→',bg=CARD,fg=GOLD).pack(side='left',padx=6)
+                    tk.Label(symbols,text='→',bg=CARD,fg=GOLD,padx=0,borderwidth=0).pack(side='left',padx=1)
                     GlyphStrip(symbols,[_ui_tr('듀얼센스 전원') if output==POWER_OFF else OUT_BUTTONS[output]]).pack(side='left')
             tk.Label(summary,text=self.macro_summary(data),bg=CARD,fg=MUTED,wraplength=255,justify='left',anchor='w').pack(anchor='w')
             tk.Label(row,textvariable=status,bg=CARD,fg=GOLD,font=(_ui_tr('맑은 고딕'),8),anchor='w').grid(row=2,column=1,sticky='w',pady=(3,0))
@@ -1402,7 +1409,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                    command=lambda:toggle(common,'at_pushback_src')).grid(row=row,column=0,columnspan=2,sticky='ew',pady=4)
         row += 1
         if common in open_groups:
-            field('at_pushback_src','반동을 일으키는 신호','Recoil signal',
+            field('at_pushback_src','트리거 반동 소스','Trigger recoil source',
                   [(0,ui_text('일반 진동','Game rumble')),(1,ui_text('오디오햅틱','Audio haptics')),
                    (2,ui_text('둘 중 강한 신호','Stronger of the two'))])
             self.field_row(box,row,EDITABLE['synth_force'],title_text=ui_text('게임 효과보다 내 설정 우선','Prefer my settings over game effects'))

@@ -134,9 +134,12 @@ class BatteryLogo(tk.Canvas):
             self._sweep_job=self.after(self.SWEEP_PAUSE_MS,self._begin_sweep)
 
     def _foreground(self):
-        if not self.winfo_viewable():return False
-        focus=self.focus_displayof()
-        return focus is not None and focus.winfo_toplevel()==self._window
+        try:
+            if not self.winfo_viewable():return False
+            # Native combobox popups have Tcl paths but no Python widget object.
+            focus=self.tk.call('focus','-displayof',self._w)
+            return bool(focus) and str(self.tk.call('winfo','toplevel',focus))==str(self._window)
+        except tk.TclError:return False
 
     def _queue_focus_check(self,event):
         if self._focus_job is None:

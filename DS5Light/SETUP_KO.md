@@ -4,11 +4,10 @@
 
 ## 패키지와 펌웨어
 
-로컬 시험 빌드는 `DS5Light-win-x64-v1.0.12-Experimental.zip`과 Pico 2 W용 `ds5-studio-light_v43.uf2`를 함께 사용합니다. 아래 설치 절차는 공개 버전에도 적용됩니다.
 
-Windows 10/11 x64에서 `DS5Light-win-x64-v1.0.6.zip` 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행하세요. 실행 파일 옆의 `_internal` 폴더를 함께 유지해야 합니다. 실행 배포본에는 Python 설치가 필요하지 않습니다.
+Windows 10/11 x64에서 `DS5Light-win-x64-v1.0.14.zip` 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행하세요. 실행 파일 옆의 `_internal` 폴더를 함께 유지해야 합니다. 실행 배포본에는 Python 설치가 필요하지 않습니다.
 
-통합 릴리즈는 v1.0.6, 앱은 v1.0.6, 펌웨어는 Studio v34입니다. 펌웨어는 별도 첨부 파일 `ds5-studio-light_v34.uf2`로 제공합니다. 이 파일은 Raspberry Pi Pico 2 W용이며 RP2040 Pico W나 Waveshare 보드용이 아닙니다. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
+통합 릴리즈는 v1.0.14, 앱은 v1.0.14, 펌웨어는 Studio v44입니다. 펌웨어는 별도 첨부 파일 `ds5-studio-light_v44.uf2`로 제공합니다. 이 파일은 Raspberry Pi Pico 2 W용이며 RP2040 Pico W나 Waveshare 보드용이 아닙니다. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
 
 펌웨어 변경이나 프로필 저장 전에 현재 설정과 슬롯을 백업하세요. 이 포크의 추가 설정·진단에는 해당 펌웨어의 지원이 필요합니다. 기존 호환 Studio에서도 기본 오디오 전송이 가능할 수 있지만 추가 기능이 모두 제공되는 것은 아닙니다. 일반 설치에 flash_nuke 초기화는 필요하지 않습니다.
 

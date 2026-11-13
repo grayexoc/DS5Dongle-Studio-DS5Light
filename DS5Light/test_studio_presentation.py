@@ -85,7 +85,7 @@ class PresentationTests(unittest.TestCase):
         self.assertNotIn('at_l2_strength',e.vars)
         common=next(w for w in walk(e.body) if isinstance(w,ttk.Button) and 'L2/R2 공통 설정' in w.cget('text'))
         self.assertTrue(common.cget('text').startswith('▾'))
-        self.assertEqual(self.texts(e).count('반동을 일으키는 신호'),1)
+        self.assertEqual(self.texts(e).count('트리거 반동 소스'),1)
         self.assertIn('synth_force',e.vars)
         common.invoke()
         self.assertNotIn('synth_force',e.vars)

@@ -8,6 +8,9 @@ DS5 Light adds adaptive filtering to the copy of game audio sent to your dongle.
 
 ## Features
 
+- Link speaker/headset volume; synchronize explicit speaker-volume changes to the matching Pico Windows endpoint. The displayed Windows percentage is an estimate.
+- Refresh the process list once when entering selected-process capture with audio haptics enabled.
+
 - High-DPI controls and window bounds, retaining the dark/gold theme. Popups follow the main window's scale.
 - Integrated Studio settings, momentary Base/Shift mappings and profile 1–8 output actions with optional chime/preview.
 - Safer settings-task completion, bounded device-lock waits and guarded thread startup; Korean/English labels and controller-button icons.
@@ -39,11 +42,10 @@ This is CPU-based signal processing, with no large AI model or GPU inference in 
 
 ## Download and start
 
-Local test build pair: `DS5Light-win-x64-v1.0.12-Experimental.zip` and `ds5-studio-light_v43.uf2` for Pico 2 W.
 
-**Combined release v1.0.6 · DS5Light v1.0.6 · Studio firmware v34**
+**Combined release v1.0.14 · DS5Light v1.0.14 · Studio firmware v44**
 
-Download `DS5Light-win-x64-v1.0.6.zip` from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases). Extract the whole package and run `DS5Light.exe` with `_internal` beside it. Python is not required. The separate Pico 2 W firmware attachment is `ds5-studio-light_v34.uf2`.
+Download `DS5Light-win-x64-v1.0.14.zip` from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases). Extract the whole package and run `DS5Light.exe` with `_internal` beside it. Python is not required. The separate Pico 2 W firmware attachment is `ds5-studio-light_v44.uf2`.
 
 Use the app's **Studio settings → Recommended presets → Save and use** workflow. The files are `Studio Presert/DS_Native.json`, `Studio Presert/Audio_Haptic_01.json` and `Studio Presert/Audio_Haptic_02.json`. Recommended presets change current audio-haptics fields, preserve other current settings, and save that resulting configuration to the selected slot. Check before overwriting a slot.
 

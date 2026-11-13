@@ -1372,17 +1372,16 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
                 const uint32_t now = to_ms_since_boot(get_absolute_time());
                 const bool rearm = get_config().auto_haptics_enable == 0 &&
                     payload_size >= 32 && (payload[0] & 0x0c) && now - last_rearm_ms >= 8;
-                if (spk_active && !changed && !rearm && !state_rumble_wants_report()) return;
-                if (rearm) last_rearm_ms = now;
                 uint8_t outputData[78]{};
+                state_set(outputData + 3, sizeof(SetStateData));
+                if (spk_active && !changed && !rearm && !state_rumble_wants_report(outputData + 3)) return;
+                if (rearm) last_rearm_ms = now;
                 outputData[0] = 0x31;
                 outputData[1] = reportSeqCounter << 4;
                 if (++reportSeqCounter == 256) {
                     reportSeqCounter = 0;
                 }
                 outputData[2] = 0x10;
-                // memcpy(outputData + 3, buffer + 1, bufsize - 1);
-                state_set(outputData + 3, sizeof(SetStateData));
                 bt_write(outputData, sizeof(outputData));
                 return;
     }

@@ -1,0 +1,14 @@
+spec ProfileWatchReplies.tla
+check INVARIANTS TypeOK NoStaleApply NoInactiveApply SingleWorker
+check PROPERTIES BusyClears
+reach PausedQueued | requests=1 changes=2
+reach StaleQueued | requests=1 changes=2
+reach ClosedQueued | requests=1 changes=2
+reach ErrorDrained | requests=1 changes=2
+reach DisabledQueued | requests=1 changes=2
+reach IdentityABA | requests=1 changes=3
+run requests=0 changes=0 | Keys={a} Requests=0 Changes=0
+run requests=1 changes=2 | Keys={a,b} Requests=1 Changes=2
+run requests=1 changes=3 | Keys={a,b} Requests=1 Changes=3
+run requests=2 changes=2 | Keys={a,b} Requests=2 Changes=2
+run requests=3 changes=1 | Keys={a} Requests=3 Changes=1

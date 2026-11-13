@@ -1,0 +1,49 @@
+mutation producer claims past finite input
+only pool=3 items=1
+detects TypeOK
+- Start == /\ ppc = "idle" /\ made < Items
++ Start == /\ ppc = "idle" /\ made <= Items
+
+mutation free index removed without retiring queue ownership
+only pool=3 items=1
+detects Ownership
+- THEN /\ held' = Head(freeQ) /\ freeQ' = Tail(freeQ)
++ THEN /\ held' = Head(freeQ) /\ freeQ' = freeQ
+
+mutation worker slot prematurely reusable during encoding
+only pool=1 items=3
+detects NoOverwrite
+- /\ pending' = Tail(pending) /\ wpc' = "checkGeneration"
++ /\ pending' = Tail(pending) /\ wpc' = "checkGeneration"
+-         /\ UNCHANGED <<producer, freeQ, data, epochs, generation, resetCount,
++ /\ freeQ' = Append(freeQ, Head(pending))
++ /\ UNCHANGED <<producer, data, epochs, generation, resetCount,
+
+mutation stale encoded generation accepted after reset
+only pool=3 items=1
+detects CurrentPublication
+- /\ IF epochs[work] = generation
++ /\ IF TRUE
+
+mutation worker takes newest PCM instead of FIFO
+only pool=3 items=3
+detects OrderedPublication
+- /\ work' = Head(pending) /\ captured' = data[Head(pending)]
+-         /\ pending' = Tail(pending) /\ wpc' = "checkGeneration"
++ /\ work' = pending[Len(pending)] /\ captured' = data[pending[Len(pending)]]
++ /\ pending' = SubSeq(pending, 1, Len(pending)-1) /\ wpc' = "checkGeneration"
+
+mutation worker forgets to return held slot
+only pool=3 items=1
+detects AllReturned
+- ReturnWorker == /\ wpc = "return"
++ ReturnWorker == /\ FALSE /\ wpc = "return"
+
+mutation reset returns a still-owned worker block
+only pool=3 items=1
+detects Ownership
+- /\ ppc' = "drain"
+-          /\ UNCHANGED <<held, old, made, worker, freeQ, pending, data, epochs,
++ /\ ppc' = "drain"
++          /\ freeQ' = (IF work # 0 THEN Append(freeQ, work) ELSE freeQ)
++          /\ UNCHANGED <<held, old, made, worker, pending, data, epochs,

@@ -46,7 +46,8 @@ void state_diagnostic_snapshot(uint8_t *data) {
     memcpy(data + 17, output_diagnostics.sent, 8);
 }
 
-bool state_rumble_wants_report() {
+bool state_rumble_wants_report(const uint8_t *prepared) {
+    if (prepared) return rumble_output_pending || rumble_sent.pending(prepared);
     uint8_t current[sizeof(SetStateData)];
     state_set(current, sizeof(current));
     return rumble_output_pending || rumble_sent.pending(current);

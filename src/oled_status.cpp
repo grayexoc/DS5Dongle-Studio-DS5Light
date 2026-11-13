@@ -4,7 +4,6 @@
 #include "manual_power.h"
 
 #include "oled_font.h"
-#include "wifi_icon_8x7.h"
 #include "nyan_full2_8fps.h"
 #include "xbox_logo_slow.h"
 #include "dualsense_buttons_8fps.h"
@@ -158,11 +157,15 @@ void poll_buttons(uint32_t now) {
     }
 }
 
-void send_command(uint8_t command) {
+void send_commands(const uint8_t *commands, size_t length) {
     gpio_put(kPinDc, 0);
     gpio_put(kPinCs, 0);
-    spi_write_blocking(spi1, &command, 1);
+    spi_write_blocking(spi1, commands, length);
     gpio_put(kPinCs, 1);
+}
+
+void send_command(uint8_t command) {
+    send_commands(&command, 1);
 }
 
 void send_data(const uint8_t *data, size_t length) {
@@ -188,8 +191,8 @@ void clear_pixel(int x, int y) {
     framebuffer[y * kRowBytes + x / 8] &= static_cast<uint8_t>(~(1u << (7 - (x % 8))));
 }
 
-void draw_text(int x, int y, const char *text) {
-    for (; *text && x < kWidth; ++text, x += 6) {
+void draw_text(int x, int y, const char *text, int advance = 6) {
+    for (; *text && x < kWidth; ++text, x += advance) {
         const unsigned char ch = static_cast<unsigned char>(*text);
         if (ch < 0x20 || ch > 0x7E) continue;
         const uint8_t *glyph = kFont5x7[ch - 0x20];
@@ -202,15 +205,6 @@ void draw_text(int x, int y, const char *text) {
 void draw_centered(int y, const char *text) {
     const int width = static_cast<int>(strlen(text)) * 6 - 1;
     draw_text((kWidth - width) / 2, y, text);
-}
-
-void draw_wifi_icon(int x, int y, uint8_t level) {
-    if (level > 3) level = 3;
-    for (int row = 0; row < kWifiHeight; ++row) {
-        const uint8_t bits = kWifiIcons[level][row * kWifiStride];
-        for (int col = 0; col < kWifiWidth; ++col)
-            if (bits & (1u << (7 - col))) set_pixel(x + col, y + row);
-    }
 }
 
 void draw_nyan(uint32_t now) {
@@ -471,19 +465,12 @@ void draw_status() {
     }
     status_refresh_requested = false;
 
-    draw_text(1, 1, "Studio OLED");
+    draw_text(1, 1, "Studio-DS5Light");
     char line[16];
     if (rssi_valid) snprintf(line, sizeof(line), "%ddB", static_cast<int>(rssi));
     else snprintf(line, sizeof(line), "--");
     const int signal_width = static_cast<int>(strlen(line)) * 6 - 1;
     const int signal_x = kWidth - signal_width - 1;
-    uint8_t wifi_level = 0;
-    if (rssi_valid) {
-        if (rssi >= -55) wifi_level = 3;
-        else if (rssi >= -70) wifi_level = 2;
-        else if (rssi >= -85) wifi_level = 1;
-    }
-    draw_wifi_icon(signal_x - kWifiWidth, 1, wifi_level);
     draw_text(signal_x, 1, line);
 
     if (has_profile) {
@@ -534,12 +521,12 @@ void flush_frame() {
         const uint8_t *previous = sent_framebuffer + row * kRowBytes;
         if (panel_in_sync && memcmp(source, previous, kRowBytes) == 0) continue;
 
+        if (rows_sent == 0) send_command(0xB0);
         ++rows_sent;
-        const uint8_t page = 0xB0;
-        send_command(page);
         const uint8_t col = static_cast<uint8_t>(kHeight - 1 - row);
-        send_command(static_cast<uint8_t>(col & 0x0F));
-        send_command(static_cast<uint8_t>(0x10 | (col >> 4)));
+        const uint8_t address[] = {static_cast<uint8_t>(col & 0x0F),
+                                   static_cast<uint8_t>(0x10 | (col >> 4))};
+        send_commands(address, sizeof(address));
         uint8_t bytes[kRowBytes];
         for (int i = 0; i < kRowBytes; ++i) bytes[i] = reverse_bits(source[i]);
         send_data(bytes, sizeof(bytes));

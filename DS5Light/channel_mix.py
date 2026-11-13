@@ -11,6 +11,7 @@ class ChannelMixer:
         self.gain = 1.
         self.soft_mix = None
         self._position_count=0
+        self._capacity=0
 
     def process(self, data, channels, rate, rear=False, lfe=False, limiter='hard', center=False):
         if limiter not in ('hard', 'soft'):
@@ -29,6 +30,16 @@ class ChannelMixer:
         n = len(x)
         if not n:
             return data
+        if n>self._capacity:
+            self._capacity=max(480,n)
+            self._surrounds=np.empty((self._capacity,2),np.float64)
+            self._mixed=np.empty((self._capacity,2),np.float64)
+            self._term=np.empty((self._capacity,2),np.float64)
+            self._result=np.empty((self._capacity,8),dtype='<i2')
+            self._overload=np.empty(self._capacity,np.float64)
+            self._required=np.empty(self._capacity,np.float64)
+            self._steps=np.empty(self._capacity,np.float64)
+            self._gains=np.empty(self._capacity,np.float64)
         if self._position_count!=n:
             self._positions=np.arange(1,n+1)
             self._float_positions=self._positions.astype(np.float64)
@@ -51,20 +62,41 @@ class ChannelMixer:
         self.lfe = float(f[-1,0]) if isinstance(f,np.ndarray) else f
         # FL FR FC LFE surround-L surround-R. FC is optional, linked to both sides.
         # Front remains unity; only actual over-range sums trigger limiting.
-        surrounds=x[:,4:6].astype(np.float64)
+        surrounds=self._surrounds[:n]
+        mixed=self._mixed[:n]
+        term=self._term[:n]
+        np.copyto(surrounds,x[:,4:6])
         if channels==8:
             # Averaging avoids a 6 dB jump for duplicated sides/rears.
-            surrounds=(surrounds+x[:,6:8])*.5
-        mixed = x[:, :2].astype(np.float64) + r*surrounds + f*x[:, 3:4] + c*x[:, 2:3]
+            np.add(surrounds,x[:,6:8],out=surrounds)
+            np.multiply(surrounds,.5,out=surrounds)
+        np.multiply(surrounds,r,out=term)
+        np.add(x[:,:2],term,out=mixed)
+        np.multiply(x[:,3:4],f,out=term)
+        np.add(mixed,term,out=mixed)
+        np.multiply(x[:,2:3],c,out=term)
+        np.add(mixed,term,out=mixed)
         # Linked stereo peak gain: immediate attack, linear recovery to unity
         # (at most 50 ms). No lookahead, no added audio buffering.
-        overload = np.maximum(np.max(mixed, axis=1)/32767, -np.min(mixed, axis=1)/32768)
-        required = 1 / np.maximum(1., overload)
+        overload=self._overload[:n]
+        required=self._required[:n]
+        np.max(mixed,axis=1,out=overload)
+        np.divide(overload,32767,out=overload)
+        np.min(mixed,axis=1,out=required)
+        np.negative(required,out=required)
+        np.divide(required,32768,out=required)
+        np.maximum(overload,required,out=overload)
+        np.maximum(1.,overload,out=required)
+        np.divide(1.,required,out=required)
         release_step = 1 / max(1, round(rate * .05))
-        steps = release_step * self._float_positions
+        steps=self._steps[:n]
+        np.multiply(release_step,self._float_positions,out=steps)
         # Vector form of gain[i] = min(required[i], gain[i-1] + release_step).
-        gains = np.minimum.accumulate(required - steps)
-        gains = np.minimum(gains, self.gain) + steps
+        gains=self._gains[:n]
+        np.subtract(required,steps,out=gains)
+        np.minimum.accumulate(gains,out=gains)
+        np.minimum(gains,self.gain,out=gains)
+        np.add(gains,steps,out=gains)
         self.gain = float(gains[-1])
         target = float(limiter == 'soft')
         if self.soft_mix is None:
@@ -74,15 +106,18 @@ class ChannelMixer:
         start = self.soft_mix
         if start == target == 0:
             # The hard path does not need a parallel soft-limiter signal.
-            mixed = np.clip(mixed, -32768, 32767)
+            np.clip(mixed,-32768,32767,out=mixed)
         elif start == target == 1:
-            mixed = mixed * gains[:, None]
+            np.multiply(mixed,gains[:,None],out=mixed)
         else:
             blend = start + np.clip(target-start, -step*self._positions, step*self._positions)
             hard = np.clip(mixed, -32768, 32767)
             soft = mixed * gains[:, None]
             mixed = hard*(1-blend[:,None]) + soft*blend[:,None]
         self.soft_mix = float(np.clip(start + np.sign(target-start)*min(abs(target-start), step*n), 0, 1))
-        result = x.copy()
-        result[:, :2] = np.clip(np.rint(mixed), -32768, 32767).astype('<i2')
+        result=self._result[:n,:channels]
+        np.copyto(result,x)
+        np.rint(mixed,out=mixed)
+        np.clip(mixed,-32768,32767,out=mixed)
+        result[:,:2]=mixed
         return result.tobytes()

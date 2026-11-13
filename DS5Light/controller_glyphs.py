@@ -35,7 +35,12 @@ def readable(value):return ALIASES.get(str(value),str(value))
 def icon_key(value):
     name=readable(value)
     if name in CROPS:return name
-    if _ui_tr('터치') in name:return _ui_tr('터치패드 클릭')
+    if '터치' in name or 'touch' in name.casefold():
+        # Swipe captions contain a second direction after the touch-area prefix.
+        area=name.split('·',1)[0].split(',',1)[0].casefold()
+        if '왼쪽' in area or 'left' in area:return _ui_tr('터치패드 왼쪽 클릭')
+        if '오른쪽' in area or 'right' in area:return _ui_tr('터치패드 오른쪽 클릭')
+        return _ui_tr('터치패드 클릭')
     for key in ('L1','R1','L2','R2','L3','R3'):
         if name.startswith(key):return key
     return None
@@ -45,8 +50,9 @@ def glyph(master,value,size=28):
     size=max(1,px(master,size))
     extra={_ui_tr('왼쪽 Fn'):'FN',_ui_tr('오른쪽 Fn'):'FN',
            _ui_tr('왼쪽 패들'):'LB',_ui_tr('오른쪽 패들'):'RB',_ui_tr('PS 버튼'):'PS',_ui_tr('마이크 버튼'):'Mute',
-           _ui_tr('듀얼센스 전원'):'Power','Create':'Create','Options':'Options'}
-    filename=extra.get(readable(value))
+           _ui_tr('듀얼센스 전원'):'Power','Create':'Create','Options':'Options',
+           _ui_tr('터치패드 클릭'):'Touch',_ui_tr('터치패드 왼쪽 클릭'):'TouchLeft',_ui_tr('터치패드 오른쪽 클릭'):'TouchRight'}
+    filename=extra.get(readable(value)) or extra.get(icon_key(value))
     if filename:
         root=master._root()
         if not hasattr(root,'_extra_controller_glyph_cache'):root._extra_controller_glyph_cache={}
@@ -104,10 +110,11 @@ class GlyphStrip(tk.Frame):
         self.signature=values
         for child in self.winfo_children():child.destroy()
         for index,value in enumerate(values[:self.limit]):
-            if index:tk.Label(self,text='+',bg=self.background,fg=MUTED).pack(side='left',padx=3)
+            if index:tk.Label(self,text='+',bg=self.background,fg=MUTED,padx=0,borderwidth=0).pack(side='left')
             image=glyph(self,value,24)
             label=tk.Label(self,image=image,bg=self.background) if image else tk.Label(self,text=readable(value),bg=self.background,fg=FG,font=(_ui_tr('맑은 고딕'),9,'bold'))
-            label.image=image;label.pack(side='left',padx=2)
+            label.configure(padx=0,borderwidth=0)
+            label.image=image;label.pack(side='left')
         if len(values)>self.limit:tk.Label(self,text=f'+{len(values)-self.limit}',bg=self.background,fg=GOLD).pack(side='left',padx=4)
 
 
@@ -117,9 +124,10 @@ class ControllerChoice(tk.Frame):
     Values stay in the caller's original representation. Emit the same virtual
     event as a Combobox so existing selection handlers/recording keep working.
     """
-    def __init__(self,parent,textvariable,values=(),state='readonly',multiple=False,selected=None,compact=False,**kw):
+    def __init__(self,parent,textvariable,values=(),state='readonly',multiple=False,selected=None,compact=False,justify='left',**kw):
         super().__init__(parent,bg=CARD)
         self.variable=textvariable;self.values=tuple(values);self.enabled=state!='disabled'
+        self.justify=justify;self.anchor={'left':'w','right':'e','center':'center'}[justify]
         self.compact=compact;self.multiple=multiple;self.selected=selected;self.expanded=False;self.tiles=[];self.columns=0;self.active=0
         self.columnconfigure(0,weight=1,minsize=px(self,340) if compact else 0)
         self.heading=tk.Frame(self,bg='#111111',highlightbackground=BORDER,highlightcolor=BORDER,highlightthickness=1)
@@ -130,7 +138,7 @@ class ControllerChoice(tk.Frame):
         # Label-based header wraps long names and has no native dotted focus
         # rectangle. Explicit mouse/keyboard bindings retain accessibility.
         self.button=tk.Label(self.heading,textvariable=self.display,bg='#111111',fg=FG,
-            disabledforeground='#666257',font=(_ui_tr('맑은 고딕'),10),anchor='w',justify='left',
+            disabledforeground='#666257',font=(_ui_tr('맑은 고딕'),10),anchor=self.anchor,justify=self.justify,
             padx=8,pady=8,wraplength=260,takefocus=True,width=1,cursor='hand2')
         self.button.grid(row=0,column=1,sticky='ew')
         self.button.bind('<Button-1>',lambda _:self.toggle())
@@ -208,7 +216,7 @@ class ControllerChoice(tk.Frame):
         for index,value in enumerate(self.values):
             image=glyph(self,value)
             button=tk.Button(self.panel,text=readable(value),image=image if image else '',compound='left',
-                font=(_ui_tr('맑은 고딕'),10),anchor='w',justify='left',padx=px(self,9),pady=px(self,3 if self.compact else 7),width=1,wraplength=px(self,120),bg='#20201e',fg=FG,
+                font=(_ui_tr('맑은 고딕'),10),anchor=self.anchor,justify=self.justify,padx=px(self,9),pady=px(self,3 if self.compact else 7),width=1,wraplength=px(self,120),bg='#20201e',fg=FG,
                 activebackground='#302819',activeforeground=GOLD,relief='flat',bd=0,
                 highlightthickness=1,highlightbackground=BORDER,highlightcolor=GOLD,takefocus=0,
                 command=lambda index=index:self.choose(index))

@@ -19,13 +19,13 @@ PLANS = {
         ('세부 조정', 'Fine tuning', 'stick_mouse_deadzone stick_mouse_curve stick_mouse_invert', True, True)],
     'Auto-Haptics & Speaker Effect Leak': [
         ('오디오햅틱 모드', 'Audio haptics mode', 'auto_haptics_enable', False, False),
-        ('오디오햅틱 세기', 'Audio haptics strength', 'auto_haptics_gain', False, True),
-        ('Mix 혼합', 'Mix blending', 'mix_native_level mix_native_filter rumble_haptic_strength', False, True),
+        ('오디오햅틱 세기', 'Audio haptics strength', 'auto_haptics_gain auto_mute_mix auto_mute_replace', False, True),
+        ('', '', 'mix_native_level mix_native_filter rumble_haptic_strength', False, True),
         ('주파수·반응 세부 조정', 'Frequency & response tuning', 'ah_dsp_source auto_haptics_smooth auto_haptics_gate auto_haptics_lowpass_hz auto_haptics_slope ah_xover_hz ah_low_gain ah_high_gain', True, True)],
     'General Haptics & Audio': [
         ('햅틱및 진동 세기', 'Haptics and rumble strength', 'haptics_gain rumble_gain rumble_mode rumble_release', False, False),
-        ('스피커·헤드셋', 'Speaker & headset', 'disable_speaker speaker_volume speaker_gain headset_volume', False, False),
-        ('모드별 음소거·음량', 'Mode mute & volume', 'auto_mute_mix auto_mute_replace sync_spk_headset_volume lock_volume disable_mic', False, False)],
+        ('스피커·헤드셋', 'Speaker & headset', 'speaker_gain speaker_volume headset_volume', False, False),
+        ('음량 연동·음소거', 'Volume linking & mute', 'sync_spk_headset_volume lock_volume disable_speaker disable_mic', False, False)],
     'Rumble → Trigger': [
         ('그립 진동과 트리거 연동', 'Grip rumble to triggers', 'r2t_mode', False, False),
         ('전달 세기·조건', 'Strength & condition', 'r2t_strength r2t_on_press r2t_frequency', False, True)],
@@ -61,7 +61,7 @@ class OptionGroups:
                 button = ttk.Button(box, command=lambda g=group_id: self.toggle_option_group(g))
                 button.grid(row=0, column=0, columnspan=2, sticky='w', pady=(0,6))
                 button._group_title = title(ko, en)
-            elif index and conditional and len(keys) > 1:
+            elif ko and index and conditional and len(keys) > 1:
                 tk.Label(box, text=title(ko, en), bg='#151515', fg='#aaa393',
                          anchor='w').grid(row=0, column=0, columnspan=2, sticky='w', pady=(0,4))
             for n, key in enumerate(keys, 2):
@@ -104,6 +104,8 @@ class OptionGroups:
                 button.configure(text=('▾ ' if opened else '▸ ') + button._group_title)
             for key, row in rows:
                 show = opened and (not conditional or self.enabled_for(key))
+                if key in ('auto_mute_mix','auto_mute_replace'):
+                    show=opened and self.doc.values.get('auto_haptics_enable')== (1 if key=='auto_mute_mix' else 2)
                 # Keep invalid edits accessible, even after changing the mode.
                 if show or key in self.invalid:
                     row.grid()

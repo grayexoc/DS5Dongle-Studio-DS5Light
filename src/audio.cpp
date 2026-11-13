@@ -16,6 +16,7 @@
 #include "audio.h"
 #include "profile_chime.h"
 #include "haptic_mix.h"
+#include "haptic_math.h"
 #include "bt.h"
 #include "resample.h"
 #include "tusb.h"
@@ -413,7 +414,12 @@ void __not_in_flash_func(audio_loop)() {
         // mic (matching the real DS5) so Windows doesn't conflict with its cached
         // DS5 audio format. Duplicate each mono sample into L and R.
         const int mono_samples = mic_pb.len / 2;
-        const float mic_gain = std::pow(10.0f, std::clamp(volume[1], 0.0f, 48.0f) / 20.0f);
+        const float mic_db = std::clamp(volume[1], 0.0f, 48.0f);
+        static float cached_mic_db = -1.0f, mic_gain = 1.0f;
+        if (mic_db != cached_mic_db) {
+            mic_gain = std::pow(10.0f, mic_db / 20.0f);
+            cached_mic_db = mic_db;
+        }
         for (int i = 0; i < mono_samples; i++) {
             const auto sample = static_cast<int16_t>(std::clamp(
                 mic_pb.data[i] * mic_gain, -32768.0f, 32767.0f));
@@ -926,7 +932,7 @@ void __not_in_flash_func(audio_loop)() {
 
             carrier_ph += 2.0f * (float)M_PI * 90.0f / 48000.0f;
             if (carrier_ph > 2.0f*(float)M_PI) carrier_ph -= 2.0f*(float)M_PI;
-            const float carrier = sinf(carrier_ph);
+            const float carrier = haptic_math::sine_phase(carrier_ph);
             // Separate carriers for CONVERTED RUMBLE. The two motor values a game
             // sends are not interchangeable: left is the heavy/low-frequency
             // motor, right the light/high-frequency one. Rendering both on the
@@ -943,13 +949,13 @@ void __not_in_flash_func(audio_loop)() {
             // Keep phase progression unchanged even while a motor is silent.
             const uint8_t rumble_l = g_rumble_l, rumble_r = g_rumble_r;
             const bool rumble_active = auto_mode == 1 && rumble_str > 0.0f;
-            const float rc_lo = rumble_active && rumble_l != 0 ? sinf(rc_lo_ph) : 0.0f;
-            const float rc_hi = rumble_active && rumble_r != 0 ? sinf(rc_hi_ph) : 0.0f;
+            const float rc_lo = rumble_active && rumble_l != 0 ? haptic_math::sine_phase(rc_lo_ph) : 0.0f;
+            const float rc_hi = rumble_active && rumble_r != 0 ? haptic_math::sine_phase(rc_hi_ph) : 0.0f;
             float al = genv_l * carrier * auto_gain;
             float ar = genv_r * carrier * auto_gain;
             // Keep the generator's tanh shaping; Mix limits only combined peaks afterwards.
-            al = tanhf(al);
-            ar = tanhf(ar);
+            al = haptic_math::soft_clip(al);
+            ar = haptic_math::soft_clip(ar);
             // Derived-haptic meter: capture al/ar here, before Mix folds in native
             // passthrough and converted rumble, so the meter shows only what
             // auto-haptics itself produces (al/ar are not reassigned in Mix).

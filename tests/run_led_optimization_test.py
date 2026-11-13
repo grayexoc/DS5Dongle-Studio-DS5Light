@@ -63,7 +63,7 @@ code+=extract('bool state_rumble_wants_report(')+'\n'
 code+=extract('bool state_output_test(')+'\n'
 code+=r'''
 static bool legacy_prepare(uint8_t *data,bool force) {
-    if(force || player_led_wants_report() || lightbar_fixed_wants_report() || state_rumble_wants_report()) {
+    if(force || player_led_wants_report() || lightbar_fixed_wants_report() || state_rumble_wants_report(nullptr)) {
         state_set(data,63);return true;
     }
     return false;

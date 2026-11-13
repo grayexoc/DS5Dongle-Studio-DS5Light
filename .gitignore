@@ -3,7 +3,10 @@ build
 .vscode
 .idea
 example
+
 .serena/
 .gitnexus/
 __pycache__/
 *.pyc
+
+*.log

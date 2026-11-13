@@ -1,3 +1,25 @@
+# v1.0.14 — Volume, recovery and UI improvements / 음량·복구·UI 개선
+
+DS5Light-win-x64-v1.0.14.zip · ds5-studio-light_v44.uf2 (Pico 2 W)
+
+- **Speaker and headset volume.** Link their editor values, synchronize explicit speaker-volume changes with the matching Pico Windows audio endpoint, and show an estimated Windows volume percentage. Enabling linking uses the speaker value.
+- **Recovery and settings protection.** Preserve corrupt preferences when backup fails and retry preservation before saving. Recover diagnostic, profile, power and monitoring tasks after worker startup failures.
+- **Audio capture and mapping UI.** Refresh the process list once when an audio-haptics profile becomes available with selected-process capture, or when that capture option is selected. Tighten combination-key icon spacing and improve audio controls, touchpad icons and gyro alignment.
+- **Battery display.** Fix the animation error triggered by opening a native dropdown and refine connection/battery presentation.
+- **Audio processing efficiency.** Reuse multichannel mixing and gain buffers to reduce repeated allocations during audio processing.
+- **Studio v44.** Restore XInput support in the supplied Pico 2 W build, reduce repeated output-state work, optimize haptic calculations, and simplify the OLED header while retaining status information. Profiles still default to Native mode.
+- **Source and documentation cleanup.** Remove unused legacy PNG assets and an unused refresh timer value; align setup instructions and download names with the current app/firmware pair.
+
+- **스피커·헤드셋 음량.** 편집값을 연동하고 스피커 음량을 명시적으로 적용하면 같은 Pico의 Windows 오디오 출력 음량도 동기화합니다. 예상 Windows 음량 퍼센트를 표시하며, 연동을 켜면 스피커 값을 기준으로 맞춥니다.
+- **복구와 설정 보호.** 손상된 환경설정의 백업에 실패하면 원본을 보호하고 저장 전에 백업을 재시도합니다. 진단·프로필·전원·감시 작업의 스레드 시작 실패 후 대기 상태가 남는 문제를 보완했습니다.
+- **오디오 캡처·매핑 UI.** 선택한 프로세스 캡처 상태에서 오디오햅틱 프로필로 전환하거나 해당 캡처 옵션을 선택하면 프로세스 목록을 한 번 갱신합니다. 조합키 아이콘 간격, 오디오 옵션 배치, 터치패드 아이콘과 자이로 정렬도 개선했습니다.
+- **배터리 표시.** 기본 드롭다운을 열 때 발생하던 애니메이션 오류를 수정하고 연결·배터리 표시를 보완했습니다.
+- **오디오 처리 효율.** 다채널 믹싱과 출력 게인 버퍼를 재사용해 오디오 처리 중 반복 메모리 할당을 줄였습니다.
+- **Studio v44.** 제공 Pico 2 W 빌드의 XInput 지원을 복원하고 중복 출력 상태 처리와 햅틱 계산을 최적화했습니다. OLED 헤더는 상태 정보를 유지하며 간소화했습니다. 기본 프로필 모드는 Native입니다.
+- **소스·문서 정리.** 사용하지 않는 구형 PNG와 갱신 예약값을 제거하고 설치 안내·다운로드 파일명을 현재 앱·펌웨어 조합으로 통일했습니다.
+
+## Earlier releases / 이전 릴리즈
+
 # v1.0.12 Experimental · Local test build / 로컬 시험 빌드
 
 DS5Light-win-x64-v1.0.12-Experimental.zip · ds5-studio-light_v43.uf2 (Pico 2 W)

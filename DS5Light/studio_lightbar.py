@@ -94,7 +94,7 @@ class LightbarUI:
         pico=controls[0];pico._lighting_inverse=True;raw=self.vars['disable_pico_led']
         pico.variable=tk.BooleanVar(master=pico,value=not bool(self.doc.values.get('disable_pico_led',1)))
         pico.command=lambda:raw.set(not pico.variable.get())
-        tk.Label(box,text=ui_text('듀얼센스','DualSense'),bg=BG,fg=GOLD,font=(_ui_tr('맑은 고딕'),10,'bold')).grid(row=2,column=0,columnspan=2,sticky='w',pady=(12,4))
+        tk.Label(box,text=ui_text('듀얼센스','DualSense'),bg=BG,fg=FG,font=(_ui_tr('맑은 고딕'),10,'bold')).grid(row=2,column=0,columnspan=2,sticky='w',pady=(12,4))
         children=tk.Frame(box,bg=BG);children.grid(row=3,column=0,columnspan=2,sticky='ew',padx=(18,0));children.columnconfigure(1,weight=1)
         self.field_row(children,0,FIELDS['lightbar_fixed'])
         title,controls,_=self.field_views['lightbar_fixed']

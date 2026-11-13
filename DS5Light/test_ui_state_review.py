@@ -27,22 +27,61 @@ class StateReviewTests(unittest.TestCase):
         self.assertEqual(editor.path,b'A')
         self.assertEqual(editor.doc.changes['auto_haptics_gain'],value)
 
-    def test_start_without_process_skips_studio_check_and_reveals_table(self):
+    def test_start_without_process_skips_studio_check(self):
         app=self.ui
-        app.scope.set('device');app.render()
-        self.assertEqual(app.process_table_frame.winfo_manager(),'')
-        self.assertIn('전역 캡쳐',app.capture_summary.cget('text'))
         app.scope.set('process');app.scope_changed();app.game.set('');app.game_map.clear()
         app.select_tab(1)
         with patch.object(app.studio,'check_before_start') as check:
             app.start()
             check.assert_not_called()
         self.assertEqual(app.selected_tab,0)
-        self.assertEqual(app.process_table_frame.winfo_manager(),'grid')
         self.assertIn('게임을 실행하고',app.status.get())
-        app.studio.auto_haptics_mode=0;app.render()
-        self.assertEqual(app.process_table_frame.winfo_manager(),'grid')
-        self.assertIn('네이티브 햅틱',app.capture_summary.cget('text'))
+
+    def test_native_profile_skips_scan_and_restores_previous_overlay_layout(self):
+        app=self.ui;overlay=app.global_capture_overlay
+        app.scope.set('device');app.render()
+        self.assertEqual(overlay.master.winfo_manager(),'grid')
+        self.assertEqual(overlay.winfo_manager(),'place')
+        self.assertEqual(overlay.label.cget('text'),'전역 캡쳐')
+        app.scope.set('process');app.render()
+        self.assertEqual(overlay.winfo_manager(),'')
+        with patch('app.start_thread') as launch:
+            app.studio.operation='discover'
+            app._initial_process_refresh()
+            launch.assert_not_called()
+            app.studio.operation=None
+            app.studio.auto_haptics_mode=0;app.render()
+            app._initial_process_refresh();app.refresh_games()
+            launch.assert_not_called()
+            self.assertEqual(overlay.label.cget('text'),'네이티브 햅틱')
+            self.assertIn('disabled',app.refresh_button.state())
+            app.studio.auto_haptics_mode=1;app.render()
+            self.assertIn('disabled',app.refresh_button.state())
+            launch.assert_called_once()
+            app.render();app.refresh_games()
+            launch.assert_called_once()
+
+    def test_audio_profile_or_process_scope_refreshes_once(self):
+        app=self.ui
+        app._initial_process_refresh_done=True
+        app.studio.auto_haptics_mode=0;app.scope.set('process')
+        with patch.object(app,'refresh_games') as refresh:
+            app._refresh_processes_on_capture_change()
+            refresh.assert_not_called()
+            app.studio.auto_haptics_mode=1
+            app._refresh_processes_on_capture_change()
+            app._refresh_processes_on_capture_change()
+            refresh.assert_called_once()
+            app.scope.set('device');app._refresh_processes_on_capture_change()
+            app.scope.set('process');app.scope_changed()
+            self.assertEqual(refresh.call_count,2)
+            app.studio.observed_profile=dict(index=2)
+            app._refresh_processes_on_capture_change()
+            app._refresh_processes_on_capture_change()
+            self.assertEqual(refresh.call_count,3)
+            app.studio.auto_haptics_mode=0
+            app._refresh_processes_on_capture_change()
+            self.assertEqual(refresh.call_count,3)
 
     def test_profile_switch_reports_separate_save_scopes(self):
         editor=self.editor()

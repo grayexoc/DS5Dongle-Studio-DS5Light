@@ -74,7 +74,8 @@ class ControllerPresence:
             except Exception:
                 result=(None,serial)
             self.results.put((generation,*result))
-        start_thread(threading.Thread(target=work,name='DS5Light-controller-presence',daemon=True))
+        try:start_thread(threading.Thread(target=work,name='DS5Light-controller-presence',daemon=True))
+        except Exception:self.results.put((generation,None,serial))
 
     def close(self):
         self.closed=True
@@ -122,6 +123,7 @@ class IdleControllerPresence:
             except Exception:value=(None,None)
             finally:_DEVICE_LOCK.release()
             self.results.put((generation,*value))
-        start_thread(threading.Thread(target=work,name='DS5Light-idle-presence',daemon=True))
+        try:start_thread(threading.Thread(target=work,name='DS5Light-idle-presence',daemon=True))
+        except Exception:self.results.put((generation,None,None))
         return result
     def close(self):self.closed=True;self.generation+=1

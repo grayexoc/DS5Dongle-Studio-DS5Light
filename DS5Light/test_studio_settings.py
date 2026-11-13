@@ -3,8 +3,8 @@ import copy,struct,time,unittest
 from unittest.mock import patch
 from studio_fields import FIELDS,SECTIONS
 from studio_scope import EDITABLE,CONSTRUCTION,REMOVED,trigger_display,trigger_raw
-from studio_reference import REFERENCE,DEFAULTS
-from studio_help import LABELS,help_text,options
+from studio_reference import DEFAULTS
+from studio_help import LABELS,help_text,options,REFERENCE
 from studio_settings_protocol import SettingsClient,encode,decode,PartialApplyError
 from studio_document import SettingsDocument
 from studio_records import effect_states,macro_records,build_effect
@@ -266,7 +266,7 @@ class RevisionTests(unittest.TestCase):
         self.assertEqual(reference_point('auto_haptics_gain'),(80,'추천'))
         self.assertEqual(reference_point('trigger_reduce'),(0,'기본'))
         for key,f in EDITABLE.items():
-            if f[4]=='number':self.assertIsNotNone(reference_point(key)[0],key)
+            if f[4]=='number' and key!='headset_volume':self.assertIsNotNone(reference_point(key)[0],key)
     def test_macro_roundtrip_and_dependencies(self):
         from studio_macro_tools import normalize_macro,structured_macros
         r=macro_records([dict(index=3,chord=1,keys=[224,4],label='Map',rel_order=27)])
@@ -304,7 +304,7 @@ class RevisionUITests(NativeUITests):
     def test_mix_and_gyro_groups_follow_values_without_losing_fields(self):
         e=self.editor()
         e.doc.values['auto_haptics_enable']=0;e.refresh_read_values()
-        mix=next(g for g in e._option_groups if g[0][1]=='Mix 혼합')
+        mix=next(g for g in e._option_groups if any(key=='mix_native_level' for key,_ in g[1]))
         self.assertTrue(all(not row.winfo_manager() for key,row in mix[1]))
         e.doc.values['auto_haptics_enable']=1;e.refresh_read_values()
         self.assertTrue(all(row.winfo_manager() for key,row in mix[1][:2]))

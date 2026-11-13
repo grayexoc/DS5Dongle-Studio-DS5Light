@@ -15,6 +15,12 @@ class SettingsDocument:
         self._companions={};self._gain_before_policy=None;self.baseline=baseline;self.values=dict(self.baseline)
         self.normalize_haptic_gain()
     def companion_edit(self,key,previous,value):
+        if key=='sync_spk_headset_volume' and previous!=1 and value==1:
+            if 'speaker_volume' in self.values and 'headset_volume' in self.values:
+                self.values['headset_volume']=self.values['speaker_volume']
+        if key in ('speaker_volume','headset_volume') and self.values.get('sync_spk_headset_volume')==1:
+            other='headset_volume' if key=='speaker_volume' else 'speaker_volume'
+            if other in self.values:self.values[other]=value
         for state in self._companions.values():
             if key==state[0]:state[3]=True
         links=[]

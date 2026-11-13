@@ -267,7 +267,8 @@ class StudioPanel:
 
             except Exception as exc:self.results.put((kind,None,str(exc)))
 
-        start_thread(threading.Thread(target=worker,daemon=True))
+        try:start_thread(threading.Thread(target=worker,daemon=True))
+        except Exception as exc:self.results.put((kind,None,str(exc)))
 
         self.poll_id=self.app.root.after(80,self.poll)
 

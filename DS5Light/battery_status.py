@@ -49,7 +49,8 @@ class BatteryMonitor:
                     if data is not None:device=next(item for item in rows if item['path']==path)
             except Exception:result=('unavailable',None)
             self.results.put((generation,*result,device))
-        start_thread(threading.Thread(target=work,name='DS5Light-battery-read',daemon=True))
+        try:start_thread(threading.Thread(target=work,name='DS5Light-battery-read',daemon=True))
+        except Exception:self.results.put((generation,'unavailable',None,None))
 
     def close(self):
         self.closed=True

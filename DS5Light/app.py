@@ -55,7 +55,7 @@ from ui_controls import Switch, circle_image, RadioChoice, CircleCheck, SectionT
 
 from mute_shortcut import MuteShortcut, KEYS, MODIFIERS, binding_label, validate_binding
 
-from ui_controls import RoundedCard, DiagnosticCanvas, draw_ui_symbol
+from ui_controls import GlobalCaptureOverlay, RoundedCard, DiagnosticCanvas, draw_ui_symbol
 from ui_dpi import enable_dpi_awareness,install_dpi,fit_window,px,watch_scale,scale_styles
 
 from battery_status import BatteryMonitor
@@ -690,7 +690,7 @@ class App:
 
         self._process_refresh_running=False; self._process_snapshot=[]; self._process_sampler=ProcessSampler()
 
-        self._next_process_refresh=0.; self._auto_start_attempted=False
+        self._auto_start_attempted=False
 
         preset_path=Path(os.environ.get('LOCALAPPDATA',str(Path.home())))/'DS5Light'/'presets.json'
 
@@ -873,12 +873,6 @@ class App:
         tablewrap=tk.Frame(capture,bg='#111110',highlightbackground=BORDER,highlightcolor=BORDER,highlightthickness=1,takefocus=0)
 
         tablewrap.grid(row=2,column=0,sticky='nsew')
-        self.process_header=proc_head
-        self.process_table_frame=tablewrap
-        self.capture_summary=ttk.Label(capture,style='Muted.TLabel',anchor='w',width=1)
-        self.capture_summary.grid(row=2,column=0,sticky='ew',pady=(SPACE,0))
-        self.capture_summary.grid_remove()
-        FieldTip(self.capture_summary,lambda:_ui_tr('오디오햅틱을 사용하려면 Studio 프로필의 오디오햅틱 모드를 Mix 또는 Replace로 변경하세요.') if self.studio.auto_haptics_mode==0 else self.capture_summary.cget('text'))
 
         self.process_table=ttk.Treeview(tablewrap,columns=('audio','cpu','started'),show='tree headings',height=5,selectmode='browse',style='Process.Treeview')
 
@@ -911,6 +905,9 @@ class App:
         self.process_table.pack(side='left',fill='both',expand=True); scroll.pack(side='right',fill='y')
 
         self.process_table.bind('<<TreeviewSelect>>',self.process_selected)
+
+        self.global_capture_overlay=GlobalCaptureOverlay(tablewrap,text=_ui_tr('전역 캡쳐'))
+        FieldTip(self.global_capture_overlay.label,lambda:_ui_tr('오디오햅틱을 사용하려면 Studio 프로필의 오디오햅틱 모드를 Mix 또는 Replace로 변경하세요.') if self.studio.haptics_blocked else '')
 
         self.game=ttk.Combobox(capture,state='disabled'); self.game.bind('<<ComboboxSelected>>',self.game_selected)
 
@@ -1239,7 +1236,7 @@ class App:
 
         if self.device_error: self.status.set(_ui_tr('장치 목록 조회 실패: ')+tr(self.device_error))
 
-        root.after(150,lambda:self.refresh_games(initial=True)); root.after(1000,self.tick)
+        root.after(150,self._initial_process_refresh); root.after(1000,self.tick)
         if self.profile_watch_enabled:root.after(200,self._profile_tick)
 
         if '--smoke-test' not in sys.argv:self.studio.schedule_initial_read()
@@ -1491,30 +1488,12 @@ class App:
 
         ch=self.capture_channels(); active=bool(self.engine); filtering=self.filter_on.get()
 
-        native=self.studio.auto_haptics_mode==0
-        compact=self.scope.get()=='device'
-        summary=''
-        if native:summary=_ui_tr('네이티브 햅틱 · 오디오햅틱 꺼짐')
-        elif compact:
-            phase=getattr(self.engine,'phase',None)
-            if self._stopping:status=_ui_tr('정지 중')
-            elif active and (phase!='running' or self.controller_presence.disconnected):status=_ui_tr('연결 대기 중')
-            else:status=_ui_tr('캡쳐 중') if active else _ui_tr('정지')
-            source=self.source.get()
-            summary=f"{_ui_tr('전역 캡쳐')} · {_ui_tr('자동 선택') if source==AUTO else source} · {status}"
-        if compact==bool(self.process_table_frame.winfo_manager()):
-            for widget in (self.process_header,self.process_table_frame):
-                if compact:widget.grid_remove()
-                else:widget.grid()
-            self.game_page.rowconfigure(0,weight=int(not compact))
-            self.game_page.rowconfigure(3,weight=int(compact))
-        summary_row=2 if compact else 5
-        if summary:
-            if not self.capture_summary.winfo_manager() or self.capture_summary.grid_info()['row']!=summary_row:
-                self.capture_summary.grid(row=summary_row)
-        elif self.capture_summary.winfo_manager():self.capture_summary.grid_remove()
-        if summary!=self.capture_summary.cget('text'):
-            self.capture_summary.configure(text=summary)
+        native=self.studio.haptics_blocked
+        self._refresh_processes_on_capture_change()
+        overlay_text=_ui_tr('네이티브 햅틱') if native else _ui_tr('전역 캡쳐')
+        if self.global_capture_overlay.label.cget('text')!=overlay_text:
+            self.global_capture_overlay.label.configure(text=overlay_text)
+        self.global_capture_overlay.set_visible(self.scope.get()=='device' or native)
 
         if self.scope.get()=='device' and ch in (2,6,8):
 
@@ -1524,7 +1503,7 @@ class App:
 
             if CHANNELS[self.channel.get()]!=0 and self.channel.get()!=actual_channel: self.channel.set(actual_channel)
 
-        state=(ch,active,self._stopping,filtering,self.scope.get(),self.channel.get(),self.source.get(),self.destination.get(),self.mode.get(),round(self.strength.get(),3),round(self.gain.get(),3),round(self.impact.get(),3),self.bg.get(),self.transient.get(),self.rear.get(),self.lfe.get(),self.center.get(),self.limiter.get())
+        state=(ch,active,self._stopping,filtering,native,self.scope.get(),self.channel.get(),self.source.get(),self.destination.get(),self.mode.get(),round(self.strength.get(),3),round(self.gain.get(),3),round(self.impact.get(),3),self.bg.get(),self.transient.get(),self.rear.get(),self.lfe.get(),self.center.get(),self.limiter.get())
 
         if state==self.last_render: return
 
@@ -1580,13 +1559,14 @@ class App:
 
         for b in self.scope_buttons: b.set_enabled(not active)
 
-        self.process_sort_box.configure(state='disabled' if active or self.scope.get()!='process' else 'readonly')
+        process_selectable=not active and not native and self.scope.get()=='process'
+        self.process_sort_box.configure(state='readonly' if process_selectable else 'disabled')
 
-        self.game.configure(state='readonly' if self.scope.get()=='process' and not active else 'disabled')
+        self.game.configure(state='readonly' if process_selectable else 'disabled')
 
-        self.process_table.state(['disabled'] if active or self.scope.get()!='process' else ['!disabled'])
+        self.process_table.state(['!disabled'] if process_selectable else ['disabled'])
 
-        self.refresh_button.configure(state='normal' if self.scope.get()=='process' and not active and not self._process_refresh_running else 'disabled')
+        self.refresh_button.configure(state='normal' if process_selectable and not self._process_refresh_running else 'disabled')
 
         self.load_button.configure(state='disabled' if active else 'normal')
 
@@ -1918,7 +1898,29 @@ class App:
 
         self._sync_game_preset()
 
+    def _refresh_processes_on_capture_change(self):
+        profile=self.studio.observed_profile or {}
+        key=(self.studio.auto_haptics_mode,self.studio.profile_path,profile.get('index'),self.scope.get())
+        previous=getattr(self,'_process_capture_key',None)
+        self._process_capture_key=key
+        if (previous is not None and previous!=key
+                and getattr(self,'_initial_process_refresh_done',False)
+                and key[0] in (1,2) and key[3]=='process' and not self.engine):
+            self.refresh_games()
+
+    def _initial_process_refresh(self):
+        if self._closing or self._close_requested:return
+        if self.studio.auto_haptics_mode is None and (self.studio.startup_id is not None or self.studio.operation=='discover'):
+            self.root.after(150,self._initial_process_refresh)
+            return
+        self._initial_process_refresh_done=True
+        self.refresh_games(initial=True)
+
     def refresh_games(self,initial=False):
+
+        if self.studio.haptics_blocked:
+            if initial:self._auto_start_attempted=True
+            return
 
         self.scroll_processes_to_top()
 
@@ -1938,11 +1940,15 @@ class App:
 
             self._refresh_results.put(("games",result,error,selected_pid,initial))
 
-        start_thread(threading.Thread(target=collect,daemon=True))
+        try:start_thread(threading.Thread(target=collect,daemon=True))
+        except Exception as exc:self._refresh_results.put(("games",None,exc,selected_pid,initial))
 
     def _finish_game_refresh(self,rows,error,selected_pid,initial):
 
         self._process_refresh_running=False
+        if self.studio.haptics_blocked:
+            if initial:self._auto_start_attempted=True
+            return
 
         if error:
 
@@ -1956,7 +1962,6 @@ class App:
 
             self.render_games(selected_pid)
 
-            self._next_process_refresh=time.monotonic()+2.5
 
             if self.scope.get()=='process' and not self.engine: self.refresh_button.configure(state='normal')
 
@@ -2007,7 +2012,8 @@ class App:
 
             self._refresh_results.put(("devices",result,error))
 
-        start_thread(threading.Thread(target=collect,daemon=True))
+        try:start_thread(threading.Thread(target=collect,daemon=True))
+        except Exception as exc:self._refresh_results.put(("devices",None,exc))
 
     def _finish_device_refresh(self,rows,error):
 
@@ -2272,7 +2278,7 @@ class App:
 
             if not self.run_intent.can_resume(route):return
 
-        if route[0]=='process' and not route[1]:
+        if route[0]=='process' and not route[1] and not self.studio.haptics_blocked:
             self.run_intent.stop('invalid_route')
             self.status.set(_ui_tr('게임을 실행하고 새로 고침 후 실제 게임 exe를 선택하세요.'))
             self.select_tab(0)
@@ -2385,7 +2391,8 @@ class App:
                     if binding.snapshot()==identity and self.run_intent.requested and self.run_intent.generation==generation:
                         if refreshed is not None:self.ds=refreshed
                         self._start_after_profile_check(rows)
-                start_thread(threading.Thread(target=collect_pair,daemon=True))
+                try:start_thread(threading.Thread(target=collect_pair,daemon=True))
+                except Exception as exc:results.put(([],None,str(exc)))
                 self.root.after(50,finish_pair)
                 return
             if not eligible:
@@ -2476,7 +2483,8 @@ class App:
 
             except Exception as exc: self._stop_results.put((engine,False,str(exc)))
 
-        start_thread(threading.Thread(target=shutdown,daemon=True))
+        try:start_thread(threading.Thread(target=shutdown,daemon=True))
+        except Exception as exc:self._stop_results.put((engine,False,str(exc)))
 
         self.root.after(100,self._poll_stop)
 

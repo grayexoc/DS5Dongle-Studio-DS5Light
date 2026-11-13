@@ -1,0 +1,15 @@
+spec SpeakerOwnership.tla
+check INVARIANTS TypeOK Ownership NoOverwrite CurrentPublication OrderedPublication
+check PROPERTIES AllReturned
+reach QueueFull | pool=3 items=3
+reach WorkerDuringReset | pool=3 items=3
+reach StaleBeforePublish | pool=3 items=3
+reach StealNeeded | pool=1 items=3
+reach DetachedEviction | pool=3 items=5
+run pool=1 items=3 | Pool=1 Depth=2 Items=3 Resets=1
+run pool=2 items=3 | Pool=2 Depth=2 Items=3 Resets=1
+run pool=3 items=0 | Pool=3 Depth=2 Items=0 Resets=1
+run pool=3 items=1 | Pool=3 Depth=2 Items=1 Resets=1
+run pool=3 items=3 | Pool=3 Depth=2 Items=3 Resets=1
+run pool=3 items=5 | Pool=3 Depth=2 Items=5 Resets=1
+run pool=3 depth=1 | Pool=3 Depth=1 Items=3 Resets=1

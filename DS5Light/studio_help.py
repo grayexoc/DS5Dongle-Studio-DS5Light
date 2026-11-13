@@ -335,7 +335,7 @@ TITLES.update({'Auto-Haptics & Speaker Effect Leak':_ui_tr('오디오햅틱'),
 
 LABELS.update({'auto_haptics_enable':_ui_tr('오디오햅틱 모드'),'auto_haptics_gain':_ui_tr('오디오햅틱 세기'),
 
- 'disable_mic':_ui_tr('듀얼센스 마이크 끄기 (배터리 절약)'),'disable_speaker':_ui_tr('듀얼센스 스피커 끄기'),
+ 'disable_mic':_ui_tr('듀얼센스 마이크 끄기'),'disable_speaker':_ui_tr('듀얼센스 스피커 끄기'),
 
  'controller_mode':_ui_tr('듀얼센스 유형'),'polling_rate_mode':_ui_tr('폴링율'),'audio_buffer_length':_ui_tr('오디오 버퍼'),
 
@@ -348,6 +348,7 @@ CHOICES['Replace (audio only)']=_ui_tr('Replace · 완전히 대체')
 for _k in LABELS:LABELS[_k]=LABELS[_k].replace(_ui_tr('동글'),'Pico').replace(_ui_tr('오토햅틱'),_ui_tr('오디오햅틱')).replace(_ui_tr('오토 햅틱'),_ui_tr('오디오햅틱'))
 
 def reference_point(key):
+    if key=='headset_volume':return None,''
 
     if key=='rumble_gain':return (100,_ui_tr('기본값'))
 
@@ -433,6 +434,7 @@ def help_text(key):
         from studio_english_strings import FIELD_HELP
         desc=FIELD_HELP.get(key, DESCRIPTIONS.get(key) or extra.get(key,WEB_HELP.get(key,'')))
         if key in REFERENCE and key!='audio_buffer_length': desc+='\n\nRecommended: '+format_value(key,REFERENCE[key])
+        elif key=='speaker_volume':desc+='\n\nDefault: '+format_value(key,DEFAULTS[key])
 
         return label(key)+(('\n\n'+desc) if desc else '')
 
@@ -446,7 +448,7 @@ def help_text(key):
 
     if key in REFERENCE:text+=_ui_tr('\n\n추천 시작값: ')+format_value(key,REFERENCE[key])
 
-    elif key in DEFAULTS:
+    elif key in DEFAULTS and key!='headset_volume':
 
         value=DEFAULTS[key]
 
@@ -555,7 +557,7 @@ if _USB_MODE_LANGUAGE != 'en':
 
 LABELS['speaker_gain']=_ui_tr('듀얼센스 스피커 증폭')
 TITLES['Native Haptics Filter']=_ui_tr('햅틱 질감')
-DESCRIPTIONS['speaker_gain']=_ui_tr('음량이 부족할 때 조절\n높이면 왜곡될 수 있음')
+DESCRIPTIONS['speaker_gain']=_ui_tr('스피커 소리가 작을 때 이 옵션으로 조절하면 효과적')
 
 LABELS['disable_inactive_disconnect']=_ui_tr('자동 연결 해제 안함')
 DESCRIPTIONS['mix_native_level']=_ui_tr('게임이 보낸 네이티브 햅틱을 함께 출력\n적용하면 DS5Light의 오디오를 앞 채널로 전송')
@@ -563,3 +565,11 @@ DESCRIPTIONS['mix_native_level']=_ui_tr('게임이 보낸 네이티브 햅틱을
 DESCRIPTIONS['ps_shortcut_enabled']=_ui_tr('PS 기본 단축키: 짧게 Win+G, 길게 Win+Tab. 켜져 있으면 PS를 포함한 Pico 매핑·시프트 조합은 비활성화됩니다. 해당 매핑을 사용하려면 기본 단축키를 끄세요.')
 
 LABELS['ps_shortcut_enabled']=_ui_tr('PS 기본 단축키')
+REFERENCE.pop('speaker_volume',None)
+REFERENCE.pop('headset_volume',None)
+DEFAULTS['speaker_volume']=127
+DESCRIPTIONS['speaker_volume']=_ui_tr('적용·저장 시 Windows의 같은 Pico 출력 장치 음량도 동기화\n127은 Windows 장치 볼륨 100%에 해당')
+DESCRIPTIONS['headset_volume']=_ui_tr('듀얼센스 단자에 연결한 헤드셋의 음량\n음량 연동을 켜면 스피커 음량을 기준으로 맞춤')
+DESCRIPTIONS['lock_volume']=_ui_tr('Windows·게임의 듀얼센스 음량 변경 명령 차단\n게임 자체의 소리 크기 설정은 별도')
+LABELS['at_pushback_src']=_ui_tr('트리거 반동 소스')
+DESCRIPTIONS['at_pushback_src']=_ui_tr('트리거 반동을 만드는 일반 진동·오디오햅틱 신호 선택\n커스텀 트리거 효과 설정 중 반동 세기 조절 가능')

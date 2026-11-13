@@ -25,14 +25,14 @@ Thank you to the original authors and contributors. This repository contains mod
 
 ## Download and quick start
 
-**Release v1.0.12 · DS5Light v1.0.12 · Studio firmware v43**
+**Release v1.0.14 · DS5Light v1.0.14 · Studio firmware v44**
 
 Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/latest):
 
 | File | Purpose |
 | --- | --- |
-| `ds5-studio-light_v43.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
-| `DS5Light-win-x64-v1.0.12-Experimental.zip` | Complete Windows x64 app package. Python is not required. |
+| `ds5-studio-light_v44.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
+| `DS5Light-win-x64-v1.0.14.zip` | Complete Windows x64 app package. Python is not required. |
 
 1. Back up current dongle settings and slots. To install this firmware, enter BOOTSEL mode on the Pico 2 W and copy the UF2 to its USB drive. The app does not flash firmware automatically.
 2. Extract the entire app ZIP into a writable folder. Run `DS5Light.exe`, keeping `_internal` beside it. GitHub's automatic **Source code** archives are not the executable package.
@@ -58,9 +58,11 @@ Left: **Audio haptics** — select the capture target, manage game presets and a
 
 - Audio source selection: Send audio from a specific game or application, or capture the entire selected output device. The original audio you hear through your speakers or headphones remains unchanged.
 - Background suppression and impact preservation: Reduce unwanted vibration from sustained background sounds while retaining the response of brief effects. Adjust suppression and impact preservation independently.
+- Processing efficiency: Reuse multichannel mixing and output gain buffers to reduce repeated allocations.
 - Haptic strength control: Adjust output gain separately from the filter settings to suit each game and your preference.
 - Multichannel audio: Support automatic, stereo, 5.1, and 7.1 capture, with controls for the contribution of center, LFE, rear, and side channels in multichannel input.
 - **Mix mode.** Blend game-native haptics with audio-generated haptics. The front-only option disables the rear channel pair independently of the PC filter.
+- Automatic process refresh: Refresh the list once when an audio-haptics profile is selected with selected-process capture enabled, or when switching to that capture option.
 - Per-game presets: Store settings in 12 presets and associate them with games. The app also remembers the last-used options and window size.
 
 The filter uses changes over time and energy levels across frequency bands. It does not fully separate music, dialogue, and sound effects. Results depend on the game's audio mix and your settings.
@@ -81,6 +83,8 @@ The filter uses changes over time and energy levels across frequency bands. It d
 - Task lifecycle: Device-lock waits are bounded, pending resume callbacks respect later stop/route changes, and thread startup avoids a Tk finalizer/startup-handshake deadlock.
 
 - **DualSense Edge reconnection.** If serial visibility changes, the app uses USB port information to find the same device and checks the new audio output before resuming.
+- Speaker/headset volume: Link editor values and synchronize explicit speaker-volume changes to the matching Pico Windows audio endpoint. The displayed Windows percentage is an estimate.
+- Settings recovery: Preserve corrupt settings before replacement and recover task controls after worker startup failures.
 - Controller status: View connection and battery information.
 - Device diagnostics and output tests: Read dongle status and output statistics, and run individual tests for conventional rumble, adaptive triggers, and native haptics.
 - Microphone button shortcut: Assign a keyboard shortcut to the DualSense Mute button.
@@ -154,14 +158,14 @@ DS5Light는 DS5Dongle-Studio 펌웨어의 오디오 햅틱 기능을 보완하�
 
 ## 다운로드와 시작
 
-**릴리즈 v1.0.12 · DS5Light v1.0.12 · Studio 펌웨어 v43**
+**릴리즈 v1.0.14 · DS5Light v1.0.14 · Studio 펌웨어 v44**
 
 [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/latest)에서 첨부 파일을 받으세요.
 
 | 파일 | 용도 |
 | --- | --- |
-| `ds5-studio-light_v43.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
-| `DS5Light-win-x64-v1.0.12-Experimental.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
+| `ds5-studio-light_v44.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
+| `DS5Light-win-x64-v1.0.14.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
 
 1. 현재 동글 설정과 슬롯을 백업합니다. 펌웨어 설치 시 Pico 2 W를 BOOTSEL 모드로 연결하고 USB 드라이브에 UF2를 복사하세요. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
 2. 앱 ZIP 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행합니다. `_internal` 폴더를 함께 유지하세요. GitHub의 자동 **Source code** 압축 파일은 실행 배포본이 아닙니다.
@@ -177,7 +181,15 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 
 ## 이 버전의 DS5Light 주요 기능
 
+- 스피커·헤드셋 음량 편집값을 연동하고, 스피커 음량 적용 시 같은 Pico의 Windows 음량을 동기화합니다. 표시되는 Windows 퍼센트는 예상값입니다.
+- 손상된 환경설정은 교체 전에 보호하고, 작업 스레드 시작 실패 시 진단·프로필·전원 등의 조작 상태를 복구합니다.
+- 조합키 아이콘 간격과 터치패드·자이로 UI, 기본 드롭다운 사용 중 배터리 애니메이션을 개선했습니다.
+
 ### 오디오 햅틱 처리
+
+- 처리 효율: 다채널 믹싱·출력 게인 버퍼를 재사용해 반복 메모리 할당을 줄입니다.
+
+- 자동 프로세스 조회: 선택한 프로세스 캡처 상태에서 오디오햅틱 프로필로 전환하거나 해당 캡처 옵션을 선택하면 목록을 한 번 갱신합니다.
 
 - 캡처 대상 선택: 특정 게임·프로그램의 오디오 또는 선택한 출력 장치 전체의 오디오를 동글로 전달합니다. 스피커나 헤드폰으로 듣는 원래 소리는 바꾸지 않습니다.
 - 배경음 억제와 타격 보존: 지속되는 배경음으로 인한 불필요한 진동을 줄이고 짧은 효과음의 반응을 살리는 필터를 제공합니다. 배경 억제량과 타격 보존량을 각각 조절할 수 있습니다.

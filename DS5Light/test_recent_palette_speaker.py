@@ -65,15 +65,15 @@ class RecentUITests(unittest.TestCase):
         self.assertEqual(ui.doc.values,before)
     def test_speaker_children_grouped_once_and_disabled_when_parent_on(self):
         ui=self.editor();ui.select_value('auto_haptics_enable',2)
-        parent=ui.field_views['disable_speaker'][0]
         mix=ui.field_views['auto_mute_mix'];replace=ui.field_views['auto_mute_replace']
-        # The detail group uses one row frame per field, below the speaker group.
+        # Mode mute sits with audio-haptics strength, not the speaker card.
         groups=[group for group in ui._option_groups
                 if {'auto_mute_mix','auto_mute_replace'} <= {key for key,_ in group[1]}]
         self.assertEqual(len(groups),1)
         self.assertIs(mix[0].master.master,groups[0][4])
         self.assertIs(replace[0].master.master,groups[0][4])
-        self.assertIs(groups[0][4].master,parent.master.master.master)
+        gain_row=next(row for key,row in groups[0][1] if key=='auto_haptics_gain')
+        self.assertIs(gain_row.master,groups[0][4])
         for key,title in (('auto_mute_mix','Mix 모드 스피커 음소거'),('auto_mute_replace','Replace 모드 스피커 음소거')):
             self.assertFalse(ui.field_views[key][1][0].enabled)
             self.assertEqual(sum(isinstance(w,tk.Label) and w.cget('text')==title for w in walk(ui.body)),1)

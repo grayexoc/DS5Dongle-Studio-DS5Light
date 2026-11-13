@@ -275,7 +275,8 @@ class DeviceDiagnosticsDialog:
                     raise RuntimeError('선택한 Pico가 변경됐습니다. 상태를 다시 조회하세요.')
                 self.results.put((kind, value, None))
             except Exception as exc:self.results.put((kind, None, str(exc)))
-        start_thread(threading.Thread(target=work, name='DS5Light-device-diagnostics', daemon=True))
+        try:start_thread(threading.Thread(target=work, name='DS5Light-device-diagnostics', daemon=True))
+        except Exception as exc:self.results.put((kind,None,str(exc)))
         self.job = self.window.after(100, self.poll)
 
     def snapshot(self, measure_speaker=False):
@@ -655,5 +656,6 @@ def open_diagnostics(app):
             app._diagnostics_support=dict(identity=diagnostic_identity(app),supported=supported,hint=hint)
             app.status.set(hint+' '+tr(error or ''))
         update_diagnostics_button(app)
-    start_thread(threading.Thread(target=work,name='DS5Light-diagnostics-support',daemon=True))
+    try:start_thread(threading.Thread(target=work,name='DS5Light-diagnostics-support',daemon=True))
+    except Exception as exc:results.put((None,None,str(exc)))
     app.root.after(60,finish)
