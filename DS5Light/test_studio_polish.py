@@ -53,11 +53,12 @@ class PolishTests(unittest.TestCase):
             d=dialogs[0];observed.append(d.cget('bg'))
             next(w for w in walk(d) if isinstance(w,ttk.Button) and text(w)=='취소').invoke()
         self.root.after(20,cancel_dialog);self.assertFalse(confirm_delete(ui.parent));self.assertEqual(observed,['#151515'])
-    def test_delete_only_stages_after_confirmation(self):
+    def test_delete_requests_auto_save_only_after_confirmation(self):
         ui=self.editor();r=flow.record(chord=1,keys=[4]);ui.doc.macros={'0':r[:]};ui.doc.macro_baseline={'0':r[:]}
         with patch('studio_dialogs.confirm_delete',return_value=False):ui.delete_macro(0)
         self.assertEqual(ui.doc.macros['0'],r)
-        with patch('studio_dialogs.confirm_delete',return_value=True),patch.object(ui,'with_client') as hid:ui.delete_macro(0);hid.assert_not_called()
+        with patch('studio_dialogs.confirm_delete',return_value=True),patch.object(ui,'with_client') as hid,patch.object(ui,'save_macro_edits') as save:
+            ui.delete_macro(0);hid.assert_not_called();save.assert_called_once()
         self.assertEqual(ui.doc.macros['0'],[0]*35);self.assertTrue(ui.doc.dirty)
 
 if __name__=='__main__':unittest.main()

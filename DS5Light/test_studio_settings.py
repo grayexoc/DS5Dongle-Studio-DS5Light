@@ -1,4 +1,4 @@
-"""Experimental Studio tests: local edits, strict wire parsing, native layouts."""
+"""Studio tests: local edits, strict wire parsing, native layouts."""
 import copy,struct,time,unittest
 from unittest.mock import patch
 from studio_fields import FIELDS,SECTIONS
@@ -47,24 +47,24 @@ class Device:
     def get_feature_report(self,r,n):return self.reply
 
 class SchemaTests(unittest.TestCase):
-    def test_edge_serial_requires_explicit_firmware_support(self):
+    def test_usb_serial_requires_device_policy_support(self):
+        from studio_scope import EDITABLE
         from studio_settings_protocol import needs_reconnect
+        self.assertNotIn('disable_usb_sn',EDITABLE)
         client=SettingsClient(None)
-        with patch.object(client,'command',return_value=b'\x66\x0c\x01\x00') as command:
-            self.assertEqual(client.read_fields([FIELDS['disable_usb_sn']]),({},['disable_usb_sn']))
-            command.assert_called_once()
-            self.assertEqual(command.call_args.args,(12,b'\x01\xc7'))
-        with patch.object(client,'command',return_value=b'\x66\x0c\x00\x01\xc7\x01\x00'):
-            self.assertEqual(client.read_fields([FIELDS['disable_usb_sn']]),({'disable_usb_sn':0},[]))
-        self.assertTrue(needs_reconnect({'disable_usb_sn':0},{'disable_usb_sn':1}))
-        self.assertFalse(needs_reconnect({}, {'disable_usb_sn':1}))
+        with patch.object(client,'command',return_value=bytes((0x66,0x21,0,1,1))) as command:
+            self.assertEqual(client.usb_serial_hidden(),1)
+            self.assertEqual(command.call_args.args,(0x21,b'\0',0x84))
+        with patch.object(client,'command',return_value=bytes((0x66,0x21,1,1,0))):
+            with self.assertRaises(ValueError):client.usb_serial_hidden(1)
+        self.assertFalse(needs_reconnect({'disable_usb_sn':0},{'disable_usb_sn':1}))
 
-    def test_slot_restore_uses_serial_storage_even_when_live_edge_is_unavailable(self):
+    def test_slot_restore_ignores_legacy_serial_and_preserves_common_policy(self):
         from studio_backup import restore_all
         class Client:
             cancel=staticmethod(lambda:False)
             def __init__(self):self.stored=1;self.saved=[]
-            def read_fields(self):return {},['disable_usb_sn']
+            def read_fields(self):return {},[]
             def read_one(self,field):
                 self.assert_storage(field)
                 return self.stored
@@ -74,13 +74,13 @@ class SchemaTests(unittest.TestCase):
             def command(self,*args):return bytes((0x66,26,0))
             def write_fields(self,values,baseline,*,profile_snapshot):
                 if not profile_snapshot:raise AssertionError('expected profile snapshot')
-                self.stored=values['disable_usb_sn']
+                if 'disable_usb_sn' in values:raise AssertionError('common policy written by profile restore')
             def save_slot(self,index,name):self.saved.append((index,self.stored))
         client=Client()
         rows=[dict(index=0,name='Edge',fields={'disable_usb_sn':1},effects={}),
               dict(index=1,name='Legacy',fields={},effects={})]
         self.assertEqual(restore_all(client,rows,{}),[0,1])
-        self.assertEqual(client.saved,[(0,1),(1,0)])
+        self.assertEqual(client.saved,[(0,1),(1,1)])
         self.assertEqual(client.stored,1)
 
     def test_full_stable_registry_and_descriptions(self):
@@ -142,7 +142,7 @@ class SchemaTests(unittest.TestCase):
                               ah_xover_hz=0,haptics_aa=1,stick_mouse_curve=18,
                               macro_disable=0xffffffff).items():
             self.assertEqual(rows[0]['fields'][key],value,key)
-        self.assertEqual(rows[1]['fields'],{k:v for k,v in custom.items() if not k.startswith('ce_')})
+        self.assertEqual(rows[1]['fields'],{k:v for k,v in custom.items() if not k.startswith('ce_') and k!='disable_usb_sn'})
 
     def test_backup_rejects_duplicates_and_unknown_active_actions(self):
         row=dict(index=0,valid=True,name='A',fields={'auto_haptics_gain':100})
@@ -239,7 +239,9 @@ class RevisionTests(unittest.TestCase):
             if packet[2]==12:self.assertTrue(set(packet[4:4+packet[3]])<=ids)
         for key in CONSTRUCTION|REMOVED:
             count=len(d.sent)
-            with self.assertRaises(ValueError):c.write_fields({key:0},{})
+            if key=='disable_usb_sn':c.write_fields({key:0},{})
+            else:
+                with self.assertRaises(ValueError):c.write_fields({key:0},{})
             with self.assertRaises(ValueError):c.read_fields([FIELDS[key]])
             with self.assertRaises(ValueError):c.read_one(FIELDS[key])
             self.assertEqual(len(d.sent),count)

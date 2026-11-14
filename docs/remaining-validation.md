@@ -1,10 +1,10 @@
 # Current improvement and validation list
 
-Updated 2026-11-11. This is the active list; it supersedes earlier conversational lists. Explicitly deferred or withdrawn feature requests are not active items.
+Updated 2026-11-14. This is the active list; it supersedes earlier conversational lists. Explicitly deferred or withdrawn feature requests are not active items.
 
 | Item | Evidence and decision |
 | --- | --- |
-| Build current source | v32 was built before the latest unseen-vs-black LED fix. Build the updated source only when requested. |
+| Build current source | Studio v44 for Pico 2 W was built and its UF2 verified on 2026-11-13; see ../DS5Dongle-Studio-build/local-v44-studio/verification.json from the source root. The current comment-only correction needs no new binary. Build later runtime changes only when requested. |
 | Hardware regression | Required: repeated rumble start/stop, native special attack, microphone gain/mute. Host tests cannot establish tactile/audio results. |
 | Cached motor ownership | Worth targeted sequence tests. Upstream v0.8.0 forward_output_report copies the current host body; Studio preserves prior motor fields for reports without motor authority. Do not replace this with another inference without proving STOP/native/LED-only cases. |
 | 60 ms stream inactivity | Keep for now. Link/interface-close resets are explicit; a timeout is a fallback. No inspected reference establishes 60 ms as optimal. Separate partial-buffer cleanup from mode hand-back if a supply-gap test proves a defect. |

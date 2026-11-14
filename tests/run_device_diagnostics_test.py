@@ -48,6 +48,9 @@ void manual_power_note_activity(unsigned){++activity;}
 void state_rumble_reset(){++starts;}
 bool bt_is_connected(){return true;}
 bool bt_is_ready(){return ready;}
+bool serial_hidden=false,serial_save_ok=true;unsigned serial_writes=0;
+bool device_usb_serial_hidden(){return serial_hidden;}
+bool device_set_usb_serial_hidden(bool value){++serial_writes;if(!serial_save_ok)return false;serial_hidden=value;return true;}
 bool audio_processing_active(){return processing;}
 bool audio_haptics_stream_active(){return false;}
 uint8_t audio_diagnostic_route(){return 2;}
@@ -107,7 +110,12 @@ int main(){
  payload[0]=1;command(0x20,payload,5);r=feature_data[0x84];
  assert(r[2]==0&&r[4]==1&&!memcmp(r.data()+5,payload+1,4)&&chimes==1&&activity==before+1);
  chime_ok=false;command(0x20,payload,5);assert(feature_data[0x84][2]==2&&chimes==2);
- puts("PASS: real diagnostic/test/extension commands: tags, capabilities, preview gates, malformed payload and no read side effects");
+ payload[0]=0;command(0x21,payload,1);r=feature_data[0x84];
+ assert(r[0]==0x66&&r[1]==0x21&&r[2]==0&&r[3]==1&&r[4]==0&&serial_writes==0);
+ payload[0]=1;payload[1]=1;command(0x21,payload,2);assert(feature_data[0x84][2]==0&&feature_data[0x84][4]==1&&serial_writes==1);
+ serial_save_ok=false;payload[1]=0;command(0x21,payload,2);assert(feature_data[0x84][2]==2&&feature_data[0x84][4]==1&&serial_writes==2);
+ payload[1]=2;command(0x21,payload,2);assert(feature_data[0x84][2]==1&&serial_writes==2);
+ puts("PASS: real diagnostic/test/extension/serial commands: tags, capabilities, preview gates, malformed payload and no read side effects");
 }
 '''
 (out / 'commands.cpp').write_text(code, encoding='utf-8')

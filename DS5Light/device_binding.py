@@ -48,12 +48,12 @@ class DeviceBinding:
         with self._lock:
             old=self._identity
             conflict=bool(old.serial and row.get('serial_number') and row['serial_number']!=old.serial)
-            same_port=(old.edge_port_paths and old.expected_edge_serial is not None and row.get('product_id')==0x0df2 and
+            same_port=(old.edge_port_paths and old.expected_edge_serial is not None and row.get('product_id') in (0x0ce6,0x0df2) and
                        bool(row.get('serial_number'))==old.expected_edge_serial and
                        bool(set(old.edge_port_paths).intersection(usb_port_paths(parent))))
             same=not conflict and ((old.serial and row.get('serial_number')==old.serial) or old.hid_path==row['path'] or
                                    (parent and parent==old.usb_parent_id) or same_port)
-            edge_serial=(bool(row.get('serial_number')) if row.get('product_id')==0x0df2 else
+            edge_serial=(bool(row.get('serial_number')) if row.get('product_id') in (0x0ce6,0x0df2) else
                          old.edge_serial_present if same and 'product_id' not in row else None)
             changed=(edge_serial is not None and old.edge_serial_present is not None and
                      edge_serial!=old.edge_serial_present)
@@ -84,7 +84,7 @@ class DeviceBinding:
     def resolve_edge_reconnect(self,rows,serial_present):
         from windows_device_identity import usb_parent_id,usb_port_paths
         value=self.snapshot()
-        rows=[row for row in rows if row.get('product_id')==0x0df2 and
+        rows=[row for row in rows if row.get('product_id') in (0x0ce6,0x0df2) and
               bool(row.get('serial_number'))==serial_present]
         match=self.resolve_hid(rows)
         if match is not None or value.expected_edge_serial!=serial_present or not value.edge_port_paths:return match

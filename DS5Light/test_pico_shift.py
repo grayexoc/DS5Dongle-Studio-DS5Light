@@ -104,11 +104,11 @@ class ShiftUITests(unittest.TestCase):
                 yield from labels(child)
         self.assertIn('Layer',list(labels(ui.body)))
 
-    def test_inline_choice_cancel_and_stage_never_send(self):
+    def test_inline_choice_cancel_stages_nothing_and_commit_requests_auto_save(self):
         from studio_button_names import NAMES
         ui=self.prepare();before=copy.deepcopy(ui.doc.macros)
         self.root.deiconify();self.root.update()
-        with patch.object(ui,'with_client') as hid,patch.object(ui,'task') as task:
+        with patch.object(ui,'with_client') as hid,patch.object(ui,'task') as task,patch.object(ui,'save_macro_edits') as save:
             ui.open_shift_picker()
             self.root.update()
             self.assertTrue(ui.shift_choice.expanded)
@@ -118,6 +118,7 @@ class ShiftUITests(unittest.TestCase):
             ui.open_shift_picker();self.root.update();self.assertEqual(ui.shift_selection.get(),'없음')
             ui.shift_choice.choose(ui.shift_choice.values.index(NAMES[20]))
             ui.commit_shift_key()
+            save.assert_called_once()
             self.assertEqual(int.from_bytes(bytes(shift_key(ui.doc.macros)[1][:4]),'little'),1<<20)
             ui.open_shift_picker();self.assertEqual(ui.shift_selection.get(),NAMES[20])
             hid.assert_not_called();task.assert_not_called()
@@ -125,18 +126,20 @@ class ShiftUITests(unittest.TestCase):
     def test_profile_editor_preview_and_stage(self):
         from studio_macro_editor import MacroEditor
         ui=self.prepare();row=[0]*35;row[0]=1
+        ui.path=b'test';ui.profile_stamp=dict(index=0,name='Test',edited=False)
         editor=MacroEditor(ui,0,initial=row)
         editor.output_kind.set(OUTPUTS['profile']);editor.output.set('프로필 8번')
         editor.chime.set(True);editor.layer.set(True);editor.refresh()
         self.assertEqual(editor.draft.build(editor.state())[17],30)
-        with patch.object(ui,'task') as task,patch.object(ui,'with_client') as hid:
+        with patch.object(ui,'task') as task,patch.object(ui,'with_client') as hid,patch.object(ui,'save_registered_macro') as save:
             editor.preview_chime();self.assertEqual(task.call_args.args[0],'chime_preview');hid.assert_not_called()
-            editor.commit();hid.assert_not_called()
+            editor.commit();hid.assert_not_called();save.assert_called_once()
         self.assertEqual(ui.doc.macros['0'][5]&96,96)
 
     def test_power_off_editor_stages_and_reopens_under_controller_outputs(self):
         from studio_macro_editor import MacroEditor
         ui=self.prepare();row=[0]*35;row[0]=1
+        ui.path=b'test';ui.profile_stamp=dict(index=0,name='Test',edited=False)
         editor=MacroEditor(ui,0,initial=row)
         editor.output_kind.set(OUTPUTS['controller'])
         self.assertEqual(len(editor.output_kind_buttons),4)
@@ -146,9 +149,9 @@ class ShiftUITests(unittest.TestCase):
             self.assertIsNotNone(editor.output_control.tiles[index].image)
         editor.output_control.choose(editor.output_control.values.index('듀얼센스 전원'))
         self.assertFalse(editor.output_record.winfo_manager())
-        with patch.object(ui,'with_client') as hid:
+        with patch.object(ui,'with_client') as hid,patch.object(ui,'save_registered_macro') as save:
             editor.commit()
-            hid.assert_not_called()
+            hid.assert_not_called();save.assert_called_once()
         self.assertEqual(ui.doc.macros['0'][17],POWER_OFF)
         editor=MacroEditor(ui,0)
         self.assertEqual(editor.output_kind.get(),OUTPUTS['controller'])
@@ -177,8 +180,10 @@ class ShiftUITests(unittest.TestCase):
         ui.doc.macros,mask=set_shift_key(ui.doc.macros,0xffffffff,19)
         row=shift_key(ui.doc.macros);ui.doc.values['macro_disable']=mask|(1<<row[0])
         ui.open_shift_picker();self.assertFalse(ui.shift_enabled.get())
-        ui.commit_shift_key();self.assertTrue(ui.doc.values['macro_disable']&(1<<row[0]))
-        ui.open_shift_picker();ui.shift_selection.set('없음');ui.commit_shift_key()
+        with patch.object(ui,'save_macro_edits') as save:
+            ui.commit_shift_key();self.assertTrue(ui.doc.values['macro_disable']&(1<<row[0]));save.assert_called_once()
+            ui.open_shift_picker();ui.shift_selection.set('없음');ui.commit_shift_key()
+            self.assertEqual(save.call_count,2)
         self.assertIsNone(shift_key(ui.doc.macros))
 
 if __name__=='__main__':unittest.main()

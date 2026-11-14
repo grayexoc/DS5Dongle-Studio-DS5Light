@@ -141,15 +141,11 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
             new_config.lock_volume = value;
             break;
         }
-        case 0xc7: // Edge-only editor capability; shares the legacy profile byte.
-            if (!usb_edge_serial_available()) return false;
-            [[fallthrough]];
-        case 0xc8: // Profile backup/restore access, including when Edge is not connected.
+        case 0xc7: // Legacy profile writes must not alter the device-wide policy.
+        case 0xc8:
         case 0x0d: {
             uint8_t value{};
-            if (!read_config_value(value, buffer, bufsize) || value > 1) return false;
-            new_config.disable_usb_sn = value;
-            break;
+            return read_config_value(value, buffer, bufsize) && value <= 1;
         }
         case 0x0e: {
             uint8_t value{};
@@ -247,9 +243,7 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0xc0: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize))return false; new_config.trigger_reduce=v; break; }
         case 0xc1: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize) || v > 1)return false; new_config.lightbar_fixed=v; break; }
         case 0xc3: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize) || v < 100 || v > 200)return false; new_config.rumble_gain=v; break; }
-#ifdef STUDIO_XINPUT_EXPERIMENT
         case 0xc5: { uint8_t mode{}; if (!read_config_value(mode, buffer, bufsize) || mode > 1) return false; new_config.usb_gamepad_mode = mode; break; }
-#endif
         case 0xc4: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize) || v > 2)return false; new_config.rumble_release=v; break; }
         case 0xc6: { uint8_t v{}; if (!read_config_value(v, buffer, bufsize) || v > 2) return false; new_config.rumble_mode = v; break; }
         case 0xc2: { // Atomic RGB, u32 little-endian value 0x00RRGGBB.
@@ -380,7 +374,7 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0xc8:
         case 0xc7:
         case 0x0d:
-            return write_config_value(buffer, bufsize, config.disable_usb_sn);
+            return write_config_value(buffer, bufsize, (uint8_t)device_usb_serial_hidden());
         case 0x0e:
             return write_config_value(buffer, bufsize, config.ps_shortcut_enabled);
         case 0x0f:
@@ -422,9 +416,7 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0xc0: return write_config_value(buffer, bufsize, config.trigger_reduce);
         case 0xc1: return write_config_value(buffer, bufsize, uint8_t(config.lightbar_fixed == 1));
         case 0xc3: return write_config_value(buffer, bufsize, config.rumble_gain);
-#ifdef STUDIO_XINPUT_EXPERIMENT
         case 0xc5: return write_config_value(buffer, bufsize, config.usb_gamepad_mode);
-#endif
         case 0xc4: return write_config_value(buffer, bufsize, config.rumble_release);
         case 0xc6: return write_config_value(buffer, bufsize, config.rumble_mode);
         case 0xc2: return write_config_value(buffer, bufsize,
@@ -625,7 +617,6 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
 }
 
 static bool get_config_field(uint8_t field_id, uint8_t *buffer, uint16_t bufsize) {
-    if (field_id == 0xc7 && !usb_edge_serial_available()) return false;
     return get_config_field_from(get_config(), field_id, buffer, bufsize);
 }
 
@@ -1149,6 +1140,18 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     reply[2] = audio_profile_chime() ? 0 : 2;
                 }
             }
+            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            break;
+        }
+        case 0x21: {
+            // Device USB identity policy. Writes persist before any USB reconnect.
+            uint8_t reply[63]{0x66, 0x21, 1, 1, 0};
+            if (bufsize >= 1 && buffer[0] == 0) reply[2] = 0;
+            else if (bufsize >= 2 && buffer[0] == 1 && buffer[1] <= 1) {
+                reply[2] = device_set_usb_serial_hidden(buffer[1] != 0) ? 0 : 2;
+                if (reply[2] == 0) manual_power_note_activity(60000);
+            }
+            reply[4] = device_usb_serial_hidden();
             feature_data[0x84].assign(reply, reply + sizeof(reply));
             break;
         }

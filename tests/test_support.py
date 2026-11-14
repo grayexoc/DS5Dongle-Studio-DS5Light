@@ -9,6 +9,8 @@ def firmware_build(root):
     candidates = ([Path(selected).resolve() / 'compile_commands.json'] if selected else
                   sorted((root / 'build').glob('*/compile_commands.json'),
                          key=lambda p: p.stat().st_mtime, reverse=True))
+    if not selected:
+        candidates.append(root.parent / 'DS5Dongle-Studio-build' / 'current' / 'compile_commands.json')
     for path in candidates:
         rows = json.loads(path.read_text(encoding='utf-8'))
         if any(Path(row['file']).resolve() == root / 'src/audio.cpp' for row in rows):

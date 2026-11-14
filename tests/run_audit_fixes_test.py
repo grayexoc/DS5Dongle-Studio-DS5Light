@@ -191,7 +191,6 @@ run('usb-string',r"""
 #include <cstring>
 #include <cassert>
 #include <cstdio>
-#define STUDIO_XINPUT_EXPERIMENT
 bool active=false;bool usb_xinput_active(){return active;}bool ds_mode(){return true;}
 const char* string_desc_arr[]={"en","maker","pad","serial","extra"};
 const uint16_t *check(uint8_t index){size_t chr_count;

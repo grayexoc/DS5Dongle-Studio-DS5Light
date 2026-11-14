@@ -58,6 +58,8 @@ bool status_refresh_requested = true;
 bool frame_transfer_pending = false;
 int transfer_row = 0;
 uint32_t last_frame_ms = 0;
+uint32_t title_step_ms = 0;
+int title_offset = 0;
 
 struct ButtonState {
     bool initialized = false;
@@ -205,6 +207,25 @@ void draw_text(int x, int y, const char *text, int advance = 6) {
 void draw_centered(int y, const char *text) {
     const int width = static_cast<int>(strlen(text)) * 6 - 1;
     draw_text((kWidth - width) / 2, y, text);
+}
+
+void draw_title(uint32_t now) {
+    constexpr char title[] = "Studio-DS5Light v" PICO_PROGRAM_VERSION_STRING "   ";
+    constexpr int cycle_width = (sizeof(title) - 1) * 6;
+    const uint32_t delay_ms = title_offset == 0 ? 1000 : 125;
+    if (now - title_step_ms >= delay_ms) {
+        title_offset = (title_offset + 1) % cycle_width;
+        title_step_ms = now;
+    }
+    // Clip each column to eight character cells; the signal stays fixed.
+    for (int x = 0; x < 8 * 6; ++x) {
+        const int source_x = (title_offset + x) % cycle_width;
+        const int col = source_x % 6;
+        if (col >= kFontW) continue;
+        const uint8_t bits = kFont5x7[title[source_x / 6] - 0x20][col];
+        for (int row = 0; row < kFontH; ++row)
+            if (bits & (1u << row)) set_pixel(1 + x, 1 + row);
+    }
 }
 
 void draw_nyan(uint32_t now) {
@@ -465,7 +486,7 @@ void draw_status() {
     }
     status_refresh_requested = false;
 
-    draw_text(1, 1, "Studio-DS5Light");
+    draw_title(now);
     char line[16];
     if (rssi_valid) snprintf(line, sizeof(line), "%ddB", static_cast<int>(rssi));
     else snprintf(line, sizeof(line), "--");
@@ -609,6 +630,8 @@ void oled_status_loop() {
     }
     if (!panel_enabled) {
         reset_graph_state();
+        title_offset = 0;
+        title_step_ms = now;
         status_refresh_requested = true;
         panel_enabled = true;
         panel_wake_pending = true;

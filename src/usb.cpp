@@ -20,9 +20,7 @@ uint32_t reconnect_at_ms = 0;
 
 void usb_schedule_reconnect() {
     wake_note_usb_reconnect();
-#ifdef STUDIO_XINPUT_EXPERIMENT
     if (usb_xinput_active() != (get_config().usb_gamepad_mode == 1)) state_rumble_reset();
-#endif
     tud_disconnect();
     reconnect_at_ms = to_ms_since_boot(get_absolute_time()) + 250;
     reconnect_pending = true;

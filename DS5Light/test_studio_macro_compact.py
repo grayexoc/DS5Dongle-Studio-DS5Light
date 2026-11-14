@@ -53,6 +53,14 @@ class CompactTests(unittest.TestCase):
         with patch('studio_macro_capture.LiveMonitor',Monitor):
             e.start_capture('input');monitor=e.capture_monitor;e.dialog.destroy()
         self.assertTrue(e.closed);self.assertTrue(monitor.stop.is_set());self.assertIsNone(e.capture_job)
+
+    def test_capture_start_failure_restores_editor_without_active_capture(self):
+        ui,e=self.macro();ui.path=b'test'
+        with patch('studio_macro_capture.LiveMonitor') as monitor:
+            monitor.return_value.start.side_effect=RuntimeError('thread start failed');e.start_capture('input')
+            monitor.return_value.stop.set.assert_called_once()
+        self.assertIsNone(e.capture);self.assertIsNone(e.capture_monitor);self.assertIsNone(e.capture_job)
+        self.assertIn('시작 실패',e.feedback.get());e.close()
     def test_icon_name_palette_keeps_combinations(self):
         from controller_glyphs import ControllerChoice
         ui,e=self.macro();self.assertIsInstance(e.button_dropdown,ControllerChoice)

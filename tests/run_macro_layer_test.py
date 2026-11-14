@@ -2,7 +2,7 @@
 from pathlib import Path
 import os,shutil,subprocess
 root=Path(__file__).resolve().parents[1]
-out=root/'build'/'macro-layer-tests';out.mkdir(exist_ok=True)
+out=root.parent/'DS5Dongle-Studio-build/reports/macro-layer-tests';out.mkdir(parents=True,exist_ok=True)
 stubs=out/'stubs';shutil.copytree(root/'tools/macro-tests/stubs',stubs,dirs_exist_ok=True)
 shutil.copyfile(root/'src/macro.cpp',stubs/'macro.cpp')
 assert (stubs/'macro.cpp').read_bytes()==(root/'src/macro.cpp').read_bytes()

@@ -1,7 +1,7 @@
 # Opt-in device diagnostics and short output tests
 
 First built as exp.26 after the review fixes. No web configuration changes.
-The DS5Light implementation is in `C:/Users/graye/Documents/Codex/DS5Light-XInput/device_diagnostics*.py`.
+The DS5Light implementation is in `C:/Users/graye/Documents/Codex/DS5Light/device_diagnostics*.py`.
 
 All requests are 64-byte HID feature reports: `80 66 command selector tag[4] zero-padding`.
 Read report `84`, 64 bytes including the report ID. Its 63-byte body is:

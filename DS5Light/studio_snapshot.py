@@ -57,7 +57,11 @@ def snapshot(preferred,cancel=lambda:False,binding=None,deadline=None):
         if client.deadline-time.monotonic()>=1:
             try:dock=client.dock_disconnect()
             except (OSError,ValueError,TimeoutError,AttributeError):pass
-        return dict(rows=rows,dock=dock,path=target['path'],standby=standby,values=values,unsupported=unsupported,profile=profile,version=version,cfg=cfg)
+        usb_serial=None
+        if client.deadline-time.monotonic()>=1:
+            try:usb_serial=client.usb_serial_hidden()
+            except (OSError,ValueError,TimeoutError,AttributeError):pass
+        return dict(rows=rows,usb_serial=usb_serial,dock=dock,path=target['path'],standby=standby,values=values,unsupported=unsupported,profile=profile,version=version,cfg=cfg)
     finally:
         try:
             if device is not None:device.close()

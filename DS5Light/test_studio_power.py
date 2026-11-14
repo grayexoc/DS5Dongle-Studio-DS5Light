@@ -132,7 +132,7 @@ class HiddenButtonTests(unittest.TestCase):
         placement=box.place_info()
         self.assertEqual(placement['anchor'],'sw');self.assertEqual(float(placement['rely']),1)
         self.assertEqual(int(placement['x']),0)
-    def test_click_reaches_hitbox_handler(self):
+    def shown_hitbox(self):
         # Native hit-testing requires an on-screen point; the user's default
         # 1000px client height may extend below a scaled desktop.
         self.root.minsize(1,1)
@@ -142,7 +142,17 @@ class HiddenButtonTests(unittest.TestCase):
         self.root.deiconify();self.root.lift();self.root.update()
         self.assertTrue(self.ui.power_hitbox.winfo_viewable())
         box=self.ui.power_hitbox
-        self.assertIs(self.root.winfo_containing(box.winfo_rootx()+12,box.winfo_rooty()+8),box)
+        self.assertGreater(box.winfo_width(),12);self.assertGreater(box.winfo_height(),8)
+        self.assertGreaterEqual(box.winfo_rooty(),self.root.winfo_rooty())
+        self.assertLessEqual(box.winfo_rooty()+box.winfo_height(),self.root.winfo_rooty()+self.root.winfo_height())
+        return box
+    def test_native_hitbox_when_window_is_uncovered(self):
+        box=self.shown_hitbox()
+        target=self.root.winfo_containing(box.winfo_rootx()+12,box.winfo_rooty()+8)
+        if target is None:self.skipTest('Test window is covered by another application; native screen hit-test unavailable')
+        self.assertIs(target,box)
+    def test_click_reaches_hitbox_handler(self):
+        self.shown_hitbox()
         self.ui.studio_power.supported=False
         with patch.object(self.ui.studio_power,'worker'),patch.object(self.ui.studio.binding,'snapshot',return_value=DeviceIdentity(b'p','serial')):
             self.ui.power_hitbox.event_generate('<Button-1>',x=12,y=8)

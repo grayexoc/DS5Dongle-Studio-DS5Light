@@ -49,9 +49,6 @@ def validate_changes(values,changes,*,profile_snapshot=False):
         if key not in FIELDS:raise ValueError(_ui_tr('지원하지 않는 설정: ')+key)
         encode(FIELDS[key],value)
     merged=dict(values,**changes)
-    if (not profile_snapshot and 'disable_usb_sn' in changes and
-            (merged.get('usb_gamepad_mode')==1 or merged.get('controller_mode')==0)):
-        raise ValueError(_ui_tr('Edge USB 시리얼 설정은 DualSense Edge USB 모드에서 적용하세요.'))
     if (not profile_snapshot and any(k in changes and changes[k]!=values.get(k)
                                      for k in ('auto_haptics_enable','mix_native_level','ah_dsp_source'))
             and merged.get('auto_haptics_enable')==1 and merged.get('mix_native_level',0)>0
@@ -66,7 +63,6 @@ def validate_changes(values,changes,*,profile_snapshot=False):
     return merged
 
 def needs_reconnect(before,after,macros=None):
-    if 'disable_usb_sn' in before and before['disable_usb_sn']!=after.get('disable_usb_sn',before['disable_usb_sn']):return True
     if any(before.get(k)!=after.get(k) for k in ENUM_FIELDS if k in after and k in before):return True
     for key in ('gyro_output','stick_mouse','touch_mouse'):
         if bool(before.get(key,0))!=bool(after.get(key,0)):return True
@@ -125,6 +121,9 @@ class SettingsClient(StudioClient):
             if accept is not None and not accept(body):continue
             return body
         raise TimeoutError(_ui_tr('Studio 응답 충돌 또는 지연 · 브라우저 웹 설정의 장치 연결을 해제한 뒤 새로 고침하세요.') if mismatched else _ui_tr('Studio 응답 대기 시간 초과'))
+    def usb_serial_hidden(self, mode=None):
+        return self.standby_mode(mode, command=0x21)
+
     def dock_disconnect(self, mode=None):
         return self.standby_mode(mode, command=0x1d)
 
@@ -137,12 +136,12 @@ class SettingsClient(StudioClient):
         attempts = 3 if mode is None else 12
         reply = self.command(command, payload, 0x84, attempts=attempts, accept=lambda r: mode is None or len(r)<5 or r[2]!=0 or r[3]!=1 or r[4]==mode)
         if len(reply) < 5 or reply[3] != 1 or reply[4] not in (0, 1):
-            raise ValueError(_ui_tr('충전독 정책 응답 오류') if command==0x1d else _ui_tr('Pico 절전 정책 응답 오류'))
+            raise ValueError(_ui_tr('USB 시리얼 설정 응답 오류') if command==0x21 else _ui_tr('충전독 정책 응답 오류') if command==0x1d else _ui_tr('Pico 절전 정책 응답 오류'))
         if reply[2] == 2:
-            message=(_ui_tr('충전독 정책 저장 실패') if command==0x1d else _ui_tr('Pico 절전 정책 저장 실패'))
-            raise PolicySaveError(message+_ui_tr(' · 다른 앱의 Pico 오디오 출력을 중지한 뒤 다시 시도하세요. 오디오 사용 중에는 저장이 제한될 수 있습니다.'),reply[4])
+            message=(_ui_tr('USB 시리얼 설정 저장 실패') if command==0x21 else _ui_tr('충전독 정책 저장 실패') if command==0x1d else _ui_tr('Pico 절전 정책 저장 실패'))
+            raise PolicySaveError(message+_ui_tr(' · 다른 앱의 Pico 오디오 출력을 중지한 뒤 다시 시도하세요. 듀얼센스가 Windows 기본 출력 장치라면 PC 스피커 등 다른 장치로 변경하세요. 오디오 사용 중에는 저장이 제한될 수 있습니다.'),reply[4])
         if reply[2] != 0 or (mode is not None and reply[4] != mode):
-            raise ValueError(_ui_tr('충전독 정책 응답 오류') if command==0x1d else _ui_tr('Pico 절전 정책 응답 오류'))
+            raise ValueError(_ui_tr('USB 시리얼 설정 응답 오류') if command==0x21 else _ui_tr('충전독 정책 응답 오류') if command==0x1d else _ui_tr('Pico 절전 정책 응답 오류'))
         return reply[4]
 
     def read_lightbar(self,refresh=False):
@@ -186,7 +185,7 @@ class SettingsClient(StudioClient):
             if field[1] in EDGE_SERIAL_FIELDS:
                 reply=self.command(12,bytes([1,fid]),echo=bytes([1,fid]),attempts=3)
                 if reply[2:4]==b'\x01\x00':
-                    raise EdgeSerialUnsupported(_ui_tr('Edge USB 시리얼 숨기기'))
+                    raise EdgeSerialUnsupported(_ui_tr('USB 시리얼 숨기기'))
                 if len(reply)<7 or reply[2:6]!=bytes([0,1,fid,1]) or reply[6]>1:
                     raise ValueError(_ui_tr('Studio 필드 응답 불일치'))
                 self.bulk=True
@@ -256,6 +255,7 @@ class SettingsClient(StudioClient):
         if not out and fields:raise RuntimeError(_ui_tr('Studio 설정을 읽지 못했습니다. 연결을 확인하고 새로 고침을 누르세요.'))
         return out,unsupported
     def write_fields(self,values,baseline,*,profile_snapshot=False):
+        values={k:v for k,v in values.items() if k!='disable_usb_sn'}
         if any(k not in EDITABLE for k in values):raise ValueError(_ui_tr('공사 중 또는 제외된 설정은 쓰지 않습니다.'))
         validate_changes(baseline,values,profile_snapshot=profile_snapshot)
         serial_field=EDGE_SERIAL_STORAGE_FIELD if profile_snapshot else FIELDS['disable_usb_sn']

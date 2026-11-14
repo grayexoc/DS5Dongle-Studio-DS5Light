@@ -18,7 +18,6 @@ code=r'''
 #include <cstring>
 #include <map>
 #include <vector>
-#define STUDIO_XINPUT_EXPERIMENT
 using hid_report_type_t=int;
 constexpr int HID_REPORT_TYPE_OUTPUT=2;
 struct SetStateData { uint8_t data[63]; };

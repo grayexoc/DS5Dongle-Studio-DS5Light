@@ -19,8 +19,7 @@ if ($ds5BuildPython) {
 $ds5AppVersion = & $ds5BuildPython -B -c "from app_version import APP_VERSION; print(APP_VERSION)"
 if ($LASTEXITCODE -ne 0 -or $ds5AppVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid app version' }
 $ds5PackageDirectory = Split-Path -Parent $PSScriptRoot
-$ds5BuildSuffix = if ($env:DS5LIGHT_EXPERIMENTAL -eq '1') { '-Experimental' } else { '' }
-$ds5PackagePath = Join-Path $ds5PackageDirectory "DS5Light-win-x64-v$ds5AppVersion$ds5BuildSuffix.zip"
+$ds5PackagePath = Join-Path $ds5PackageDirectory "DS5Light-win-x64-v$ds5AppVersion.zip"
 if (Test-Path -LiteralPath $ds5PackagePath) { throw "Package already exists; update app_version.py before building: $ds5PackagePath" }
 if ($env:DS5LIGHT_RUN_TESTS -eq '1') {
     & $ds5BuildPython -m unittest discover -p 'test_*.py' -v

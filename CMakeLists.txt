@@ -126,7 +126,6 @@ if (ENABLE_BATT_LED)
         target_sources(ds5-bridge PRIVATE src/battery_led.cpp)
 endif ()
 
-option(STUDIO_XINPUT_EXPERIMENT "Enable profile-selectable Native/XInput USB modes" ON)
 
 
 # Cockos WDLResampler
@@ -300,10 +299,7 @@ if(${SYS_CLOCK_KHZ_VALUE} GREATER 266000)
 else()
     set(PICO_FLASH_SPI_CLKDIV 2)
 endif()
-if (STUDIO_XINPUT_EXPERIMENT)
-    target_sources(ds5-bridge PRIVATE src/xinput_usb.cpp)
-    target_compile_definitions(ds5-bridge PRIVATE STUDIO_XINPUT_EXPERIMENT=1)
-endif()
+target_sources(ds5-bridge PRIVATE src/xinput_usb.cpp)
 
 target_compile_definitions(bs2_default PRIVATE PICO_FLASH_SPI_CLKDIV=${PICO_FLASH_SPI_CLKDIV})
 target_compile_definitions(ds5-bridge PRIVATE PICO_EMBED_XIP_SETUP=1)
@@ -344,9 +340,9 @@ if(WAKE_DEBUG)
     )
 endif()
 
-set(VERSION "44" CACHE STRING "Program version string")
+set(VERSION "45" CACHE STRING "Program version string")
 if(VERSION STREQUAL "dev")
-    set(VERSION "44" CACHE STRING "Program version string" FORCE)
+    set(VERSION "45" CACHE STRING "Program version string" FORCE)
 endif()
 set_target_properties(ds5-bridge PROPERTIES OUTPUT_NAME "ds5-studio-light_v${VERSION}")
 

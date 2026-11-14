@@ -34,6 +34,7 @@ constexpr uint16_t CONFIG_VERSION = 22;
 constexpr uint32_t CONFIG_FLASH_OFFSET        = PICO_FLASH_SIZE_BYTES - 3 * FLASH_SECTOR_SIZE;
 constexpr uint32_t LEGACY_CONFIG_FLASH_OFFSET = PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE;
 static Config config{};
+static void config_defer_activation_save();
 static bool activation_save_pending = false;
 static uint32_t activation_retry_at_ms = 0;
 static uint32_t activation_idle_since_ms = 0;
@@ -272,7 +273,7 @@ static void config_body_valid(Config_body &value) {
     // this line with it.
     if (body->gyro_axis > 2) body->gyro_axis = 0;
     if (body->gyro_invert > 3) body->gyro_invert = 0;
-    // Native-haptics smoothing: 0 is invalid so a fresh config defaults to Light (2).
+    // Haptic smoothing: invalid values default to Off (1); valid saved values stay intact.
     if (body->haptics_aa < 1 || body->haptics_aa > 3) body->haptics_aa = 1;
     if (body->synth_force > 1) body->synth_force = 0;
     // Two-stage triggers. A slot written before v1.21 reads back 0xFF here, so
@@ -357,7 +358,19 @@ static_assert(sizeof(ConfigJournalHeader) == 20);
 // Device policy lives in the CRC-protected journal metadata, outside slots.
 static constexpr uint32_t DORMANT_POLICY_BIT = 0x80000000u;
 static constexpr uint32_t DOCK_DISCONNECT_BIT = 0x20000000u;
-static constexpr uint32_t DEVICE_POLICY_MASK = DORMANT_POLICY_BIT | DOCK_DISCONNECT_BIT;
+static constexpr uint32_t USB_SERIAL_HIDE_BIT = 0x08000000u;
+static constexpr uint32_t USB_SERIAL_INITIALIZED_BIT = 0x04000000u;
+static constexpr uint32_t DEVICE_POLICY_MASK = DORMANT_POLICY_BIT | DOCK_DISCONNECT_BIT |
+    USB_SERIAL_HIDE_BIT | USB_SERIAL_INITIALIZED_BIT;
+static bool usb_serial_hidden_policy = false;
+static void load_usb_serial_policy(bool valid, uint32_t flags, bool legacy_enabled) {
+    usb_serial_hidden_policy = valid && (flags & USB_SERIAL_INITIALIZED_BIT)
+        ? (flags & USB_SERIAL_HIDE_BIT) != 0 : legacy_enabled;
+}
+static uint32_t usb_serial_policy_flags(uint32_t flags) {
+    flags &= ~USB_SERIAL_HIDE_BIT;
+    return flags | USB_SERIAL_INITIALIZED_BIT | (usb_serial_hidden_policy ? USB_SERIAL_HIDE_BIT : 0);
+}
 static bool dormant_policy = false;
 static bool dock_disconnect_policy = false;
 bool device_auto_dormant() { return dormant_policy; }
@@ -410,6 +423,23 @@ static bool config_journal_identity(const ConfigJournalHeader *header, ConfigPro
          (identity.tagged_slot & 0xffu) < SLOT_COUNT);
 }
 
+// A body can finish programming before its metadata. Recover common policy
+// only from a complete CRC-checked identity, never from a torn newer footer.
+static const ConfigJournalHeader *config_journal_device_identity(ConfigProfileIdentity &identity) {
+    const ConfigJournalHeader *latest = nullptr;
+    const uint32_t offsets[] = {CONFIG_JOURNAL_A_OFFSET, CONFIG_JOURNAL_B_OFFSET};
+    for (uint32_t offset : offsets) {
+        const auto *candidate = config_journal_read(offset);
+        ConfigProfileIdentity value{};
+        if (config_journal_identity(candidate, value) &&
+            (!latest || static_cast<int32_t>(candidate->sequence - latest->sequence) > 0)) {
+            latest = candidate;
+            identity = value;
+        }
+    }
+    return latest;
+}
+
 static Config_body boot_config_body;
 
 static bool recovery_ok = false;
@@ -455,8 +485,18 @@ void config_load() {
     migrate_legacy_storage();
     ConfigProfileIdentity identity{};
     const bool identity_valid = config_journal_identity(journal, identity);
-    dormant_policy = identity_valid && (identity.tagged_slot & DORMANT_POLICY_BIT);
-    dock_disconnect_policy = identity_valid && (identity.tagged_slot & DOCK_DISCONNECT_BIT);
+    ConfigProfileIdentity device_identity{};
+    const auto *device_record = config_journal_device_identity(device_identity);
+    dormant_policy = device_record && (device_identity.tagged_slot & DORMANT_POLICY_BIT);
+    dock_disconnect_policy = device_record && (device_identity.tagged_slot & DOCK_DISCONNECT_BIT);
+    bool legacy_serial = config.body.disable_usb_sn == 1;
+    if (device_record && device_record->body_bytes > offsetof(Config_body, disable_usb_sn))
+        legacy_serial = *(reinterpret_cast<const uint8_t *>(device_record) + sizeof(*device_record) +
+                          offsetof(Config_body, disable_usb_sn)) == 1;
+    load_usb_serial_policy(device_record != nullptr, device_identity.tagged_slot, legacy_serial);
+    if (!device_record || !(device_identity.tagged_slot & USB_SERIAL_INITIALIZED_BIT))
+        config_defer_activation_save(); // Persist once via the existing idle-safe journal path.
+
     if (identity_valid && (identity.tagged_slot & ~DEVICE_POLICY_MASK) != 0) {
         // Restore the name/baseline only; leave the loaded live settings intact.
         active_profile_restore(static_cast<uint8_t>(identity.tagged_slot), identity.fingerprint);
@@ -528,8 +568,10 @@ static bool config_journal_write(const uint8_t *body, uint16_t bytes, ConfigProf
     identity.crc = crc32(reinterpret_cast<const uint8_t *>(&identity),
                          offsetof(ConfigProfileIdentity, crc)) ^ header.sequence ^ header.body_crc;
     memcpy(page + sizeof(header) + bytes, &identity, sizeof(identity));
-    // Never erase the latest validated copy. The legacy -3 record is untouched.
-    config_write_offset = latest_offset == CONFIG_JOURNAL_A_OFFSET ?
+    // A newer valid body may have a torn footer. Keep the complete policy copy.
+    const auto *protected_record = config_journal_device_identity(previous_identity);
+    if (!protected_record) protected_record = stored;
+    config_write_offset = protected_record == reinterpret_cast<const ConfigJournalHeader *>(XIP_BASE + CONFIG_JOURNAL_A_OFFSET) ?
                           CONFIG_JOURNAL_B_OFFSET : CONFIG_JOURNAL_A_OFFSET;
 
     const int rc = flash_safe_execute(config_save_flash_op, page, timeout_ms);
@@ -563,6 +605,7 @@ static bool config_save_impl(uint32_t timeout_ms) {
     }
     if (dormant_policy) identity.tagged_slot |= DORMANT_POLICY_BIT;
     if (dock_disconnect_policy) identity.tagged_slot |= DOCK_DISCONNECT_BIT;
+    identity.tagged_slot = usb_serial_policy_flags(identity.tagged_slot);
     if (!config_journal_write(reinterpret_cast<const uint8_t *>(&config.body),
                               sizeof(Config_body), identity, timeout_ms)) return false;
     activation_save_pending = false;
@@ -576,7 +619,8 @@ static bool save_device_policy(uint32_t bit, bool enabled, bool &policy) {
     uint32_t offset;
     const auto *stored = config_journal_latest(offset);
     ConfigProfileIdentity identity{};
-    if (!config_journal_identity(stored, identity)) identity = {};
+    config_journal_device_identity(identity);
+    identity.tagged_slot = usb_serial_policy_flags(identity.tagged_slot);
     identity.tagged_slot &= ~bit;
     if (enabled) identity.tagged_slot |= bit;
     // Keep the saved profile identity and settings, including older layouts.
@@ -596,6 +640,11 @@ bool device_disconnect_on_dock() { return dock_disconnect_policy; }
 
 bool device_set_disconnect_on_dock(bool enabled) {
     return save_device_policy(DOCK_DISCONNECT_BIT, enabled, dock_disconnect_policy);
+}
+
+bool device_usb_serial_hidden() { return usb_serial_hidden_policy; }
+bool device_set_usb_serial_hidden(bool enabled) {
+    return save_device_policy(USB_SERIAL_HIDE_BIT, enabled, usb_serial_hidden_policy);
 }
 
 bool config_save() { return config_save_impl(1000); }
@@ -928,9 +977,7 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
     const Config_body &o = prev_body;
     const Config_body &n = config.body;
     needs_reenum =
-#ifdef STUDIO_XINPUT_EXPERIMENT
                    (o.usb_gamepad_mode != n.usb_gamepad_mode) ||
-#endif
                    (o.controller_mode      != n.controller_mode)      ||
                    (o.polling_rate_mode    != n.polling_rate_mode)    ||
                    (o.disable_mic          != n.disable_mic)          ||

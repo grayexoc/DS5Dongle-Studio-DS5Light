@@ -1,3 +1,17 @@
+# v1.0.15 — Mapping saves and input checks / 매핑 자동 저장·입력 확인
+
+DS5Light-win-x64-v1.0.15.zip · ds5-studio-light_v45.uf2 (Pico 2 W)
+
+- Save completed mapping edits, deletion, imports and shift-key changes automatically. Verify Pico reconnection before updating profile activation; show progress and offer export recovery on failure.
+- Add observed-button history, last-report age, touch-click qualification and first-key diagnostics. Recover cleanly when input monitoring cannot start.
+- Store USB serial hiding as a Pico-wide setting; preserve explicit choices across profiles and show compatibility advice for Edge when hiding is off. Explain Windows default audio output as a possible save restriction.
+- Studio v45 adds the versioned OLED title scroll and protects the last complete settings copy across repeated interrupted writes. Native/XInput support remains integrated; the default profile remains Native.
+
+- 매핑 편집 완료·삭제·가져오기·시프트키 변경을 자동 저장합니다. Pico 재연결 확인 후 프로필 사용 체크를 처리하고 진행 상태와 실패 시 내보내기 복구 경로를 표시합니다.
+- 감지 버튼 이력·마지막 수신 시각·터치 클릭 판정·키보드 첫 키 표시를 추가하고 입력 확인 시작 실패 후 상태 복구를 보완했습니다.
+- USB 시리얼 숨기기를 Pico 공통 설정으로 저장하며 프로필 전환 후에도 선택을 유지합니다. Edge 권장 안내와 Windows 기본 오디오 출력에 따른 저장 제한 안내를 추가했습니다.
+- Studio v45는 버전이 포함된 OLED 제목 스크롤과 연속 전원 차단 시 마지막 정상 설정 보존을 포함합니다. Native/XInput 통합을 유지하며 기본 프로필 모드는 Native입니다.
+
 # v1.0.14 — Volume, recovery and UI improvements / 음량·복구·UI 개선
 
 DS5Light-win-x64-v1.0.14.zip · ds5-studio-light_v44.uf2 (Pico 2 W)

@@ -474,9 +474,7 @@ static void restore_full_usb_identity(void) {
 }
 
 bool bt_usb_features_pending() {
-#ifdef STUDIO_XINPUT_EXPERIMENT
     if (get_config().usb_gamepad_mode == 1) return false;
-#endif
     if (!bt_is_connected() ||
         to_ms_since_boot(get_absolute_time()) - usb_feature_started_ms >= usb_feature_wait_ms)
         return false;

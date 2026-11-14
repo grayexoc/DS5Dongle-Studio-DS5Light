@@ -2,7 +2,7 @@
 from thread_start import start_thread
 from studio_i18n import text as _ui_tr
 from ui_controls import widget_trace
-import json,threading,time,queue,tkinter as tk
+import copy,json,threading,time,queue,tkinter as tk
 from pathlib import Path
 from tkinter import ttk,filedialog
 from studio_dialogs import messagebox
@@ -69,6 +69,7 @@ class LiveMonitor:
     def run(self):
         import hid
         device=hid.device();diag={};snapshot=None;next_diag=0;landing=None;half=0;received_at=None
+        seen_mask=0;reports=0;diag_at=None
         try:
             device.open_path(self.path);device.set_nonblocking(1)
             client=SettingsClient(device,cancel=self.stop.is_set)
@@ -89,6 +90,7 @@ class LiveMonitor:
                         else:half=0
                         snapshot=current
                         received_at=time.monotonic()
+                        seen_mask|=current['mask'];reports+=1
                 now=time.monotonic()
                 if self.diagnostics and now>=next_diag and _DEVICE_LOCK.acquire(blocking=False):
                     try:
@@ -96,8 +98,10 @@ class LiveMonitor:
                             if self.stop.is_set():break
                             diag[key]=client.read_one([fid,key,typ,key,'number',[0,65535]])
                     finally:_DEVICE_LOCK.release()
+                    diag_at=time.monotonic()
                     next_diag=now+1
-                self.publish(dict(input=snapshot,diag=dict(diag),received_at=received_at))
+                self.publish(dict(input=snapshot,diag=dict(diag),received_at=received_at,
+                                  seen_mask=seen_mask,reports=reports,diag_at=diag_at))
         except Exception as exc:self.publish(dict(error=str(exc)))
         finally:device.close()
 
@@ -175,12 +179,15 @@ class MacroTools:
         # Keep a new row entirely inside the editor until explicitly committed.
         self.edit_macro(index,initial=row)
     def delete_macro(self,index):
-        if self.busy:return
+        if not self.macro_edit_ready():return
+        stamp=copy.deepcopy(self.profile_stamp);path=self.path
         from studio_dialogs import confirm_delete
         if not confirm_delete(self.parent):return
+        if not self.macro_edit_ready() or self.profile_stamp!=stamp or self.path!=path:
+            self.progress.configure(text=_ui_tr('현재 프로필이 바뀌었습니다. 다시 읽어 주세요.'),kind='warning');return
         self.doc.macros[str(index)]=[0]*35
-        if 'macro_disable' in self.doc.values:self.changed('macro_disable',int(self.doc.values['macro_disable'])|(1<<index))
         self.render_fields()
+        self.save_macro_edits(stamp,mask=int(self.doc.values['macro_disable'])|(1<<index),record=(index,[0]*35))
     def bootloader(self):
         if self.busy or not self.path:return
         from studio_dialogs import confirm_bootloader
@@ -258,33 +265,53 @@ class MacroTools:
         bar=tk.Frame(box,bg=BG);bar.grid(row=1,column=0,columnspan=2,sticky='ew')
         for i,(title,command) in enumerate([(_ui_tr('가져오기'),self.import_macros),(_ui_tr('내보내기'),self.export_macros),(_ui_tr('입력 확인 중지') if self.live_enabled else _ui_tr('실시간 입력 확인'),self.toggle_live)]):
             ttk.Button(bar,text=title,command=command).grid(row=0,column=i,padx=(0,6),sticky='ew');bar.columnconfigure(i,weight=1)
-        self.live_text=tk.StringVar(value=_ui_tr('게임에 전달되는 입력과 현재 매핑 처리 상태를 확인합니다. 확인을 켠 동안에만 조회합니다.'))
+        self.live_text=tk.StringVar(value=_ui_tr('PC로 보내는 패드 입력과 펌웨어의 매핑 처리 상태를 확인합니다. 숨긴 입력은 보이지 않을 수 있으며, 짧은 출력은 진단 조회 사이에 지나갈 수 있습니다.'))
         tk.Label(box,textvariable=self.live_text,bg=BG,fg=MUTED,wraplength=425,justify='left',anchor='w').grid(row=2,column=0,columnspan=2,sticky='ew',pady=(12,0))
-        if self.live_result:self.show_live_result(self.live_result)
+        if self.live_enabled and self.live_result:self.show_live_result(self.live_result)
     def import_macros(self):
-        if self.busy or not self.doc.macro_baseline:
-            self.progress.configure(text=_ui_tr('매크로 정의를 먼저 읽으세요.'));return
+        if not self.macro_edit_ready():return
+        stamp=copy.deepcopy(self.profile_stamp);path=self.path
         name=filedialog.askopenfilename(parent=self.parent,filetypes=[(_ui_tr('매핑·매크로 JSON'),'*.json')])
         if not name:return
         try:
-            data=json.loads(Path(name).read_text(encoding='utf-8-sig'));records=macro_records(data.get('macros',{}))
+            data=json.loads(Path(name).read_text(encoding='utf-8-sig'))
+            if not isinstance(data,dict) or 'macros' not in data:raise ValueError(_ui_tr('매핑 목록이 없는 파일입니다. 매핑 내보내기로 만든 파일을 선택하세요.'))
+            records=macro_records(data['macros'])
             for record in records.values():normalize_macro(record)
-            if not messagebox.askyesno(_ui_tr('공유 매핑 교체'),_ui_tr('모든 프로필이 공유하는 일반 매크로 정의를 편집에 불러옵니다. Pico 매핑·매크로 저장 전에는 전송되지 않습니다. 계속할까요?'),parent=self.parent):return
+            if not messagebox.askyesno(_ui_tr('공유 매핑 교체'),_ui_tr('모든 프로필이 공유하는 매핑을 파일 내용으로 전체 교체하고 Pico에 자동 저장합니다. 미저장 공용 매핑 편집은 파일 내용으로 대체됩니다. 프로필별 사용 체크는 바꾸지 않습니다. 계속할까요?'),parent=self.parent):return
+            if not self.macro_edit_ready() or self.profile_stamp!=stamp or self.path!=path:
+                self.progress.configure(text=_ui_tr('현재 프로필이 바뀌었습니다. 다시 읽어 주세요.'),kind='warning');return
             # Motion definitions are excluded and remain untouched.
+            records=copy.deepcopy(records)
             for key,old in self.doc.macro_baseline.items():
-                if not old[4]&16:self.doc.macros[key]=records.get(key,[0]*35)
+                if old[4]&16:records[key]=old
+                else:records.setdefault(key,[0]*35)
+            from studio_shift import validate_reserved_inputs
+            validate_reserved_inputs(records,self.doc.values)
+            self.doc.macros=records
             self.render_fields()
+            self.save_macro_edits(stamp)
         except Exception as exc:messagebox.showerror(_ui_tr('매핑 파일'),str(exc),parent=self.parent)
     def export_macros(self):
         if not self.doc.macros:self.progress.configure(text=_ui_tr('매크로 정의를 먼저 읽으세요.'));return
         name=filedialog.asksaveasfilename(parent=self.parent,defaultextension='.json',initialfile='ds5dongle-macros.json',filetypes=[('JSON','*.json')])
-        if name:Path(name).write_text(json.dumps(dict(format='ds5dongle-macros',version=1,macros=structured_macros(self.doc.macros)),ensure_ascii=False,indent=2),encoding='utf-8')
+        if name:
+            try:Path(name).write_text(json.dumps(dict(format='ds5dongle-macros',version=1,macros=structured_macros(self.doc.macros)),ensure_ascii=False,indent=2),encoding='utf-8')
+            except OSError as exc:
+                self.progress.configure(text=_ui_tr('매핑 내보내기 실패 · ')+str(exc),kind='error');self.update_state();return
+            self.progress.configure(text=_ui_tr('매핑 편집을 파일로 보관했습니다. 새로 고침 후 다시 가져올 수 있습니다.'),kind='action');self.update_state()
     def toggle_live(self):
         from studio_power import blocked
         if blocked(self.app):return
         if self.live_enabled:self.stop_live();self.render_fields();return
         if not self.path or self.busy:return
-        self.live_enabled=True;self.monitor=LiveMonitor(self.path);self.monitor.start();self.render_fields();self.live_poll()
+        self.live_result=None
+        self.live_enabled=True;self.monitor=LiveMonitor(self.path)
+        try:self.monitor.start()
+        except Exception as exc:
+            self.stop_live();self.render_fields()
+            self.progress.configure(text=_ui_tr('입력 확인 시작 실패 · ')+str(exc),kind='error');self.update_state();return
+        self.render_fields();self.live_poll()
     def stop_live(self):
         self.live_enabled=False
         monitor=getattr(self,'monitor',None)
@@ -300,16 +327,20 @@ class MacroTools:
         if self.closed or self.app.selected_tab!=2 or GROUPS[self.category][0]!=_ui_tr('매핑·매크로') or not self.parent.winfo_viewable():self.stop_live();return
         try:
             result=self.monitor.results.get_nowait()
-            if result.get('error'):self.stop_live();self.live_text.set(_ui_tr('입력 확인 실패 · ')+result['error']);return
+            if result.get('error'):
+                self.stop_live();self.render_fields();self.live_text.set(_ui_tr('입력 확인 실패 · ')+result['error']);return
             self.live_result=result;self.show_live_result(result)
         except queue.Empty:pass
         self.live_job=self.parent.after(100,self.live_poll)
     def show_live_result(self,result):
         if not hasattr(self,'live_text'):return
-        from studio_settings_ui import BUTTONS,OUT_BUTTONS
+        from studio_settings_ui import BUTTONS,OUT_BUTTONS,HID_KEYS
         d=result.get('diag',{});s=result.get('input')
         names=lambda mask:' + '.join(n for i,n in enumerate(BUTTONS) if mask&(1<<i)) or _ui_tr('없음')
-        text=_ui_tr('게임에 전달되는 입력: ')+(names(s['mask']) if s else _ui_tr('입력 보고 대기 중'))
+        received=result.get('received_at');age=max(0,time.monotonic()-received) if received is not None else None
+        text=(_ui_tr('마지막 수신 입력: ') if age is not None and age>=1 else _ui_tr('PC로 보내는 패드 입력: '))+(names(s['mask']) if s else _ui_tr('입력 보고 대기 중'))
+        if age is not None:text+=_ui_tr('\n마지막 수신 {0}초 전 · 수신 보고 {1}개').format(f'{age:.1f}',result.get('reports',0))
+        text+=_ui_tr('\n확인 시작 후 감지한 버튼: ')+names(result.get('seen_mask',s['mask'] if s else 0))
         if s:text+=_ui_tr('\n스틱 L {0}/{1} · R {2}/{3} · 트리거 L {4} / R {5}').format(f"{s['lx']}",f"{s['ly']}",f"{s['rx']}",f"{s['ry']}",f"{s['l2']}",f"{s['r2']}")
         if d:
             hidden=d.get('suppress_low',0)|(d.get('suppress_high',0)<<16);injected=d.get('inject_low',0)|(d.get('inject_high',0)<<16);kb=d.get('keyboard',0)
@@ -317,7 +348,17 @@ class MacroTools:
             sticks=' + '.join(name for bit,name in [(1,_ui_tr('왼쪽 스틱')),(2,_ui_tr('오른쪽 스틱'))] if d.get('stick',0)&bit)
             mouse=' + '.join(name for bit,name in [(1,_ui_tr('왼쪽')),(2,_ui_tr('오른쪽')),(4,_ui_tr('가운데'))] if ((kb>>4)&15)&bit) or _ui_tr('없음')
             text+=_ui_tr('\n현재 매핑 처리 상태 (약 1초 간격):\n게임에서 숨긴 입력: ')+names(hidden)+(' · '+sticks if sticks else '')
-            text+=_ui_tr('\n전달한 버튼: ')+outputs+_ui_tr(' · 키보드 {0}키 · 마우스 {1}').format(f'{kb & 15}',f'{mouse}')
+            text+=_ui_tr('\n펌웨어 출력 상태: ')+outputs+_ui_tr(' · 키보드 {0}키 · 마우스 {1}').format(f'{kb & 15}',f'{mouse}')
+            first=(kb>>8)&255
+            if kb&15 and first:
+                key=next((name for name,code in HID_KEYS.items() if code==first),f'HID 0x{first:02X}')
+                text+=_ui_tr(' · 첫 키 {0}').format(key)
+            if 'touch_x' in d and 'touch_info' in d:
+                half=d['touch_info']&3
+                side=(_ui_tr('중앙 또는 손가락 없음'),_ui_tr('왼쪽'),_ui_tr('오른쪽'),_ui_tr('미확인'))[half]
+                text+=_ui_tr('\n최근 터치 클릭 판정: {0} · 처음 터치한 X {1}').format(side,d['touch_x'])
+            if result.get('diag_at') is not None:
+                text+=_ui_tr('\n진단 조회 {0}초 전 · 짧은 출력은 표시되지 않을 수 있습니다.').format(f"{max(0,time.monotonic()-result['diag_at']):.1f}")
             text+=_ui_tr('\n게임 입력 치환: ')+(_ui_tr('적용 중') if d.get('stick',0)&4 else _ui_tr('꺼짐'))
         self.live_text.set(text)
     def record_keys(self,parent,variables,release):

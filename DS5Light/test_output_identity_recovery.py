@@ -7,25 +7,26 @@ class IdentityTests(unittest.TestCase):
   b=DeviceBinding();b._identity=DeviceIdentity(container_id='ours',endpoint_id='out',endpoint_name='Old');return b
  def row(self,**kw):return dict(dict(index=1,name='Renamed',maxOutputChannels=4,endpoint_id='out'),**kw)
  def test_edge_serial_change_waits_for_new_hid_and_requires_matching_output(self):
-  b=DeviceBinding()
-  old=dict(path=b'edge-old',product_id=0x0df2,serial_number='abc',container_id='old',usb_parent_id='parent-old')
-  new=dict(path=b'edge-new',product_id=0x0df2,container_id='new',usb_parent_id='parent-new')
-  stale=self.row(name='DualSense Edge',container_id='old',usb_parent_id='parent-old')
-  endpoint=self.row(name='DualSense Edge',endpoint_id='new-endpoint',container_id='new',usb_parent_id='parent-new')
-  b.bind_hid(old)
-  other=dict(new,path=b'other',usb_parent_id='another-port')
-  with patch('windows_device_identity.usb_port_paths',side_effect=lambda parent:
-             ('port-1',) if parent in ('parent-old','parent-new') else ('port-2',)):
-   b.expect_edge_serial_reconnect(hidden=True)
+  for product_id in (0x0ce6,0x0df2):
+   b=DeviceBinding()
+   old=dict(path=b'edge-old',product_id=product_id,serial_number='abc',container_id='old',usb_parent_id='parent-old')
+   new=dict(path=b'edge-new',product_id=product_id,container_id='new',usb_parent_id='parent-new')
+   stale=self.row(name='DualSense Edge',container_id='old',usb_parent_id='parent-old')
+   endpoint=self.row(name='DualSense Edge',endpoint_id='new-endpoint',container_id='new',usb_parent_id='parent-new')
    b.bind_hid(old)
-   self.assertIsNone(b.match_output([stale],[old]))
-   self.assertIsNone(b.resolve_edge_reconnect([old,other],False))
-   self.assertIs(b.resolve_edge_reconnect([old,other,new],False),new)
-   self.assertIsNone(b.resolve_edge_reconnect([new,dict(new,path=b'duplicate')],False))
-   b.bind_hid(new)
-  self.assertEqual(b.snapshot().serial,'abc')
-  self.assertIsNone(b.match_output([stale],[new]))
-  self.assertEqual(b.match_output([stale,endpoint],[new]),endpoint)
+   other=dict(new,path=b'other',usb_parent_id='another-port')
+   with patch('windows_device_identity.usb_port_paths',side_effect=lambda parent:
+              ('port-1',) if parent in ('parent-old','parent-new') else ('port-2',)):
+    b.expect_edge_serial_reconnect(hidden=True)
+    b.bind_hid(old)
+    self.assertIsNone(b.match_output([stale],[old]))
+    self.assertIsNone(b.resolve_edge_reconnect([old,other],False))
+    self.assertIs(b.resolve_edge_reconnect([old,other,new],False),new)
+    self.assertIsNone(b.resolve_edge_reconnect([new,dict(new,path=b'duplicate')],False))
+    b.bind_hid(new)
+   self.assertEqual(b.snapshot().serial,'abc')
+   self.assertIsNone(b.match_output([stale],[new]))
+   self.assertEqual(b.match_output([stale,endpoint],[new]),endpoint)
 
  def test_same_endpoint_without_container_recovers(self):
   b=self.binding();r=self.row();self.assertIs(b.output([r],'Old'),r)

@@ -60,6 +60,7 @@ class EntryQueries:
         self._policy_save_errors={}
         self.standby_policy=(result['path'],result.get('standby'))
         self.dock_policy=(result['path'],result.get('dock'))
+        self.usb_serial_policy=(result['path'],result.get('usb_serial'))
         profile=result.get('profile');stamp={k:profile[k] for k in ('index','name','edited')} if profile else None
         changed=getattr(self,'external_stale',False) or (self.path is not None and self.path!=result['path']) or (self.profile_stamp is not None and any((stamp or {}).get(k)!=self.profile_stamp.get(k) for k in ('index','name')))
         if self.doc.dirty and changed:

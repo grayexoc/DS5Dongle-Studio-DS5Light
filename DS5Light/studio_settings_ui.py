@@ -188,7 +188,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.apply_button=ttk.Button(actions,text=ui_text(_ui_tr('임시 적용'),'Apply temporarily'),command=lambda:self.apply(False),width=9);self.apply_button.pack(side='left',padx=(0,6))
         self.save_button=ttk.Button(actions,text=ui_text(_ui_tr('현재 프로필에 저장'),'Save to profile'),command=lambda:self.apply(True),style='Accent.TButton',width=17);self.save_button.pack(side='left')
         FieldTip(self.apply_button,_ui_tr('현재 프로필의 설정과 매크로 사용 체크를 지금 연결에만 적용합니다. 유지하려면 현재 프로필에 저장하세요. 공유 매크로 정의는 전송하지 않습니다.'))
-        FieldTip(self.save_button,_ui_tr('현재 슬롯과 Pico 시작 설정에 저장합니다.\n다른 앱의 Pico 오디오 출력을 중지하세요.\n공유 매크로는 별도 저장'))
+        FieldTip(self.save_button,_ui_tr('현재 슬롯과 Pico 시작 설정에 저장합니다.\n다른 앱의 Pico 오디오 출력을 중지하세요.\n공용 매핑 동작은 편집 완료 시 자동 저장됩니다.'))
         self.render_fields();self.update_state()
     def fit_device_header(self,event=None):
         width=self.device_header.winfo_width()
@@ -400,7 +400,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 else:self.field_row(box,n,f)
                 count+=1
         if not query and self.category==0:self.render_lighting()
-        if query and 'enable_wake' in self.doc.values and field_matches(FIELDS['enable_wake'],'Device & Connection',query):
+        if query and any(field_matches(FIELDS[k],'Device & Connection',query) for k in ('enable_wake','disable_usb_sn')):
             self.render_standby_policy();count+=1
         if query:
             for feature in FEATURES:
@@ -432,8 +432,12 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             return None
         return mode
 
+    def edge_serial_recommended(self):
+        return self.standby_value('usb_serial_policy')==0 and any(
+            row['path']==self.path and row.get('product_id')==0x0df2 for row in self.device_rows)
+
     def render_standby_policy(self):
-        box=self.card(ui_text('전원 관리','Power management'))
+        box=self.card(ui_text('Pico 설정','Pico settings'))
         heading=box.grid_slaves(row=0)[0]
         heading.grid_configure(columnspan=1)
         tk.Label(box,text=ui_text('Pico 공통 · 프로필과 별도','Pico-wide · Separate from profiles'),
@@ -476,14 +480,57 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             tk.Label(box,text=dock_error or ui_text('충전독 정책 미지원 또는 조회 실패','Dock policy unavailable'),
                 bg=CARD,fg=MUTED,wraplength=500,justify='left').grid(row=5,column=0,columnspan=2,sticky='w')
 
+        serial_mode=self.standby_value('usb_serial_policy')
+        serial_var=tk.BooleanVar(master=box,value=serial_mode==1)
+        serial_row=tk.Frame(box,bg=CARD);serial_row.grid(row=6,column=0,columnspan=2,sticky='w',pady=(8,0))
+        serial_toggle=CircleCheck(serial_row,text=ui_text('USB 시리얼 숨기기','Hide USB serial number'),
+            variable=serial_var,command=lambda:self.change_standby_policy(serial_var,'usb_serial_policy'),background=CARD)
+        serial_toggle.pack(side='left');serial_toggle.set_enabled(serial_mode is not None and not self.busy)
+        from studio_help import help_text
+        self.help_icon(serial_row,help_text('disable_usb_sn')).pack(side='left',padx=(6,0))
+        serial_error=getattr(self,'_policy_save_errors',{}).get('usb_serial_policy')
+        if serial_mode is None or serial_error:
+            tk.Label(box,text=serial_error or ui_text('USB 시리얼 공통 설정 미지원 또는 조회 실패','USB serial policy unavailable'),
+                bg=CARD,fg=MUTED,wraplength=500,justify='left').grid(row=7,column=0,columnspan=2,sticky='w')
+        if self.edge_serial_recommended():
+            tk.Label(box,text=_ui_tr('DualSense Edge의 네이티브 햅틱·스피커 호환성을 위해 USB 시리얼 숨기기를 켜는 것을 권장합니다.'),
+                     bg=CARD,fg=GOLD,wraplength=500,justify='left').grid(row=8,column=0,columnspan=2,sticky='w',pady=(4,0))
+
     def change_standby_policy(self,var,policy='standby_policy'):
         mode=self.standby_value(policy)
         requested=int(var.get())
         var.set(mode==1)
         if mode is None or requested==mode or self.busy or self.app.studio.busy:
             return
+        if policy=='usb_serial_policy':
+            self.change_usb_serial_policy(requested)
+            return
         method='dock_disconnect' if policy=='dock_policy' else 'standby_mode'
         self.stopped_task(policy,lambda:self.with_client(lambda client:getattr(client,method)(requested)))
+
+    def change_usb_serial_policy(self,requested):
+        path=self.path
+        binding=self.app.studio.binding
+        serial=next((d.get('serial_number') for d in self.device_rows if d['path']==path),None)
+        reconnect=self.doc.values.get('usb_gamepad_mode',0)!=1
+        def operation():
+            def apply(client):
+                value=client.usb_serial_hidden(requested)
+                result=dict(value=value)
+                if reconnect:
+                    binding.expect_edge_serial_reconnect(hidden=bool(value))
+                    try:client.reconnect_usb()
+                    except (OSError,RuntimeError):
+                        if self.cancel.is_set():raise
+                return result
+            result=self.with_client(apply)
+            if reconnect:
+                from studio_reconnect import wait_for_macros
+                try:result['reloaded']=wait_for_macros(path,serial,self.cancel,edge_binding=binding,serial_hidden=bool(result['value']))
+                except Exception as exc:result['reconnect_error']=str(exc)
+            return result
+        self.resume=False
+        self.stopped_task('usb_serial_policy',operation)
 
     def align_choices(self,parent):
         for widget in parent.winfo_children():
@@ -633,7 +680,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         elif self.invalid:text=next(iter(self.invalid.values()))
         elif self.external_stale:
             text=(_ui_tr('프로필 변경됨 · 이전 편집 확인 후 새로 고침') if self.doc.dirty else _ui_tr('프로필 변경됨 · 새로 고침 필요')) if self.pico_recognized else _ui_tr('듀얼센스를 Pico에 연결한 뒤 새로 고침하세요')
-        elif editing:text=_ui_tr('매크로 편집 중 · 편집에 반영하세요')
+        elif editing:text=_ui_tr('매핑 편집 중 · 완료하면 Pico에 저장합니다')
         elif detail and detail_kind in ('action','error','warning'):text=detail
         elif not self.pico_recognized:text=_ui_tr('듀얼센스를 Pico에 연결한 뒤 새로 고침하세요')
         elif self.doc.dirty:
@@ -643,7 +690,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             if self.doc.policy_changes:parts.append(_ui_tr('햅틱 파형 증폭 기본값 복구 필요'))
             text=' · '.join(parts)+_ui_tr(' · 아직 저장되지 않음')
         elif self.doc.policy_changes:text=_ui_tr('햅틱 파형 증폭 기본값 복구 필요 · 적용 또는 프로필 저장 시 반영')
-        elif self.doc.macros_pending_flash:text=_ui_tr('공유 매크로 임시 적용됨 · Pico 매핑·매크로 저장 필요')
+        elif self.doc.macros_pending_flash:text=_ui_tr('공용 매핑 저장 미확인 · 내보내기로 보관한 뒤 새로 고침하세요.')
         elif self.doc.unsaved or self.loaded and self.profile_save_needed:text=_ui_tr('임시 적용됨 · 유지하려면 현재 프로필에 저장하세요.')
         elif self.doc.save_requested:text=detail or _ui_tr('프로필 슬롯 저장 확인 · Pico 시작 설정 저장 확인')
         elif self.write_ready and self.doc.values.get('auto_haptics_enable') in (1,2) and self.doc.values.get('haptics_gain',1)!=1:text=_ui_tr('기존 네이티브 햅틱 세기 유지 중 · 중복 증폭에 주의하세요')
@@ -660,8 +707,6 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         else:self.cancel_button.grid_remove()
         self.fit_device_header()
         self.apply_button.configure(state='normal' if enabled and self.doc.changes and not self.invalid else 'disabled');self.save_button.configure(state='normal' if enabled and save_needed and not self.invalid else 'disabled');self.revert_button.configure(state='normal' if enabled and (self.doc.dirty or self.invalid) else 'disabled')
-        shared_button=getattr(self,'shared_save_button',None)
-        if shared_button is not None and shared_button.winfo_exists():shared_button.configure(state='normal' if enabled and self.shared_changes_pending() and not self.invalid else 'disabled')
     def cancel_task(self):
         if self.busy:
             self.cancel.set();self.update_state()
@@ -709,6 +754,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             self.invalidate_slot_cache()
         if kind=='slots':self.entry_attempts.add('slots')
         self.progress.clear()
+        if kind=='shared_save':self.progress.configure(text=_ui_tr('Pico 매핑 저장 준비 중…'),kind='progress')
+        elif kind=='apply':self.progress.configure(text=_ui_tr('현재 프로필 설정 확인·적용 중…'),kind='progress')
         self._transfer_job=kind if kind in ('backup','restore') else None
         self.busy=True;self.cancel.clear()
         if kind in ('read','entry_read'):
@@ -792,7 +839,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             if target is None:
                 self.select_category(5);self.progress.configure(text=_ui_tr('저장할 슬롯의 현재 설정 저장을 눌러 주세요.'));return
         if 'macro_disable' in self.doc.changes and self.shared_changes_pending():
-            messagebox.showinfo(_ui_tr('매크로 저장 순서'),_ui_tr('Pico 매핑·매크로를 먼저 저장한 뒤 현재 프로필의 사용 체크를 적용하거나 저장하세요.'),parent=self.parent);return
+            messagebox.showinfo(_ui_tr('매크로 저장 순서'),_ui_tr('공용 매핑의 자동 저장이 완료되지 않았습니다. 매핑을 내보내기로 보관한 뒤 새로 고침하고 다시 가져오세요.'),parent=self.parent);return
         try:
             validate_changes(self.doc.baseline,self.doc.changes)
             from studio_shift import validate_reserved_inputs
@@ -909,7 +956,9 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             if kind in ('read','entry_read'):
                 self.entry_failed=True;self.close_entry_queries()
             self.progress.configure(text=_ui_tr('작업 실패 · ')+error,kind='error')
-            if kind in ('standby_policy','dock_policy'):
+            if kind=='shared_save':
+                self.progress.configure(text=_ui_tr('매핑 저장 결과 미확인 · 편집값은 유지됩니다. 내보내기로 보관한 뒤 새로 고침하고 다시 가져오세요. ')+error,kind='error')
+            if kind in ('standby_policy','dock_policy','usb_serial_policy'):
                 setattr(self,kind,(self.path,result if type(result)is int and result in (0,1) else None))
                 self._policy_save_errors=getattr(self,'_policy_save_errors',{})
                 self._policy_save_errors[kind]=error
@@ -917,6 +966,19 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             if kind in ('read','entry_read'):self.pico_recognized=False
             if kind in ('apply','shared_save','recommended','restore','slot_save'):self.resume=False;self.loaded=False;self.write_ready=False;self.uncertain=True
             if kind=='read':self.write_ready=False
+        elif kind=='usb_serial_policy':
+            self.resume=False
+            getattr(self,'_policy_save_errors',{}).pop(kind,None)
+            self.usb_serial_policy=(self.path,result['value'])
+            if result.get('reloaded'):
+                self.path=result['reloaded']['path']
+                self.merge_entry_snapshot(result['reloaded'])
+                self.usb_serial_policy=(self.path,result['value'])
+                self.app._edge_audio_recheck=True
+            if result.get('reconnect_error'):
+                self.loaded=False;self.write_ready=False;self.uncertain=True;self.external_stale=True
+                self.progress.configure(text=ui_text('USB 시리얼 설정 저장됨 · 재연결 확인 실패: ','USB serial policy saved; reconnect verification failed: ')+result['reconnect_error'],kind='warning')
+            else:self.progress.configure(text=ui_text('USB 시리얼 설정 저장 완료','USB serial policy saved.'),kind='info')
         elif kind=='dock_policy':
             getattr(self,'_policy_save_errors',{}).pop(kind,None)
             self.dock_policy=(self.path,result)
@@ -942,6 +1004,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 self._policy_save_errors={}
                 self.standby_policy=(self.path,result.get('standby'))
                 self.dock_policy=(self.path,result.get('dock'))
+                self.usb_serial_policy=(self.path,result.get('usb_serial'))
                 self.uncertain=False;self.external_stale=False
                 profile=result.get('profile')
                 self.write_ready=profile is not None and result.get('cfg') in (19,20,21,22)
@@ -1074,7 +1137,16 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             verified=(not error and not self.uncertain and self.loaded and self.write_ready
                       and (kind=='shared_save' or result.get('profile_saved') and result.get('saved')))
             if callback and verified and not self.app._close_requested:
-                self.parent.after_idle(callback);return
+                token=getattr(self,'_resume_token',None)
+                def continue_save():
+                    if self.closed or self.app._close_requested or self.cancel.is_set():return
+                    callback()
+                    if (resume and token is not None and not self.closed and not self.app._close_requested
+                            and not self.uncertain and not self.external_stale and self.write_ready
+                            and token==(self.app.run_intent.generation,self.app._run_route())):
+                        if self.busy:self.resume=True;self._resume_token=token
+                        elif not self.cancel.is_set():self.app.start()
+                self.parent.after_idle(continue_save);return
             if not verified and (error or self.uncertain):resume=False
         if kind=='macros' and not error and not self.app._close_requested:
             callback=getattr(self,'after_macro_read',None);self.after_macro_read=None
@@ -1131,12 +1203,11 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         box=self.card(_ui_tr('Pico 매핑·매크로'))
         ttk.Button(box,text=_ui_tr('매핑 목록 새로 고침'),command=self.read_macro_table).grid(row=1,column=0,sticky='w',pady=(0,8))
         ttk.Button(box,text=_ui_tr('+ 매핑·매크로 추가'),style='Accent.TButton',command=self.new_macro,state='normal' if self.loaded and not self.busy else 'disabled').grid(row=1,column=1,sticky='e',pady=(0,8))
-        tk.Label(box,text=_ui_tr('내용을 수정하거나 삭제하면 모든 프로필에 영향을 줍니다.\n체크한 항목만 현재 프로필에서 사용합니다.'),bg=CARD,fg=GOLD,wraplength=420,justify='left').grid(row=2,column=0,columnspan=2,sticky='w',pady=(0,8))
-        shared=tk.Frame(box,bg=CARD);shared.grid(row=3,column=0,columnspan=2,sticky='ew',pady=(0,12));shared.columnconfigure(0,weight=1)
-        tk.Label(shared,text=_ui_tr('현재 프로필에서 사용 ↓'),bg=CARD,fg=MUTED,anchor='w').grid(row=0,column=0,sticky='w')
-        self.shared_save_button=ttk.Button(shared,text=_ui_tr('Pico 매핑·매크로 저장'),style='Accent.TButton',command=self.save_shared_macros)
-        self.shared_save_button.grid(row=0,column=1,sticky='e')
-        FieldTip(self.shared_save_button,_ui_tr('매크로 동작은 모든 프로필이 공유합니다. 이 버튼은 동작만 저장합니다. 프로필별 사용 체크는 하단의 현재 프로필에 저장을 누르세요.'))
+        notes=tk.Frame(box,bg=CARD);notes.grid(row=2,column=0,columnspan=2,sticky='w',pady=(0,8))
+        tk.Label(notes,text=_ui_tr('등록·편집·삭제·가져오기·시프트키 변경 시 자동 저장합니다.'),bg=CARD,fg=GOLD,anchor='w').pack(anchor='w')
+        tk.Label(notes,text=_ui_tr('동작 변경은 모든 프로필에 영향을 줍니다.\n사용 체크는 현재 프로필에 별도로 저장합니다.'),bg=CARD,fg=GOLD,wraplength=420,justify='left').pack(anchor='w')
+        if self.shared_changes_pending() and not self.busy:
+            ttk.Button(box,text=_ui_tr('미저장 매핑 내보내기'),command=self.export_macros).grid(row=3,column=1,sticky='e',pady=(0,12))
         self.macro_warning=tk.StringVar();self.macro_warning_label=tk.Label(box,textvariable=self.macro_warning,bg=CARD,fg=GOLD,wraplength=430,justify='left',anchor='w')
         self.macro_warning_label.grid(row=4,column=0,columnspan=2,sticky='ew',pady=(0,12))
         self.macro_warning_button=ttk.Button(box,text=_ui_tr('겹치는 입력 모두 보기'),command=self.show_macro_conflicts);self.macro_warning_button.grid(row=5,column=0,columnspan=2,sticky='w',pady=(0,8))

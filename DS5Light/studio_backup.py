@@ -59,11 +59,6 @@ def backup_all(client,progress=lambda text:None):
     except USBModeUnsupported:available.pop('usb_gamepad_mode',None)
     try:client.read_one(FIELDS['rumble_mode'])
     except RumbleModeUnsupported:available.pop('rumble_mode',None)
-    try:
-        client.read_one(EDGE_SERIAL_STORAGE_FIELD)
-        available['disable_usb_sn']=EDGE_SERIAL_STORAGE_FIELD
-    except EdgeSerialUnsupported:
-        available.pop('disable_usb_sn',None)
     for slot in client.slots():
         if slot.state!='saved':slots.append(dict(index=slot.index,valid=False));continue
         progress(_ui_tr('슬롯 {0} 백업 중').format(f'{slot.index + 1:02d}'))
@@ -119,15 +114,8 @@ def restore_all(client,rows,macros,progress=lambda text:None):
         rows=[dict(row,fields={k:v for k,v in row['fields'].items() if k not in USB_MODE_FIELDS}) for row in rows]
     else:
         rows=[dict(row,fields={'usb_gamepad_mode':0,**row['fields']}) for row in rows]
-    try:
-        original['disable_usb_sn']=client.read_one(EDGE_SERIAL_STORAGE_FIELD)
-    except EdgeSerialUnsupported:
-        if any(row['fields'].get('disable_usb_sn',0) for row in rows):
-            raise RuntimeError(_ui_tr('복원 대상 펌웨어에서 Edge USB 시리얼 저장을 지원하지 않습니다.'))
-        rows=[dict(row,fields={k:v for k,v in row['fields'].items() if k!='disable_usb_sn'}) for row in rows]
-        original.pop('disable_usb_sn',None)
-    else:
-        rows=[dict(row,fields={'disable_usb_sn':0,**row['fields']}) for row in rows]
+    rows=[dict(row,fields={k:v for k,v in row['fields'].items() if k!='disable_usb_sn'}) for row in rows]
+    original.pop('disable_usb_sn',None)
     if 'rumble_mode' in original:
         rows=[dict(row,fields={'rumble_mode':0,**row['fields']}) for row in rows]
     elif any(row['fields'].get('rumble_mode',0) for row in rows):

@@ -1,6 +1,6 @@
 # Pico mapping extensions — experiment v31
 
-Companion: DS5Light v1.0.1 Experimental. Previous v30 artifacts are preserved.
+Companion: integrated DS5Light Studio settings. Previously saved mapping records retain their format.
 
 The global table stays at 32 records of 35 bytes. No slot stride, record layout,
 flash placement, CRC or web configuration change is required.
@@ -48,9 +48,7 @@ LED, upstream reliability, rumble shaping, BOOTSEL dormancy, device diagnostics
 and audit regression runners passed. ARM build and companion frozen startup,
 embedded module/asset checks passed. This is not physical controller validation.
 
-Artifacts: `build/xinput-exp30/ds5-studio-light_v31.uf2` (Pico 2 W, XInput
-experiment enabled) and the companion's versioned Experimental ZIP. Build
-directory experiment indices and firmware release versions are independent.
+Use the standard firmware and companion app; there is no separate XInput build.
 Physical Shift/profile/chime checks and visual inspection remain pending; the
 computer-use tool rejected capture of the Python test window. No device was
 flashed. Clear/disable extended records before downgrading to older firmware.

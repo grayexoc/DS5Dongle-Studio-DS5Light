@@ -43,9 +43,9 @@ This is CPU-based signal processing, with no large AI model or GPU inference in 
 ## Download and start
 
 
-**Combined release v1.0.14 · DS5Light v1.0.14 · Studio firmware v44**
+**Combined release v1.0.15 · DS5Light v1.0.15 · Studio firmware v45**
 
-Download `DS5Light-win-x64-v1.0.14.zip` from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases). Extract the whole package and run `DS5Light.exe` with `_internal` beside it. Python is not required. The separate Pico 2 W firmware attachment is `ds5-studio-light_v44.uf2`.
+Download `DS5Light-win-x64-v1.0.15.zip` from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases). Extract the whole package and run `DS5Light.exe` with `_internal` beside it. Python is not required. The separate Pico 2 W firmware attachment is `ds5-studio-light_v45.uf2`.
 
 Use the app's **Studio settings → Recommended presets → Save and use** workflow. The files are `Studio Presert/DS_Native.json`, `Studio Presert/Audio_Haptic_01.json` and `Studio Presert/Audio_Haptic_02.json`. Recommended presets change current audio-haptics fields, preserve other current settings, and save that resulting configuration to the selected slot. Check before overwriting a slot.
 
@@ -55,7 +55,7 @@ New preferences default to PC suppression on, Balanced, 55% suppression, 85% imp
 
 ### Build from source
 
-Run `powershell -ExecutionPolicy Bypass -File build.ps1` with the prerequisites in `requirements-build.txt`. The build uses `app_version.py` for the app title and `DS5Light-win-x64-v<version>.zip`; intermediate output is `dist/DS5Light`. `START.bat` opens that built output. Existing ZIP files are never overwritten; update the app version for a new release. `DS5LIGHT_EXPERIMENTAL=1` adds an `-Experimental` suffix. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the release version policy.
+Run `powershell -ExecutionPolicy Bypass -File build.ps1` with the prerequisites in `requirements-build.txt`. The build uses `app_version.py` for the app title and `DS5Light-win-x64-v<version>.zip`; intermediate output is `dist/DS5Light`. `START.bat` opens that built output. Existing ZIP files are never overwritten; update the app version for a new release. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the release version policy.
 
 ## Attributions and licenses
 

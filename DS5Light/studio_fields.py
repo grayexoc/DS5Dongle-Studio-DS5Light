@@ -43,7 +43,7 @@ for _section in SECTIONS:
     if _section['title']=='Device & Connection':
         _section['fields'].extend([
             [0x0e,'ps_shortcut_enabled','u8','PS default shortcuts','bool'],
-            [0xC7,'disable_usb_sn','u8',_ui_tr('Edge USB 시리얼 숨기기'),'bool'],
+            [0xC7,'disable_usb_sn','u8',_ui_tr('USB 시리얼 숨기기'),'bool'],
         ])
 
 FIELDS = {f[1]: f for s in SECTIONS for f in s["fields"]}

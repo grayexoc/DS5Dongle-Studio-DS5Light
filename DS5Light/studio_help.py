@@ -211,7 +211,7 @@ DESCRIPTIONS.update({
  'sync_spk_headset_volume':_ui_tr('스피커와 헤드셋 음량을 함께 조절합니다.'),
 
  'lock_volume':_ui_tr('게임이 보낸 볼륨 설정을 무시하고 지정한 듀얼센스 스피커·헤드셋 음량을 유지합니다.'),
- 'disable_usb_sn':_ui_tr('DualSense Edge의 Windows 햅틱·스피커 호환 옵션입니다. 적용하면 USB가 재연결되며 4채널 출력을 다시 선택해야 할 수 있습니다.'),
+ 'disable_usb_sn':_ui_tr('유선 DualSense는 PC에 USB 시리얼 번호를 제공하지 않습니다. 켜면 일부 게임·모드와의 호환성을 개선할 수 있습니다.\nDualSense Edge는 특히 Windows 햅틱·스피커 호환성을 위해 켜는 것을 권장합니다.\n변경하면 USB가 재연결되고 윈도 소리 제어판의 기본 장치를 변경해야 할 수 있습니다.'),
 
  'disable_mic':_ui_tr('듀얼센스 마이크 입력을 끕니다. USB 재연결이 필요할 수 있습니다.'),
 
@@ -509,7 +509,7 @@ DESCRIPTIONS['haptics_gain']+=_ui_tr(' 기존 프로필의 증폭값은 유지�
 from localization import LANGUAGE as _USB_MODE_LANGUAGE
 LABELS['usb_gamepad_mode'] = 'XBOX Mode' if _USB_MODE_LANGUAGE=='en' else 'XBOX 모드'
 DEFAULTS['usb_gamepad_mode'] = 0
-LABELS['disable_usb_sn'] = _ui_tr('Edge USB 시리얼 숨기기')
+LABELS['disable_usb_sn'] = _ui_tr('USB 시리얼 숨기기')
 DEFAULTS['disable_usb_sn'] = 0
 DESCRIPTIONS['usb_gamepad_mode'] = ('On presents an XInput gamepad. Off uses DualSense or Edge. Applying a mode change reconnects USB. Save it to the profile to retain it.' if _USB_MODE_LANGUAGE=='en' else '켜면 XInput, 끄면 DualSense 또는 Edge로 연결됩니다. 모드를 적용하면 USB가 재연결됩니다. 유지하려면 프로필에 저장하세요.')
 

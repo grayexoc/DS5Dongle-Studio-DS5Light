@@ -43,7 +43,7 @@ class InlineTests(unittest.TestCase):
     setUp=fixture.NativeUITests.setUp
     tearDown=fixture.NativeUITests.tearDown
     editor=fixture.NativeUITests.editor
-    def test_add_is_local_even_if_device_write_not_ready_and_embedded(self):
+    def test_readonly_draft_stays_open_and_cannot_claim_saved(self):
         ui=self.editor();ui.write_ready=False
         ui.doc.macros={str(i):[0]*35 for i in range(32)};ui.doc.macro_baseline=copy.deepcopy(ui.doc.macros)
         ui.select_category(4)
@@ -52,7 +52,8 @@ class InlineTests(unittest.TestCase):
             self.assertTrue(e.embedded);self.assertIsInstance(e.dialog,tk.Frame);self.assertFalse(e.closed)
             self.assertIn('disabled',ui.read_button.state());self.assertIn('disabled',ui.apply_button.state())
             e.buttons[0].set(True);e.keys[0].set('A');e.go_step(1);e.commit();hid.assert_not_called()
-        self.assertTrue(e.closed);self.assertTrue(ui.doc.dirty);self.assertFalse(ui.write_ready)
+        self.assertFalse(e.closed);self.assertFalse(ui.doc.dirty);self.assertFalse(ui.write_ready)
+        self.assertIn('저장할 수 없는 상태',e.feedback.get());e.close()
         self.assertEqual(ui.editor_holder.winfo_manager(),'')
     def test_draft_survives_parent_list_redraw(self):
         ui=self.editor();ui.doc.macros={str(i):[0]*35 for i in range(32)};ui.doc.macro_baseline=copy.deepcopy(ui.doc.macros);ui.select_category(4)

@@ -25,14 +25,14 @@ Thank you to the original authors and contributors. This repository contains mod
 
 ## Download and quick start
 
-**Release v1.0.14 · DS5Light v1.0.14 · Studio firmware v44**
+**Release v1.0.15 · DS5Light v1.0.15 · Studio firmware v45**
 
 Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/latest):
 
 | File | Purpose |
 | --- | --- |
-| `ds5-studio-light_v44.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
-| `DS5Light-win-x64-v1.0.14.zip` | Complete Windows x64 app package. Python is not required. |
+| `ds5-studio-light_v45.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
+| `DS5Light-win-x64-v1.0.15.zip` | Complete Windows x64 app package. Python is not required. |
 
 1. Back up current dongle settings and slots. To install this firmware, enter BOOTSEL mode on the Pico 2 W and copy the UF2 to its USB drive. The app does not flash firmware automatically.
 2. Extract the entire app ZIP into a writable folder. Run `DS5Light.exe`, keeping `_internal` beside it. GitHub's automatic **Source code** archives are not the executable package.
@@ -72,6 +72,7 @@ The filter uses changes over time and energy levels across frequency bands. It d
 - Momentary Shift mappings: Choose a Shift button and edit Base/Shift layers; unspecified Shift inputs inherit Base. The Shift key is suppressed from game input and uses one of 32 global macro records, with per-profile enable states.
 - Profile-switch mapping: Assign profile 1–8, with an optional chime and preview. Empty/current profiles are not switched; release the source input before another activation. Chime volume follows the profile's speaker/headset settings.
 
+- Pico settings: Configure device-wide sleep, dock-disconnect and USB serial hiding independently of profiles. The serial choice is adopted once from saved settings and retained across profile changes; changing USB identity can require selecting the Windows default audio output again.
 - Dongle settings: Read and edit Studio settings for audio haptics, triggers, gyro, buttons, macros, and LEDs directly in the app.
 - Profiles and slots: Load profiles stored on the dongle, manage settings and slots, and back up or restore configurations.
 - **Custom triggers and macros.** Use shortcuts to add trigger effects, edit button actions, and temporarily apply an effect to test it on the controller before saving the profile.
@@ -85,12 +86,13 @@ The filter uses changes over time and energy levels across frequency bands. It d
 - **DualSense Edge reconnection.** If serial visibility changes, the app uses USB port information to find the same device and checks the new audio output before resuming.
 - Speaker/headset volume: Link editor values and synchronize explicit speaker-volume changes to the matching Pico Windows audio endpoint. The displayed Windows percentage is an estimate.
 - Settings recovery: Preserve corrupt settings before replacement and recover task controls after worker startup failures.
+- Input checks: View detected-button history, last-report age, touch-click qualification and the first keyboard key to diagnose mapping inputs.
 - Controller status: View connection and battery information.
 - Device diagnostics and output tests: Read dongle status and output statistics, and run individual tests for conventional rumble, adaptive triggers, and native haptics.
 - Microphone button shortcut: Assign a keyboard shortcut to the DualSense Mute button.
 - Korean and English UI: Switch languages and use setting descriptions to help adjust features in the app.
 
-Save mapping changes in this order: **stage edits → save Pico mappings/macros → save the current profile**. Back up before changing slots. Clear/disable extended records before downgrading to unsupported firmware; Edge onboard Fn+face combinations may conflict with onboard profile switching. [Mapping guide](DS5Light/MAPPING_GUIDE_KO.md) · [DPI details](DS5Light/DPI_LAYOUT_KO.md).
+Completing mapping edits, deletion, imports or Shift-key changes saves the shared actions automatically. After Pico reconnection is verified, save the profile activation checks when prompted. If saving is uncertain, export the edits and refresh before changing profiles. Back up before changing slots. Clear/disable extended records before downgrading to unsupported firmware; Edge onboard Fn+face combinations may conflict with onboard profile switching. [Mapping guide](DS5Light/MAPPING_GUIDE_KO.md) · [DPI details](DS5Light/DPI_LAYOUT_KO.md).
 
 Availability of additional settings and diagnostics depends on the connected firmware and device environment.
 
@@ -99,10 +101,10 @@ Availability of additional settings and diagnostics depends on the connected fir
 The Studio firmware has been modified to support DS5Light integration and additional features. Changes also cover audio and rumble processing, LED control, power management, and configuration storage.
 
 - Extended app protocol: Added communication features for checking configuration save results, reading device status, and running output tests.
-- XInput mode: Added a selectable XInput mode alongside DualSense mode. This requires a firmware build with XInput support enabled.
+- USB modes: Native DualSense and XInput support are included together. The default profile mode remains Native.
 - Audio and rumble adjustments: Modified transitions between native haptics and conventional rumble, output queues and retries, rumble strength and release behavior, and peak limiting in Mix mode.
 - Extended LED control: Added fixed lightbar color and extended player LED controls, with improvements to restoring game-controlled LED states when switching settings.
-- OLED status display: Added dongle status display support for compatible hardware.
+- OLED status display: Added dongle status display support for compatible hardware, with a scrolling title that includes the firmware version.
 - Extended power management: Added app-initiated sleep, automatic sleep, and a setting to disconnect the controller when docked.
 - Storage, restoration, and output cleanup: Updated flash storage, profile restoration, and output handling during disconnects, reconnects, and USB suspend.
 
@@ -158,14 +160,14 @@ DS5Light는 DS5Dongle-Studio 펌웨어의 오디오 햅틱 기능을 보완하�
 
 ## 다운로드와 시작
 
-**릴리즈 v1.0.14 · DS5Light v1.0.14 · Studio 펌웨어 v44**
+**릴리즈 v1.0.15 · DS5Light v1.0.15 · Studio 펌웨어 v45**
 
 [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/latest)에서 첨부 파일을 받으세요.
 
 | 파일 | 용도 |
 | --- | --- |
-| `ds5-studio-light_v44.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
-| `DS5Light-win-x64-v1.0.14.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
+| `ds5-studio-light_v45.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
+| `DS5Light-win-x64-v1.0.15.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
 
 1. 현재 동글 설정과 슬롯을 백업합니다. 펌웨어 설치 시 Pico 2 W를 BOOTSEL 모드로 연결하고 USB 드라이브에 UF2를 복사하세요. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
 2. 앱 ZIP 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행합니다. `_internal` 폴더를 함께 유지하세요. GitHub의 자동 **Source code** 압축 파일은 실행 배포본이 아닙니다.
@@ -202,6 +204,9 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 
 ### Studio 설정 통합
 
+- Pico 설정: 절전·충전독 연결 해제·USB 시리얼 숨김을 프로필과 별도로 저장합니다. 시리얼 숨김은 기존 저장값을 한 번 이전하며, 이후 프로필 전환으로 바뀌지 않습니다. 변경 후 Windows 기본 오디오 출력을 다시 선택해야 할 수 있습니다.
+- 입력 확인: 감지 버튼 이력·마지막 수신 시각·터치 클릭 판정·키보드 첫 키를 표시합니다.
+
 - 시프트 매핑: 시프트 버튼을 누르는 동안 기본/시프트 레이어를 전환하고 미지정 입력은 기본 매핑을 상속합니다. 시프트키는 게임으로 보내지 않으며 공통 매크로 32칸 중 한 칸을 사용합니다. 사용 체크는 프로필별입니다.
 - 프로필 전환 매핑: 프로필 1~8을 동작에 지정하고 선택적으로 전환 신호음·미리듣기를 사용합니다. 빈 슬롯·현재 슬롯은 전환하지 않으며 재전환 전 입력을 놓아야 합니다. 신호음은 프로필의 스피커 음량·헤드셋 경로를 따릅니다.
 
@@ -221,7 +226,7 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 - 마이크 버튼 단축키: DualSense의 Mute 버튼에 키보드 단축키를 지정할 수 있습니다.
 - 한국어·영어 UI: 언어 전환과 설정 항목 설명을 제공하여 앱에서 기능을 확인하며 조절할 수 있습니다.
 
-매핑 저장 순서는 **편집에 반영 → Pico 매핑·매크로 저장 → 현재 프로필에 저장**입니다. 슬롯 변경 전에 백업하고, 구형 펌웨어로 내리기 전 확장 레코드를 제거하거나 해제하세요. Edge 자체 Fn+도형 버튼은 내장 프로필 전환과 겹칠 수 있습니다. [매핑 안내](DS5Light/MAPPING_GUIDE_KO.md) · [DPI 안내](DS5Light/DPI_LAYOUT_KO.md).
+매핑 편집 완료·삭제·가져오기·시프트키 변경은 공용 동작을 자동 저장합니다. Pico 재연결 확인 후 안내에 따라 프로필 사용 체크를 저장하세요. 저장이 미확인된 경우 편집값을 내보내고 새로 고침으로 확인한 뒤 프로필을 전환하세요. 슬롯 변경 전에 백업하고, 구형 펌웨어로 내리기 전 확장 레코드를 제거하거나 해제하세요. Edge 자체 Fn+도형 버튼은 내장 프로필 전환과 겹칠 수 있습니다. [매핑 안내](DS5Light/MAPPING_GUIDE_KO.md) · [DPI 안내](DS5Light/DPI_LAYOUT_KO.md).
 
 추가 설정과 진단 기능의 사용 가능 여부는 연결된 펌웨어와 장치 환경에 따라 달라집니다.
 
@@ -230,7 +235,7 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 Studio 펌웨어는 DS5Light와의 연동 및 기능 확장을 위해 일부 개조했습니다. 앱 연동뿐 아니라 오디오·진동 처리, LED 제어, 전원 관리와 설정 저장에도 변경 사항이 포함되어 있습니다.
 
 - 앱 연동 확장: 설정 저장 결과 확인, 장치 상태 조회 및 출력 테스트를 위한 통신 기능을 추가했습니다.
-- XInput 모드: 기존 DualSense 모드 외에 XInput 모드를 선택하는 기능을 추가했습니다. 해당 기능을 포함한 펌웨어 빌드가 필요합니다.
+- USB 모드: Native DualSense와 XInput을 함께 지원하며, 기본 프로필 모드는 Native입니다.
 - 오디오·진동 처리 조정: 네이티브 햅틱과 일반 진동 간 전환, 출력 큐와 재시도, 진동 강도·해제 동작 및 Mix 모드의 피크 제한 방식을 수정했습니다.
 - LED 제어 확장: 고정 라이트바 색상과 플레이어 LED 제어를 확장하고, 설정 전환 시 게임에서 지정한 LED 상태를 복원하는 처리를 보완했습니다.
 - OLED 상태 표시: 지원 하드웨어에서 동글의 상태를 표시하는 기능을 추가했습니다.

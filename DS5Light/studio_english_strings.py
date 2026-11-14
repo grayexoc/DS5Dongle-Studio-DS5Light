@@ -3696,7 +3696,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '현재 프로필이 바뀌었습니다. 다시 읽어 주세요.': 'Your current profile has changed. Please read it again.',
  '현재 프로필에서 사용': 'Used in current profile',
  '현재 프로필 설정 변경 ': 'Change current profile settings',
- '현재 프로필에서 사용 ↓': 'Use in current profile ↓',
+ '현재 프로필에서 사용': 'Use in current profile',
  '현재 프로필의 설정과 매크로 사용 체크를 지금 연결에만 적용합니다. 유지하려면 현재 프로필에 저장하세요. 공유 매크로 정의는 전송하지 않습니다.': "The current profile's "
                                                                                      'settings and macro '
                                                                                      'usage check only apply '
@@ -4291,8 +4291,8 @@ EN.update({
     'Edge USB 시리얼 설정은 DualSense Edge USB 모드에서 적용하세요.': 'Apply the Edge USB serial setting in DualSense Edge USB mode.',
     'Edge 재연결 후 Pico를 확인하지 못했습니다. 장치 목록에서 같은 Pico를 선택하세요.': 'The Pico could not be verified after reconnecting Edge. Select the same Pico from the device list.',
     '복원 대상 펌웨어에서 Edge USB 시리얼 저장을 지원하지 않습니다.': 'The target firmware does not support storing the Edge USB serial setting.',
-    'Edge USB 시리얼 숨기기': 'Hide Edge USB serial number',
-    'DualSense Edge의 Windows 햅틱·스피커 호환 옵션입니다. 적용하면 USB가 재연결되며 4채널 출력을 다시 선택해야 할 수 있습니다.': 'Windows haptics and speaker compatibility option for DualSense Edge. Applying it reconnects USB and may require selecting the four-channel output again.',
+    'Edge USB 시리얼 숨기기': 'Hide USB serial number',
+    'DualSense Edge의 Windows 햅틱·스피커 호환 옵션입니다. 적용하면 USB가 재연결되며 4채널 출력을 다시 선택해야 할 수 있습니다.': 'A wired DualSense does not provide a USB serial number to the PC. Enabling this may improve compatibility with some games and mods.\nFor DualSense Edge, enabling it is especially recommended for Windows haptics and speaker compatibility.\nChanging it reconnects USB; you may need to change the default device in the Windows Sound control panel.',
     '게임이 보낸 볼륨 설정을 무시하고 지정한 듀얼센스 스피커·헤드셋 음량을 유지합니다.': 'Keeps the configured DualSense speaker and headset volume by ignoring volume settings sent by the game.',
 })
 EN.update({'4채널 오디오 출력 없음 · 듀얼센스 연결과 Windows 출력 장치를 확인하세요': 'No 4-channel audio output · Check DualSense connection and Windows output devices', '오디오 출력 이름 중복 · 장치 이름을 구분한 뒤 다시 선택하세요': 'Duplicate audio output names · Rename devices distinctly and select again', '선택한 Pico의 오디오 출력을 식별하지 못했습니다 · 출력 장치를 다시 선택하세요': 'Cannot identify the selected Pico audio output · Select the output again', '오디오 출력 열기 실패 · 다른 앱의 독점 사용과 장치 상태를 확인하세요': 'Cannot open audio output · Check exclusive use by other apps and device status', '최초 오디오 연결 대기 8초 초과 · 자동 정지': 'Initial audio connection exceeded 8 seconds · Automatically stopped'})
@@ -4321,7 +4321,7 @@ EN['{0} · Studio 매크로가 우선하며 앱의 마이크 버튼 키보드매
 
 EN['밝기 선택'] = 'Choose brightness'
 
-EN[' · 다른 앱의 Pico 오디오 출력을 중지한 뒤 다시 시도하세요. 오디오 사용 중에는 저장이 제한될 수 있습니다.'] = ' · Stop Pico audio output in other apps and try again. Saving may be blocked while audio is active.'
+EN[' · 다른 앱의 Pico 오디오 출력을 중지한 뒤 다시 시도하세요. 듀얼센스가 Windows 기본 출력 장치라면 PC 스피커 등 다른 장치로 변경하세요. 오디오 사용 중에는 저장이 제한될 수 있습니다.'] = ' · Stop Pico audio output in other apps and try again. If DualSense is the Windows default output device, switch to another device such as your PC speakers. Saving may be blocked while audio is active.'
 
 EN['Pico 저장 응답 미확인 · 구형 펌웨어는 저장 확인 미지원 · 다른 설정창을 닫고 상태를 확인하세요.'] = 'Pico save unconfirmed. Older firmware cannot acknowledge saving. Close other settings clients and check the state.'
 
@@ -4509,7 +4509,7 @@ FIELD_LABELS = {
  'speaker_volume':'Speaker volume', 'headset_volume':'Headset volume', 'speaker_gain':'Speaker gain',
  'sync_spk_headset_volume':'Link speaker and headset volume', 'lock_volume':'Lock volume',
  'disable_mic':'Disable microphone', 'disable_speaker':'Disable speaker audio',
- 'disable_usb_sn':'Hide Edge USB serial number',
+ 'disable_usb_sn':'Hide USB serial number',
  't2_mode':'R2 input mode', 't2_l2_mode':'L2 input mode',
  't2_pos':'R2 depth for full input', 't2_l2_pos':'L2 depth for full input',
  't2_button':'R2 output button', 't2_l2_button':'L2 output button',
@@ -4556,7 +4556,7 @@ FIELD_HELP = {
  'sync_spk_headset_volume':'Changing either volume also changes the other.',
  'lock_volume':'Keeps the configured DualSense speaker and headset volume by ignoring volume settings sent by the game.',
  'disable_mic':'Disables the DualSense microphone. USB may reconnect when applied.',
- 'disable_usb_sn':'Windows haptics and speaker compatibility option for DualSense Edge. Applying it reconnects USB and may require selecting the four-channel output again.',
+ 'disable_usb_sn':'A wired DualSense does not provide a USB serial number to the PC. Enabling this may improve compatibility with some games and mods.\nFor DualSense Edge, enabling it is especially recommended for Windows haptics and speaker compatibility.\nChanging it reconnects USB; you may need to change the default device in the Windows Sound control panel.',
  't2_mode':'Determines how the R2 second stage reports input.',
  't2_l2_mode':'Determines how the L2 second stage reports input.',
  't2_pos':'R2 input depth that triggers the configured second-stage action. The resistance diagram shows mechanical resistance.',
@@ -4795,3 +4795,62 @@ EN.update({
 })
 
 EN.update({'오디오 전송 5초 검사': '5-second audio transport check', 'Pico 스피커 처리 카운터의 증가량을 확인합니다. 버퍼 부족에는 시작·무음 처리도 포함됩니다.': 'Shows increases in Pico speaker counters. Underruns can include startup or silence fallback.', '오디오 재생을 유지하고 5초간 기다리세요.': 'Keep audio playing and wait five seconds.', 'Windows 오디오 출력 목록을 열었습니다.': 'Windows audio outputs listed.', 'Windows 오디오 출력': 'Windows audio outputs', 'Windows 장치 정보입니다. 출력 장치 설정은 변경하지 않습니다.': 'Windows device information. Output settings are unchanged.', '조회된 Windows 오디오 출력이 없습니다.': 'No Windows audio outputs were listed.', 'Windows 소리 설정': 'Windows sound settings', '활성': 'Active', '비활성': 'Disabled', '장치 없음': 'Not present', '헤드셋': 'Headset', '왼쪽 2회와 오른쪽 3회가 모두 들렸나요?': 'Did you hear two left and three right tones?', 'PCM 폐기': 'PCM drops', '인코딩 실패': 'Encode failures', '버퍼 부족': 'Underruns', '만료': 'Expired', '5초 증가량': '5-second increase', '일부 진단 정보를 읽지 못했습니다. 진단 로그를 확인하세요.': 'Some diagnostic data could not be read. Check the diagnostic log.', '오디오 경로가 변경됐습니다. 다시 검사하세요.': 'The audio route changed. Run the check again.', '듀얼센스 헤드셋 음량이 0입니다. Studio 설정에서 음량을 조정한 뒤 시험하세요.': 'DualSense headset volume is zero. Adjust it in Studio settings before testing.', '스피커와 헤드셋 음량이 모두 0입니다. Studio 설정에서 음량을 조정한 뒤 시험하세요.': 'Speaker and headset volumes are both zero. Adjust them in Studio settings before testing.'})
+
+EN.update({
+    'USB 시리얼 숨기기': 'Hide USB serial number',
+    'USB 시리얼 설정 응답 오류': 'Invalid USB serial policy response',
+    'USB 시리얼 설정 저장 실패': 'USB serial policy save failed',
+    '완료하면 Pico에 저장하고 현재 프로필의 사용 체크를 자동 선택합니다.': 'Completing this editor saves to Pico and selects use in the current profile.',
+    '매핑 동작은 모든 프로필이 공유합니다. Pico 저장 확인 후 현재 프로필에 사용 여부를 저장할지 묻습니다. 다른 프로필에서 이미 사용하는 동작을 수정하면 그 프로필에도 반영됩니다.': 'Mapping definitions are shared by all profiles. After verifying the Pico save, you will be asked to save activation in the current profile. Editing a mapping already used by other profiles also affects those profiles.',
+    '완료 · Pico 저장': 'Finish · Save to Pico',
+    '완료하면 미저장 공용 매핑을 모두 Pico에 저장합니다. 프로필 사용 여부는 다음 확인창에서 저장합니다.': 'Finish saves all pending shared mapping edits to Pico. Profile activation is saved in the next confirmation dialog.',
+    '저장할 수 없는 상태입니다. 다른 작업이 끝난 뒤 설정을 확인하세요.': 'Cannot save now. Wait for other operations to finish and check settings.',
+    '매핑은 Pico에 저장됐지만 프로필이 변경되어 자동 활성화를 중단했습니다. 새로 고침으로 확인하세요.': 'The mapping was saved to Pico, but automatic activation stopped because the profile changed. Refresh to verify.',
+    'Pico 매핑 저장 확인 · 현재 프로필 사용 체크 변경됨 · 프로필 저장 대기': 'Pico mapping save verified · Profile activation edited · Awaiting profile save',
+    '매핑 동작은 Pico에 저장됨 · 프로필 저장은 보류했습니다. 변경된 사용 체크는 아직 적용·저장되지 않았습니다.': 'Mapping saved to Pico · Profile save deferred. Changed activation checkboxes have not been applied or saved yet.',
+    '프로필 상태가 변경되어 저장을 중단했습니다. 새로 고침으로 확인하세요.': 'Profile state changed; saving was stopped. Refresh to verify.',
+    'Pico 매핑 저장 전 상태 확인 중…': 'Checking Pico state before saving mappings…',
+    'Pico 매핑 전송 중… {0}/{1}': 'Sending Pico mappings… {0}/{1}',
+    'Pico 매핑 적용값 확인 중…': 'Verifying Pico mapping values…',
+    'Pico 재연결 및 매핑 저장 결과 확인 중…': 'Waiting for Pico reconnection and verifying saved mappings…',
+    '매핑 동작은 Pico에 저장되었습니다.\n현재 프로필: {0:02d} · {1}\n현재 프로필의 사용 체크와 설정을 저장하시겠습니까?': 'The mapping was saved to Pico.\nCurrent profile: {0:02d} · {1}\nSave the current profile settings and activation checkboxes?',
+    '함께 저장할 다른 프로필 설정 변경: {0}개': 'Other pending profile settings to save: {0}',
+    '매핑 프로필 저장': 'Save mapping activation',
+    '현재 프로필에 저장하시겠습니까?': 'Save to the current profile?',
+    '나중에': 'Later',
+    '매핑 편집 중 · 완료하면 Pico에 저장합니다': 'Editing mapping · Finish saves it to Pico',
+    'Pico 매핑 저장 준비 중…': 'Preparing to save mappings to Pico…',
+    '현재 프로필 설정 확인·적용 중…': 'Checking and applying current profile settings…',
+    '매핑 저장 시작 실패 · 편집값은 유지됩니다. ': 'Could not start saving mappings · Your edits are preserved. ',
+    '프로필 저장 시작 실패 · 편집값은 유지됩니다. ': 'Could not start saving the profile · Your edits are preserved. ',
+    '매핑을 저장할 수 없습니다. 다른 작업을 마친 뒤 장치와 매핑 목록을 새로 고침하세요.': 'Cannot save mappings. Finish other operations, then refresh the device and mapping list.',
+    '이 매핑을 사용하는 모든 프로필에 영향을 줍니다.\n확인하면 삭제 내용과 다른 미저장 공용 매핑을 Pico에 자동 저장합니다.': 'This affects every profile that uses this mapping.\nConfirming automatically saves the deletion and other pending shared mapping edits to Pico.',
+    '모든 프로필이 공유하는 매핑을 파일 내용으로 전체 교체하고 Pico에 자동 저장합니다. 미저장 공용 매핑 편집은 파일 내용으로 대체됩니다. 프로필별 사용 체크는 바꾸지 않습니다. 계속할까요?': 'Replace all shared mappings with this file and save them to Pico automatically. Pending shared mapping edits will be replaced by the file contents. Per-profile activation checkboxes are unchanged. Continue?',
+    '현재 슬롯과 Pico 시작 설정에 저장합니다.\n다른 앱의 Pico 오디오 출력을 중지하세요.\n공용 매핑 동작은 편집 완료 시 자동 저장됩니다.': 'Save to the current slot and Pico startup settings.\nStop Pico audio output in other apps.\nShared mappings are saved automatically when editing is completed.',
+    '공용 매핑 저장 미확인 · 내보내기로 보관한 뒤 새로 고침하세요.': 'Shared mapping save unverified · Export a backup, then refresh.',
+    '공용 매핑의 자동 저장이 완료되지 않았습니다. 매핑을 내보내기로 보관한 뒤 새로 고침하고 다시 가져오세요.': 'Shared mapping auto-save is incomplete. Export your edits, refresh, then import them again.',
+    '매핑 저장 결과 미확인 · 편집값은 유지됩니다. 내보내기로 보관한 뒤 새로 고침하고 다시 가져오세요. ': 'Mapping save unverified · Your edits are preserved. Export them, refresh, then import again. ',
+    '등록·편집 완료, 삭제, 가져오기, 시프트키 변경 시 Pico에 자동 저장합니다.\n동작 변경은 모든 프로필에 영향을 줍니다.\n사용 체크는 현재 프로필에 별도로 저장합니다.': 'Registration, completed edits, deletion, import and shift-key changes are saved to Pico automatically.\nMapping changes affect all profiles.\nActivation checkboxes are saved separately in the current profile.',
+    '미저장 매핑 내보내기': 'Export unsaved mappings',
+    '자동 저장': 'Automatic save',
+    '매핑 목록이 없는 파일입니다. 매핑 내보내기로 만든 파일을 선택하세요.': 'This file has no mapping list. Select a file created by Export mappings.',
+    '이미 장치에 적용된 공용 매핑은 프로필 전환으로 되돌릴 수 없습니다. 내보내기로 보관한 뒤 새로 고침으로 확인하세요.': 'Shared mappings already applied to Pico cannot be undone by switching profiles. Export a backup, then refresh to verify.',
+    '매핑 내보내기 실패 · ': 'Mapping export failed · ',
+    '매핑 편집을 파일로 보관했습니다. 새로 고침 후 다시 가져올 수 있습니다.': 'Mapping edits exported. You can refresh and import them again.',
+    '등록·편집·삭제·가져오기·시프트키 변경 시 자동 저장합니다.': 'Edits, deletion, import and shift-key changes save automatically.',
+    '동작 변경은 모든 프로필에 영향을 줍니다.\n사용 체크는 현재 프로필에 별도로 저장합니다.': 'Mapping changes affect all profiles.\nActivation checkboxes are saved separately in the current profile.',
+    'DualSense Edge의 네이티브 햅틱·스피커 호환성을 위해 USB 시리얼 숨기기를 켜는 것을 권장합니다.': 'Enable Hide USB serial number for better DualSense Edge native haptics and speaker compatibility.',
+    'PC로 보내는 패드 입력과 펌웨어의 매핑 처리 상태를 확인합니다. 숨긴 입력은 보이지 않을 수 있으며, 짧은 출력은 진단 조회 사이에 지나갈 수 있습니다.': 'Shows gamepad reports sent to the PC and firmware mapping state. Hidden inputs may not appear, and brief outputs can occur between diagnostic reads.',
+    '마지막 수신 입력: ': 'Last received input: ',
+    'PC로 보내는 패드 입력: ': 'Gamepad input sent to PC: ',
+    '\n마지막 수신 {0}초 전 · 수신 보고 {1}개': '\nLast report {0}s ago · {1} reports received',
+    '\n확인 시작 후 감지한 버튼: ': '\nButtons seen since this check started: ',
+    '\n펌웨어 출력 상태: ': '\nFirmware output state: ',
+    ' · 첫 키 {0}': ' · First key {0}',
+    '중앙 또는 손가락 없음': 'Centre or no finger',
+    '\n최근 터치 클릭 판정: {0} · 처음 터치한 X {1}': '\nLast touch click: {0} · Finger-down X {1}',
+    '\n진단 조회 {0}초 전 · 짧은 출력은 표시되지 않을 수 있습니다.': '\nDiagnostic read {0}s ago · Brief outputs may not appear.',
+    '입력을 지정했습니다. 완료 · Pico 저장을 누르면 저장합니다.': 'Input assigned. Select Finish · Save to Pico to save it.',
+    '입력 확인 시작 실패 · ': 'Could not start input monitoring · ',
+    '저장 결과를 확인하지 못해 프로필 전환을 중단했습니다. 미저장 매핑은 내보내기로 보관한 뒤 새로 고침하세요.': 'Profile switching stopped because the save result is unverified. Export unsaved mappings before refreshing.',
+})

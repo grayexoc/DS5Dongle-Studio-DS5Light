@@ -1,6 +1,6 @@
 # DS5Light integration: verified configuration save
 
-Firmware source support added after exp.23; not built yet. DS5Light files are unchanged.
+Current integration (2026-11-14): Studio v44 and DS5Light v1.0.14 include tagged save confirmation. The app implementation is `studio_settings_protocol.py`, `SettingsClient.save_flash`; the firmware handler is `src/cmd.cpp`, command 0x02. The v44 build is verified locally; this does not establish physical persistence after power cycling.
 
 Legacy command 0x02 still performs exactly one synchronous config_save(). Empty/zero-padded old payloads remain accepted; old clients may ignore the added reply. No new stream guard was added to this command, so its existing flash behavior is retained. Device policy 0x1C/0x1D audio-active protection is separate and unchanged.
 
@@ -14,7 +14,7 @@ Status: FE = processing, 00 = config_save returned verified success, 02 = config
 
 Before starting flash work firmware replaces stale reply with FE; only after config_save returns does it publish success/failure. A returned status 00 means the journal write/no-op was verified by config_save, not just that USB accepted a packet. This does not verify all profiles/macros or substitute for power-cycle testing.
 
-Future DS5Light flow:
+Implemented DS5Light flow:
 1. Stop its own audio engine as before; ask user to stop external audio before settings maintenance. Do not kill other apps automatically.
 2. Send one save with fresh request tag under the per-device serialization lock.
 3. Poll GET 0x84 for matching command, version and tag. FE waits; 00 confirms; 02 reports failure. Allow at least 2 seconds for lockout/flash/USB scheduling; timeout is uncertain, not success.

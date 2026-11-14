@@ -35,10 +35,11 @@ class MacroCancelTests(unittest.TestCase):
 
     def test_new_draft_stages_nothing_until_commit(self):
         e=self.editor();before=copy.deepcopy(e.doc.macros);mask=e.doc.values['macro_disable']
-        with patch.object(e,'with_client') as send:
+        e.path=b'test';e.profile_stamp=dict(index=0,name='Test',edited=False)
+        with patch.object(e,'with_client') as send,patch.object(e,'save_registered_macro') as save:
             e.new_macro();editor=e.macro_editor;self.assertEqual(e.doc.macros,before);self.assertEqual(e.doc.values['macro_disable'],mask)
             editor.buttons[0].set(True);editor.keys[0].set('A');editor.go_step(1);editor.commit();self.root.update_idletasks()
-            self.assertTrue(any(e.doc.macros['0']));self.assertEqual(e.doc.values['macro_disable']&1,0)
+            self.assertTrue(any(e.doc.macros['0']));self.assertEqual(e.doc.values['macro_disable'],mask);save.assert_called_once()
             self.assertTrue(e.canvas.winfo_ismapped());self.assertIsNone(e.macro_editor);send.assert_not_called()
     def test_repeated_add_cancel_leaves_no_staged_rows(self):
         e=self.editor();before=copy.deepcopy(e.doc.macros)

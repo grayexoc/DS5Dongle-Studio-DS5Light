@@ -89,7 +89,7 @@ class StableReadView:
         common=(self.category,self.loaded,self.write_ready,self.pico_recognized,self.path)
         if self.category==4:
             return common+(tuple((key,tuple(record)) for key,record in self.doc.macros.items()),self.doc.values.get('macro_disable'),getattr(self,'macro_layer',False))
-        if self.category==0:return (0,self.standby_value(),self.standby_value('dock_policy'),self.busy)
+        if self.category==0:return (0,self.standby_value(),self.standby_value('dock_policy'),self.standby_value('usb_serial_policy'),self.busy,self.edge_serial_recommended())
         if self.category==5:return common+(tuple(sorted((self.profile_stamp or {}).items())),tuple((slot.index,slot.state,slot.name) for slot in self.slots))
         if self.category==2:
             from studio_scope import TRIGGER_FIELDS

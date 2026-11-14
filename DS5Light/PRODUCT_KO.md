@@ -40,9 +40,9 @@
 ## 다운로드와 실행
 
 
-**통합 릴리즈 v1.0.14 · DS5Light v1.0.14 · Studio 펌웨어 v44**
+**통합 릴리즈 v1.0.15 · DS5Light v1.0.15 · Studio 펌웨어 v45**
 
-[Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases)에서 `DS5Light-win-x64-v1.0.14.zip` 전체를 받아 풀고 `DS5Light.exe`를 실행하세요. `_internal` 폴더를 함께 유지해야 하며 Python 설치는 필요하지 않습니다. Pico 2 W용 펌웨어는 별도 파일 `ds5-studio-light_v44.uf2`입니다.
+[Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases)에서 `DS5Light-win-x64-v1.0.15.zip` 전체를 받아 풀고 `DS5Light.exe`를 실행하세요. `_internal` 폴더를 함께 유지해야 하며 Python 설치는 필요하지 않습니다. Pico 2 W용 펌웨어는 별도 파일 `ds5-studio-light_v45.uf2`입니다.
 
 앱의 **Studio설정 → 추천 프리셋 → 저장 후 사용**을 이용하세요. 파일은 `Studio Presert/DS_Native.json`, `Studio Presert/Audio_Haptic_01.json`, `Studio Presert/Audio_Haptic_02.json`입니다. 현재 오디오햅틱 항목만 바꾸고 다른 현재 설정을 유지한 구성을 선택한 슬롯에 저장합니다. 슬롯 덮어쓰기 전 대상을 확인하세요.
 
@@ -52,7 +52,7 @@
 
 ### 소스 빌드
 
-`requirements-build.txt`의 빌드 의존성을 준비하고 `powershell -ExecutionPolicy Bypass -File build.ps1`을 실행합니다. 앱 제목과 `DS5Light-win-x64-v<버전>.zip`의 버전은 `app_version.py`를 사용합니다. 중간 출력은 `dist/DS5Light`이며 `START.bat`로 실행할 수 있습니다. 기존 ZIP은 덮어쓰지 않으므로 새 릴리즈에는 앱 버전을 올려야 합니다. `DS5LIGHT_EXPERIMENTAL=1`이면 파일명에 `-Experimental`이 추가됩니다. 버전 정책은 [RELEASE_NOTES.md](RELEASE_NOTES.md)를 참고하세요.
+`requirements-build.txt`의 빌드 의존성을 준비하고 `powershell -ExecutionPolicy Bypass -File build.ps1`을 실행합니다. 앱 제목과 `DS5Light-win-x64-v<버전>.zip`의 버전은 `app_version.py`를 사용합니다. 중간 출력은 `dist/DS5Light`이며 `START.bat`로 실행할 수 있습니다. 기존 ZIP은 덮어쓰지 않으므로 새 릴리즈에는 앱 버전을 올려야 합니다. 버전 정책은 [RELEASE_NOTES.md](RELEASE_NOTES.md)를 참고하세요.
 
 ## 출처와 라이선스
 

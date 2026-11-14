@@ -11,7 +11,7 @@ FAST_TRIGGER_FIELDS = frozenset(prefix + suffix for prefix in ('t2_', 't2_l2_')
                                for suffix in ('mode', 'pos', 'button'))
 TRIGGER_FIELDS |= FAST_TRIGGER_FIELDS
 CONSTRUCTION = frozenset(k for k in FIELDS if k.startswith(('at_','t2_','ce_')) and k not in TRIGGER_FIELDS)
-REMOVED = frozenset(k for k in FIELDS if k.startswith(('effect_leak_','batt_','touch_mouse')))
+REMOVED = frozenset(k for k in FIELDS if k=='disable_usb_sn' or k.startswith(('effect_leak_','batt_','touch_mouse')))
 EDITABLE = {k:f for k,f in FIELDS.items() if k not in CONSTRUCTION | REMOVED}
 LIGHTBAR_FIELDS=frozenset(('lightbar_fixed','lightbar_rgb'))
 RUMBLE_FIELDS=frozenset(('rumble_gain','rumble_release'))

@@ -60,7 +60,7 @@ def profile_name(parent,initial=''):
 
 def confirm_delete(parent):
     return _confirm(parent,_ui_tr('매핑 삭제'),_ui_tr('매핑을 삭제할까요?'),
-                    _ui_tr('이 매핑을 사용하는 모든 프로필에 영향을 줍니다.\n삭제 내용은 Pico 매핑·매크로 저장을 눌러야 장치에 반영됩니다.'),_ui_tr('삭제'))
+                    _ui_tr('이 매핑을 사용하는 모든 프로필에 영향을 줍니다.\n확인하면 삭제 내용과 다른 미저장 공용 매핑을 Pico에 자동 저장합니다.'),_ui_tr('삭제'))
 
 def confirm_bootloader(parent):
     return _confirm(parent,_ui_tr('Pico 부트로더'),_ui_tr('부트로더로 재시작할까요?'),
@@ -91,7 +91,7 @@ def profile_switch(parent,*,profile,shared,profile_applied,shared_applied):
     dialog.protocol('WM_DELETE_WINDOW',finish);dialog.bind('<Escape>',lambda e:finish())
     _show(dialog,owner,focus);return result[0]
 
-def _message(parent,title,heading,message,accept=_ui_tr('확인'),cancel=False):
+def _message(parent,title,heading,message,accept=_ui_tr('확인'),cancel=False,cancel_label=None):
     owner=(parent or tk._default_root).winfo_toplevel();dialog=tk.Toplevel(owner);dialog.withdraw();dialog.title(title);dialog.configure(bg='#151515');dialog.resizable(False,False);_styles(dialog)
     if owner.state() != 'withdrawn':dialog.transient(owner)
     result=[False]
@@ -106,7 +106,7 @@ def _message(parent,title,heading,message,accept=_ui_tr('확인'),cancel=False):
         scroll=ttk.Scrollbar(area,orient='vertical',command=text.yview);text.configure(yscrollcommand=scroll.set);text.pack(side='left',fill='both',expand=True);scroll.pack(side='right',fill='y');text.insert('1.0',message);text.configure(state='disabled')
     actions=tk.Frame(box,bg='#151515');actions.pack(pady=(20,0))
     if cancel:
-        focus=ttk.Button(actions,text=tr(_ui_tr('취소')),width=12,style='Dialog.TButton',command=finish);focus.pack(side='left',padx=(0,8))
+        focus=ttk.Button(actions,text=tr(cancel_label or _ui_tr('취소')),width=12,style='Dialog.TButton',command=finish);focus.pack(side='left',padx=(0,8))
     button=ttk.Button(actions,text=tr(accept),width=12,style='Accent.Dialog.TButton',command=lambda:finish(True));button.pack(side='left')
     if not cancel:focus=button
     dialog.protocol('WM_DELETE_WINDOW',finish);dialog.bind('<Escape>',lambda e:finish())
@@ -114,6 +114,13 @@ def _message(parent,title,heading,message,accept=_ui_tr('확인'),cancel=False):
 
 def _confirm(parent,title,heading,message,accept):
     return _message(parent,title,heading,message,accept,cancel=True)
+
+def confirm_macro_profile(parent,target,other_changes):
+    name=target[1] or _ui_tr('이름 없음')
+    message=_ui_tr('매핑 동작은 Pico에 저장되었습니다.\n현재 프로필: {0:02d} · {1}\n현재 프로필의 사용 체크와 설정을 저장하시겠습니까?').format(target[0]+1,name)
+    if other_changes:message+='\n'+_ui_tr('함께 저장할 다른 프로필 설정 변경: {0}개').format(other_changes)
+    return _message(parent,_ui_tr('매핑 프로필 저장'),_ui_tr('현재 프로필에 저장하시겠습니까?'),message,
+                    _ui_tr('저장'),cancel=True,cancel_label=_ui_tr('나중에'))
 
 class ThemedMessages:
     @staticmethod

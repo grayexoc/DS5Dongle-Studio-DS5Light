@@ -14,9 +14,7 @@
 #include "oled_status.h"
 #include "manual_power.h"
 #include "usb.h"
-#ifdef STUDIO_XINPUT_EXPERIMENT
 #include "xinput_usb.h"
-#endif
 #include "wake.h"
 #ifdef ENABLE_WAKE_HID
 #include "ps_shortcut.h"
@@ -298,7 +296,6 @@ static inline bool report_needs_rewrite(const Config_body &c) {
 }
 
 void __not_in_flash_func(interrupt_loop)() {
-#ifdef STUDIO_XINPUT_EXPERIMENT
     if (usb_xinput_active()) {
         if (!xinput_report_ready()) return;
         uint8_t report[63]{0x80, 0x80, 0x80, 0x80, 0, 0, 0, 8};
@@ -311,7 +308,6 @@ void __not_in_flash_func(interrupt_loop)() {
         xinput_send_report(report);
         return;
     }
-#endif
     if (!tud_hid_ready()) return;
 
     // TODO: Refactor for better code reuse

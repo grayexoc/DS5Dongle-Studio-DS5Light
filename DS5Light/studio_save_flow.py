@@ -5,6 +5,51 @@ from studio_dialogs import messagebox,profile_switch
 
 
 class SaveFlow:
+    def macro_edit_ready(self):
+        from studio_power import blocked
+        if (self.closed or self.busy or self.app._close_requested or self.app.studio.busy
+                or not self.loaded or not self.write_ready or self.external_stale or self.uncertain
+                or self.invalid or blocked(self.app) or not self.doc.macro_baseline
+                or 'macro_disable' not in self.doc.values):
+            self.progress.configure(text=_ui_tr('매핑을 저장할 수 없습니다. 다른 작업을 마친 뒤 장치와 매핑 목록을 새로 고침하세요.'),kind='warning');self.update_state();return False
+        return True
+
+    def save_registered_macro(self,index,record,stamp):
+        mask=int(self.doc.values['macro_disable'])&~(1<<index)
+        self.save_macro_edits(stamp,mask=mask,record=(index,record))
+
+    def save_macro_edits(self,stamp,*,mask=None,record=None):
+        """Enable only after the shared definition has survived save/reconnect."""
+        def complete():
+            if (self.closed or self.busy or self.app._close_requested or not self.loaded
+                    or not self.write_ready or self.external_stale or self.uncertain
+                    or self.cancel.is_set()):return
+            if self.profile_stamp!=stamp or (record is not None and self.doc.macros.get(str(record[0]))!=record[1]):
+                self.progress.configure(text=_ui_tr('매핑은 Pico에 저장됐지만 프로필이 변경되어 자동 활성화를 중단했습니다. 새로 고침으로 확인하세요.'),kind='warning');self.update_state();return
+            if mask is None:return
+            target=self.current_save_target()
+            if target is None:return
+            self.changed('macro_disable',mask)
+            self.render_fields()
+            self.progress.configure(text=_ui_tr('Pico 매핑 저장 확인 · 현재 프로필 사용 체크 변경됨 · 프로필 저장 대기'),kind='action');self.update_state()
+            from studio_dialogs import confirm_macro_profile
+            other_changes=len(set(self.doc.user_changes)-{'macro_disable'})
+            accepted=confirm_macro_profile(self.parent,target,other_changes)
+            if self.closed or self.app._close_requested:return
+            if (self.busy or not self.loaded or not self.write_ready or self.external_stale
+                    or self.uncertain or self.profile_stamp!=stamp):
+                self.progress.configure(text=_ui_tr('프로필 상태가 변경되어 저장을 중단했습니다. 새로 고침으로 확인하세요.'),kind='warning');self.update_state();return
+            if accepted:
+                try:self.apply(True,target=target)
+                except Exception as exc:
+                    self.progress.configure(text=_ui_tr('프로필 저장 시작 실패 · 편집값은 유지됩니다. ')+str(exc),kind='error');self.update_state()
+            else:
+                self.progress.configure(text=_ui_tr('매핑 동작은 Pico에 저장됨 · 프로필 저장은 보류했습니다. 변경된 사용 체크는 아직 적용·저장되지 않았습니다.'),kind='action');self.update_state()
+        try:self.save_shared_macros(after=complete)
+        except Exception as exc:
+            self.render_fields()
+            self.progress.configure(text=_ui_tr('매핑 저장 시작 실패 · 편집값은 유지됩니다. ')+str(exc),kind='error');self.update_state()
+
     def current_save_target(self):
         profile=self.profile_stamp or {}
         index=profile.get('index')
@@ -19,6 +64,8 @@ class SaveFlow:
 
     def request_profile_switch(self,callback):
         if self.busy:return
+        if self.uncertain:
+            self.progress.configure(text=_ui_tr('저장 결과를 확인하지 못해 프로필 전환을 중단했습니다. 미저장 매핑은 내보내기로 보관한 뒤 새로 고침하세요.'),kind='warning');self.update_state();return
         profile_pending=self.profile_changes_pending();shared_pending=self.shared_changes_pending()
         if not (profile_pending or shared_pending):callback();return
         decision=profile_switch(self.parent,profile=profile_pending,shared=shared_pending,
@@ -26,7 +73,7 @@ class SaveFlow:
                                 shared_applied=self.doc.macros_pending_flash)
         if decision=='discard':
             if self.doc.macros_pending_flash:
-                messagebox.showinfo(_ui_tr('공유 매크로'),_ui_tr('이미 장치에 임시 적용된 공유 매크로는 프로필 전환으로 되돌릴 수 없습니다. Pico 매핑·매크로를 먼저 저장하거나 새로 고침으로 확인하세요.'),parent=self.parent)
+                messagebox.showinfo(_ui_tr('공유 매크로'),_ui_tr('이미 장치에 적용된 공용 매핑은 프로필 전환으로 되돌릴 수 없습니다. 내보내기로 보관한 뒤 새로 고침으로 확인하세요.'),parent=self.parent)
                 return
             self.doc.revert();self.invalid.clear();callback()
         elif decision=='save':
@@ -53,6 +100,7 @@ class SaveFlow:
         serial=next((d.get('serial_number') for d in self.device_rows if d['path']==path),None) or self.app.studio.device_serials.get(path)
         self.after_shared_save=after
         def send(client):
+            self.results.put(('progress',_ui_tr('Pico 매핑 저장 전 상태 확인 중…'),None))
             if stamp is not None and client.profile()!=stamp:raise RuntimeError(_ui_tr('현재 프로필이 바뀌었습니다. 새로 고침으로 확인하세요.'))
             actual=client.read_macros()
             for index in changes:
@@ -61,7 +109,10 @@ class SaveFlow:
             from studio_shift import extended
             if any(extended(row) for row in changes.values()):
                 client.require_macro_features(list(changes.values()))
-            for index,record in changes.items():client.write_macro(index,record)
+            for number,(index,record) in enumerate(changes.items(),1):
+                self.results.put(('progress',_ui_tr('Pico 매핑 전송 중… {0}/{1}').format(number,len(changes)),None))
+                client.write_macro(index,record)
+            self.results.put(('progress',_ui_tr('Pico 매핑 적용값 확인 중…'),None))
             verified=client.read_macros()
             if any(verified.get(str(i))!=r for i,r in changes.items()):raise RuntimeError(_ui_tr('공유 매크로 적용값 불일치 · 새로 고침으로 확인하세요.'))
             self.results.put(('progress',_ui_tr('Pico 매핑·매크로 저장 중…'),None))
@@ -75,6 +126,7 @@ class SaveFlow:
             return dict(macros=verified,reset_uncertain=reset_uncertain)
         def operation():
             result=self.with_client(send)
+            self.results.put(('progress',_ui_tr('Pico 재연결 및 매핑 저장 결과 확인 중…'),None))
             from studio_reconnect import wait_for_macros
             try:
                 fresh=wait_for_macros(path,serial,self.cancel)

@@ -26,7 +26,11 @@ class InlineCapture:
         self.capture_text.set(_ui_tr('키를 최대 4개 눌렀다 떼고 지정하세요.') if mode=='keys' else _ui_tr('버튼을 누른 뒤 지정하세요. 기존 매핑이 숨긴 입력은 기록되지 않을 수 있습니다.'))
         self.capture_frame.grid();self.dialog.focus_set()
         if mode!='keys':
-            self.ui.stop_live();self.capture_monitor=LiveMonitor(self.ui.path,diagnostics=False);self.capture_monitor.start();self.poll_capture()
+            self.ui.stop_live();self.capture_monitor=LiveMonitor(self.ui.path,diagnostics=False)
+            try:self.capture_monitor.start()
+            except Exception as exc:
+                self.stop_capture();self.feedback.set(_ui_tr('입력 확인 시작 실패 · ')+str(exc));return
+            self.poll_capture()
         self.fit_dialog()
     def poll_capture(self):
         self.capture_job=None
@@ -77,7 +81,7 @@ class InlineCapture:
         elif state['mode']=='output':self.output.set(self.OUT_BUTTONS[state['output']])
         else:
             for i,var in enumerate(self.buttons):var.set(bool(state['mask']&(1<<i)))
-        self.feedback.set(_ui_tr('입력을 지정했습니다. 편집에 반영한 뒤 적용하세요.'))
+        self.feedback.set(_ui_tr('입력을 지정했습니다. 완료 · Pico 저장을 누르면 저장합니다.'))
     def stop_capture(self):
         if getattr(self,'capture_monitor',None):self.capture_monitor.stop.set();self.capture_monitor=None
         if getattr(self,'capture_job',None):

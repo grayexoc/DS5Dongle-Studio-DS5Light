@@ -147,4 +147,34 @@ class RecoveryUITests(unittest.TestCase):
         self.finish(e,'shared_save',answer)
         self.assertEqual(e.doc.changes,{'auto_haptics_gain':100});self.assertFalse(e.write_ready)
 
+    def test_registration_commit_failure_never_enables_or_asks_for_profile_save(self):
+        e,c,new=self.prepare();before=e.doc.values['macro_disable'];operations=[]
+        c.commit_macros.side_effect=TimeoutError('commit response lost')
+        with patch.object(e,'stopped_task',side_effect=lambda kind,op:operations.append(op)):
+            e.save_registered_macro(0,new['0'],copy.deepcopy(e.profile_stamp))
+        with patch.object(e,'with_client',side_effect=lambda op:op(c)):
+            with self.assertRaises(TimeoutError):operations[0]()
+        with patch('studio_dialogs.confirm_macro_profile') as confirm:
+            self.finish(e,'shared_save',None,'commit response lost');self.root.update_idletasks()
+            confirm.assert_not_called()
+        self.assertEqual(e.doc.values['macro_disable'],before)
+        c.commit_macros.assert_called_once();c.save_slot.assert_not_called();c.save_flash.assert_not_called()
+        self.assertIsNone(e.after_shared_save)
+
+    def test_registration_waits_for_recovery_before_prompt_and_preserves_audio_intent(self):
+        e,c,new=self.prepare();e.doc.values['macro_disable']=0xffffffff;operations=[]
+        with patch.object(e,'stopped_task',side_effect=lambda kind,op:operations.append(op)):
+            e.save_registered_macro(0,new['0'],copy.deepcopy(e.profile_stamp))
+        with patch.object(e,'with_client',side_effect=lambda op:op(c)),patch.object(recovery,'wait_for_macros',return_value=fresh(new)):
+            result=operations[0]()
+        self.assertEqual(e.doc.values['macro_disable'],0xffffffff)
+        e.resume=True;e._resume_token=(self.ui.run_intent.generation,self.ui._run_route())
+        with patch.object(e.parent,'after_idle') as idle:
+            self.finish(e,'shared_save',result)
+        followup=next(call.args[0] for call in idle.call_args_list if call.args[0].__name__=='continue_save')
+        with patch('studio_dialogs.confirm_macro_profile',return_value=False) as confirm,patch.object(self.ui,'start') as start:
+            followup();confirm.assert_called_once();start.assert_called_once()
+        self.assertEqual(e.doc.values['macro_disable'],0xfffffffe)
+        c.save_slot.assert_not_called();c.save_flash.assert_not_called();c.commit_macros.assert_called_once()
+
 if __name__=='__main__':unittest.main()

@@ -1,6 +1,7 @@
-"""Two-step local macro editor. Saving here stages bytes; it never sends HID."""
+"""Two-step local macro editor with verified Pico save on completion."""
 from studio_i18n import text as _ui_tr
 import tkinter as tk
+import copy
 from tkinter import ttk
 from itertools import permutations
 from studio_macro_design import MacroDraft,KINDS,CONDITIONS,OUTPUTS,conflicts
@@ -16,6 +17,7 @@ class MacroEditor(InlineCapture):
     def __init__(self,ui,index,embedded=False,initial=None):
         from studio_settings_ui import BUTTONS,OUT_BUTTONS,HID_KEYS,CircleCheck
         self.ui=ui;self.index=index;self.draft=MacroDraft(initial if initial is not None else ui.doc.macros[str(index)])
+        self.profile_stamp=copy.deepcopy(ui.profile_stamp);self.device_path=ui.path
         self.BUTTONS=BUTTONS;self.HID_KEYS=HID_KEYS
         self.OUT_BUTTONS=list(OUT_BUTTONS)+[_ui_tr('프로필 {0}번').format(i) for i in range(1,9)]
         self.OUT_BUTTONS.extend(['',_ui_tr('듀얼센스 전원')])  # Shift marker, then power output.
@@ -34,12 +36,12 @@ class MacroEditor(InlineCapture):
             d.bind('<Map>',lambda event:d.after_idle(lambda:apply_windows_titlebar_theme(d)) if event.widget is d else None,add='+')
         d.columnconfigure(0,weight=1);d.rowconfigure(1,weight=1)
         top=self.top=tk.Frame(d,bg=BG,padx=18,pady=14);top.grid(row=0,column=0,sticky='ew');top.columnconfigure(1,weight=1)
-        self.name=tk.StringVar(value=old['name']);self.enabled=tk.BooleanVar(value=True if initial is not None else not ui.doc.values.get('macro_disable',0xffffffff)&(1<<index))
+        self.name=tk.StringVar(value=old['name'])
         self.caption(top,_ui_tr('이름'),_ui_tr('모든 프로필이 공유하는 매크로 이름입니다. UTF-8 기준 16바이트까지 저장합니다.')).grid(row=0,column=0,padx=(0,12))
         ttk.Entry(top,style='Studio.TEntry',textvariable=self.name).grid(row=0,column=1,sticky='ew')
         activation=tk.Frame(top,bg=BG);activation.grid(row=1,column=0,columnspan=2,sticky='w',pady=(8,0))
-        CircleCheck(activation,text=_ui_tr('현재 프로필에서 사용'),variable=self.enabled,command=lambda:None,background=BG).pack(side='left')
-        ui.help_icon(activation,_ui_tr('이 프로필에서 현재 행을 사용할지 선택합니다. 매핑·매크로 목록은 모든 프로필이 공유하며 사용 여부만 프로필별로 저장합니다.')).pack(side='left',padx=5)
+        tk.Label(activation,text=_ui_tr('완료하면 Pico에 저장하고 현재 프로필의 사용 체크를 자동 선택합니다.'),bg=BG,fg=MUTED,wraplength=560,justify='left').pack(side='left')
+        ui.help_icon(activation,_ui_tr('매핑 동작은 모든 프로필이 공유합니다. Pico 저장 확인 후 현재 프로필에 사용 여부를 저장할지 묻습니다. 다른 프로필에서 이미 사용하는 동작을 수정하면 그 프로필에도 반영됩니다.')).pack(side='left',padx=5)
         layerbar=tk.Frame(top,bg=BG);layerbar.grid(row=5,column=0,columnspan=2,sticky='w',pady=6)
         self._layerbar=layerbar
         stepbar=tk.Frame(top,bg=BG);stepbar.grid(row=2,column=0,columnspan=2,sticky='ew',pady=(12,0));self.step_buttons=[]
@@ -150,8 +152,8 @@ class MacroEditor(InlineCapture):
         ttk.Button(actions,text=_ui_tr('취소'),command=self.close,width=12).pack(side='left',padx=(0,8))
         self.previous=ttk.Button(actions,text=_ui_tr('이전'),command=lambda:self.go_step(self.step-1),width=10);self.previous.pack(side='left',padx=(0,8))
         self.next_button=ttk.Button(actions,text=_ui_tr('다음'),command=lambda:self.go_step(self.step+1),width=14);self.next_button.pack(side='left',padx=(0,8))
-        self.save=ttk.Button(actions,text=_ui_tr('편집에 반영'),command=self.commit,width=12,style='Accent.TButton');self.save.pack(side='left')
-        self.variables=[self.name,self.enabled,self.kind,self.mode,self.output_kind,self.output,self.hold,self.threshold,self.release,self.hide,self.always,self.layer,self.chime,self.gesture,*self.buttons,*self.keys]
+        self.save=ttk.Button(actions,text=_ui_tr('완료 · Pico 저장'),command=self.commit,width=18,style='Accent.TButton');self.save.pack(side='left')
+        self.variables=[self.name,self.kind,self.mode,self.output_kind,self.output,self.hold,self.threshold,self.release,self.hide,self.always,self.layer,self.chime,self.gesture,*self.buttons,*self.keys]
         for variable in self.variables:widget_trace(d,variable,self.refresh)
         self.last_kind=old['kind'];self.last_output_kind=old['output_kind'];self.refresh()
     def preview_chime(self):
@@ -269,12 +271,12 @@ class MacroEditor(InlineCapture):
             preview=self.draft.build(self.state());self.summary.set(self.ui.macro_summary(preview).replace('\n',' · '))
             raw=self.draft.build(self.state(),strict=True)
             records=dict(self.ui.doc.macros);records[str(self.index)]=raw;mask=int(self.ui.doc.values.get('macro_disable',0xffffffff))
-            mask=mask&~(1<<self.index) if self.enabled.get() else mask|(1<<self.index)
+            mask=mask&~(1<<self.index)
             from studio_shift import reserved_input
             reason=reserved_input(raw,records,mask,bool(self.ui.doc.values.get('ps_shortcut_enabled',0)))
             if reason:raise ValueError(reason)
             warnings=[s for s in conflicts(records,mask) if f'{self.index+1:02d} ·' in s or f'· {self.index+1:02d} ·' in s]
-            self.feedback.set('\n'.join(warnings[:2]) or _ui_tr('편집에 반영한 뒤 Pico 매핑·매크로 저장을 누르세요. 사용 체크는 현재 프로필에 저장합니다.'))
+            self.feedback.set('\n'.join(warnings[:2]) or _ui_tr('완료하면 미저장 공용 매핑을 모두 Pico에 저장합니다. 프로필 사용 여부는 다음 확인창에서 저장합니다.'))
             self.save.configure(state='normal' if not self.ui.busy else 'disabled')
         except (ValueError,KeyError,StopIteration) as exc:
             self.feedback.set(str(exc) or _ui_tr('입력과 출력 항목을 확인하세요.'));self.save.configure(state='disabled')
@@ -327,7 +329,16 @@ class MacroEditor(InlineCapture):
             except (ValueError,KeyError) as exc:self.feedback.set(str(exc));return
         self.stop_capture();self.step=index;self.sync_step();self.canvas.yview_moveto(0)
     def commit(self):
-        if self.ui.busy:return
+        if self.closed or self.ui.busy:return
+        from studio_power import blocked
+        if (not self.ui.loaded or not self.ui.write_ready or self.ui.external_stale
+                or self.ui.app.studio.busy or self.ui.invalid or self.ui.app._close_requested
+                or blocked(self.ui.app) or 'macro_disable' not in self.ui.doc.values):
+            self.feedback.set(_ui_tr('저장할 수 없는 상태입니다. 다른 작업이 끝난 뒤 설정을 확인하세요.'));return
+        if self.device_path!=self.ui.path or self.profile_stamp!=self.ui.profile_stamp:
+            self.feedback.set(_ui_tr('현재 프로필이 바뀌었습니다. 다시 읽어 주세요.'));return
+        if self.ui.current_save_target() is None:
+            self.feedback.set(_ui_tr('저장할 프로필 슬롯을 먼저 선택하세요.'));return
         try:
             raw=self.draft.build(self.state(),strict=True)
             from studio_shift import reserved_input
@@ -337,10 +348,12 @@ class MacroEditor(InlineCapture):
             if reason:raise ValueError(reason)
         except (ValueError,KeyError) as exc:self.feedback.set(str(exc));return
         self.ui.doc.macros[str(self.index)]=raw
-        mask=int(self.ui.doc.values.get('macro_disable',0xffffffff))
-        self.ui.changed('macro_disable',mask&~(1<<self.index) if self.enabled.get() else mask|(1<<self.index))
         self.close()
         if not self.embedded:self.ui.render_fields()
+        try:self.ui.save_registered_macro(self.index,raw,self.profile_stamp)
+        except Exception as exc:
+            self.ui.progress.configure(text=_ui_tr('매핑 저장 시작 실패 · 편집값은 유지됩니다. ')+str(exc),kind='error')
+            self.ui.update_state()
     def close(self):
         if self.closed:return
         self.closed=True;self.stop_capture()

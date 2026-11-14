@@ -464,7 +464,6 @@ if (!$sourceVersion.Success) { Die 'Firmware VERSION not found in CMakeLists.txt
 $cmakeArgs = @(
     '-S', $RepoRoot, '-B', $buildDir, '-G', 'Ninja',
     '-DCMAKE_BUILD_TYPE=Release',
-    '-DSTUDIO_XINPUT_EXPERIMENT=ON',
     "-DVERSION=$($sourceVersion.Groups[1].Value)",
     "-DPICO_SDK_PATH=$SdkPath",
     "-DPython3_EXECUTABLE=$($PythonExe -replace '\\','/')"

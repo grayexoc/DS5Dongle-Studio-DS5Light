@@ -10,7 +10,6 @@ reports/
 
 .serena/
 .gitnexus/
-*.pyc
 .build-temp/
 logs/
 *.log

@@ -43,6 +43,7 @@ class MacroFlowUITests(unittest.TestCase):
     editor=fixture.NativeUITests.editor
     def macro(self,data):
         ui=self.editor();ui.doc.macros={str(i):[0]*35 for i in range(32)};ui.doc.macros['0']=list(data);ui.doc.macro_baseline=copy.deepcopy(ui.doc.macros)
+        ui.path=b'test';ui.profile_stamp=dict(index=0,name='Test',edited=False)
         from studio_macro_editor import MacroEditor
         ui.macro_editor=MacroEditor(ui,0);return ui,ui.macro_editor
     def test_three_steps_and_no_hid_while_editing(self):
@@ -58,12 +59,14 @@ class MacroFlowUITests(unittest.TestCase):
         walk(e.body)
         for title in ('⌘ 실행 조건','▶ 실행 동작','동작 규칙'):self.assertIn(title,titles)
         e.close()
-    def test_commit_stages_combo_output_and_activation(self):
+    def test_commit_saves_combo_but_defers_activation_until_verified(self):
         ui,e=self.macro(record(chord=1,keys=[4]))
         for v in e.buttons:v.set(False)
-        e.buttons[14].set(True);e.buttons[7].set(True);e.mode.set('누르는 동안 유지');e.hide.set(True);e.output_kind.set('듀얼센스 버튼');e.output.set('R3');e.enabled.set(True)
-        with patch.object(ui,'with_client') as hid:e.commit();hid.assert_not_called()
-        raw=ui.doc.macros['0'];self.assertEqual(raw[5],6);self.assertEqual(raw[17],8);self.assertEqual(ui.doc.values['macro_disable']&1,0)
+        e.buttons[14].set(True);e.buttons[7].set(True);e.mode.set('누르는 동안 유지');e.hide.set(True);e.output_kind.set('듀얼센스 버튼');e.output.set('R3')
+        before=ui.doc.values['macro_disable']
+        with patch.object(ui,'with_client') as hid,patch.object(ui,'save_registered_macro') as save:
+            e.commit();e.commit();hid.assert_not_called();save.assert_called_once()
+        raw=ui.doc.macros['0'];self.assertEqual(raw[5],6);self.assertEqual(raw[17],8);self.assertEqual(ui.doc.values['macro_disable'],before)
     def test_stick_and_swipe_constrain_available_behaviour(self):
         ui,e=self.macro(record(chord=1,keys=[4]))
         e.kind.set('스틱 방향');self.assertEqual(e.mode.get(),'누르는 동안 유지');self.assertEqual(e.output_kind.get(),'키보드');self.assertIn('disabled',e.mode_control.state())
@@ -89,7 +92,21 @@ class MacroFlowUITests(unittest.TestCase):
         e.close()
     def test_unchanged_save_preserves_existing_record(self):
         raw=record(chord=1,keys=[224,4],flags=0x80,rel_order=0);raw[12:17]=[9,8,0,6,5]
-        ui,e=self.macro(raw);e.commit();self.assertEqual(ui.doc.macros['0'],raw)
+        ui,e=self.macro(raw)
+        with patch.object(ui,'save_registered_macro'):e.commit()
+        self.assertEqual(ui.doc.macros['0'],raw)
+
+    def test_profile_changed_during_edit_cannot_save(self):
+        ui,e=self.macro(record(chord=1,keys=[4]));ui.profile_stamp=dict(index=1,name='Other',edited=False)
+        with patch.object(ui,'save_registered_macro') as save:e.commit();save.assert_not_called()
+        self.assertFalse(e.closed);self.assertIn('프로필이 바뀌',e.feedback.get());e.close()
+
+    def test_save_start_failure_keeps_record_and_shows_error(self):
+        ui,e=self.macro(record(chord=1,keys=[4]));e.name.set('Changed')
+        before=ui.doc.values['macro_disable']
+        with patch.object(ui,'save_registered_macro',side_effect=RuntimeError('thread start failed')):e.commit()
+        self.assertIn('저장 시작 실패',ui.progress.cget('text'))
+        self.assertTrue(ui.doc.macro_changes);self.assertEqual(ui.doc.values['macro_disable'],before)
     def test_filter_and_warning_follow_activation(self):
         ui=self.editor();ui.doc.macros={'0':record(chord=1,out_btn=8,flags=2),'1':record(chord=3,keys=[4])};ui.doc.macro_baseline=copy.deepcopy(ui.doc.macros);ui.select_category(4)
         ui.toggle_macro(0,True);ui.toggle_macro(1,True);self.assertIn('단독 입력',ui.macro_warning.get())

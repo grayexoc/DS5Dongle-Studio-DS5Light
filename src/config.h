@@ -21,7 +21,7 @@ struct __attribute__((packed)) Config_body {
     uint8_t audio_buffer_length; // [16,128]
     uint8_t controller_mode; // 0: DS5, 1: DSE, 2: Auto
     uint8_t lock_volume; // 0: disable,1: enable
-    uint8_t disable_usb_sn; // 0: disable,1: enable
+    uint8_t disable_usb_sn; // Legacy profile byte; imported once into device policy.
     uint8_t ps_shortcut_enabled; // 0: disabled, 1: enabled (Xbox Game Bar via HID keyboard)
     uint8_t disable_mic; // bool: 0 enable (default), 1 disable controller mic
     uint8_t disable_speaker; // bool: 0 enable (default), 1 disable speaker/headset
@@ -520,3 +520,6 @@ void set_gain(uint8_t value);
 extern bool is_dse;
 
 #endif //DS5_BRIDGE_CONFIG_H
+
+bool device_usb_serial_hidden();
+bool device_set_usb_serial_hidden(bool enabled);
