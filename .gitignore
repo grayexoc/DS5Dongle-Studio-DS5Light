@@ -4,9 +4,6 @@ build
 .idea
 example
 compile_commands.json
-
 .serena/
 .gitnexus/
-__pycache__/
-*.pyc
 *.log

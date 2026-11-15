@@ -1,7 +1,7 @@
 """Local, on-hover dependency guidance. No device access or timers."""
 from studio_i18n import text as _ui_tr
 from studio_help import compact_ko_help, help_text
-from studio_scope import AUDIO_HAPTIC_CHILDREN
+from studio_scope import AUDIO_HAPTIC_CHILDREN,TRIGGER_FIELDS
 
 
 def inactive_reason(editor,key):
@@ -61,8 +61,15 @@ def inactive_reason(editor,key):
 
 def option_help(editor,key):
     reason=inactive_reason(editor,key)
-    text=help_text(key)
     from localization import LANGUAGE
+    view=getattr(editor,'range_controls',{}).get(key)
+    default=view[1].marker if view and key in TRIGGER_FIELDS else None
+    caption=getattr(editor,'_display_fields',{}).get(key,('',)*4)[3]
+    description=None
+    if key in ('t2_pos','t2_l2_pos') and caption in ('100%로 인식되는 깊이','Depth for full input'):
+        description=('설정한 깊이에 도달하면 게임에 트리거 100% 입력 전달\n낮을수록 얕게 눌러 최대 입력\n물리적인 저항 시작 위치와는 별도' if LANGUAGE=='ko' else
+                     'Reaching this depth sends full trigger input to the game. Lower values require less travel. The resistance start position is separate.')
+    text=help_text(key,default=default,description=description)
     if getattr(editor,'category',None)==0 and not editor.search.get():
         lighting={
             'disable_pico_led':('Pico 보드의 LED를 켜거나 끕니다. 금색 원은 ON, 빈 원은 OFF입니다.','Turn the Pico board LED on or off. A gold circle means ON; an empty circle means OFF.'),

@@ -176,7 +176,7 @@ bool audio_haptics_stream_active() {
 }
 
 bool audio_processing_active() {
-    return bt_is_ready() && (mic_active ||
+    return bt_is_ready() && (audio_mic_active() ||
         (audio_input_seen && to_ms_since_boot(get_absolute_time()) - last_audio_input_ms < 200));
 }
 
@@ -268,14 +268,25 @@ bool audio_strip_speaker_payload(uint8_t *report, uint16_t length, bool native) 
 
 // Called from tud_audio_set_itf_cb when the host opens/closes the mic IN
 // interface. Gates controller-mic streaming so it only runs while recording.
+static void reset_mic_stream() {
+    ++mic_stream_generation;
+    tud_audio_clear_ep_in_ff();
+    while (queue_try_remove(&mic_fifo, nullptr)) {}
+}
+
+void audio_mic_policy_changed() {
+    reset_mic_stream();
+    if (mic_active && bt_is_ready()) update_mic_status();
+}
+
 void set_mic_active(bool active) {
-    if (mic_active != active) ++mic_stream_generation;
+    if (mic_active != active) reset_mic_stream();
     mic_active = active;
     update_mic_status();
 }
 
 bool audio_mic_active() {
-    return mic_active;
+    return mic_active && !get_config().disable_mic;
 }
 
 void update_mic_status() {
@@ -285,7 +296,7 @@ void update_mic_status() {
     reportSeqCounter = (reportSeqCounter + 1) & 0x0F;
     pkt[2] = 0x11 | 0 << 6 | 1 << 7;
     pkt[3] = 7;
-    pkt[4] = (mic_active && !get_config().disable_mic) ? 0b11111111 : 0b11111110;
+    pkt[4] = audio_mic_active() ? 0b11111111 : 0b11111110;
     const auto buf_len = get_config().audio_buffer_length;
     pkt[5] = buf_len;
     pkt[6] = buf_len;
@@ -382,11 +393,11 @@ void __not_in_flash_func(audio_loop)() {
         discard_speaker_queue();
     }
 #endif
+    if (connected && link_changed && mic_active) update_mic_status();
     if (!connected) {
         if (link_changed) {
             headset_state_known = false;
-            ++mic_stream_generation;
-            while (queue_try_remove(&mic_fifo, nullptr)) {}
+            reset_mic_stream();
         }
         // A core1 decode may complete after disconnect. Flush it if it arrives.
         while (!queue_is_empty(&mic_decode_fifo) && queue_try_remove(&mic_decode_fifo, nullptr)) {}
@@ -401,12 +412,13 @@ void __not_in_flash_func(audio_loop)() {
     static uint16_t mic_pending = 0, mic_offset = 0;
     static uint32_t mic_started_ms = 0, mic_generation = 0;
     const uint32_t mic_now = to_ms_since_boot(get_absolute_time());
-    if (!mic_active || mic_generation != mic_stream_generation ||
+    const bool mic_stream_active = audio_mic_active();
+    if (!mic_stream_active || mic_generation != mic_stream_generation ||
         (mic_pending && mic_now - mic_started_ms >= 20)) {
         mic_pending = mic_offset = 0;
         mic_generation = mic_stream_generation;
     }
-    if (!mic_active) {
+    if (!mic_stream_active) {
         while (queue_try_remove(&mic_decode_fifo, nullptr)) {}
     } else if (!mic_pending && queue_try_remove(&mic_decode_fifo, &mic_pb) &&
                mic_pb.generation == mic_stream_generation) {
@@ -1306,7 +1318,7 @@ void __not_in_flash_func(core1_entry)() {
 // In RAM (consistent with the BT-receive path) and validates len so a short
 // or malformed report can't over-read past the packet buffer.
 void __not_in_flash_func(mic_add_queue)(uint8_t *data, uint16_t len) {
-    if (!mic_active || !bt_is_ready() || len < MIC_OPUS_SIZE) return;
+    if (!audio_mic_active() || !bt_is_ready() || len < MIC_OPUS_SIZE) return;
     static mic_element mic_packet{};
     mic_packet.generation = mic_stream_generation;
     memcpy(mic_packet.data, data, MIC_OPUS_SIZE);

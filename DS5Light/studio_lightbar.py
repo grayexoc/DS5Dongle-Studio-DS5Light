@@ -90,7 +90,7 @@ class LightbarUI:
         self.field_row(box,1,FIELDS['disable_pico_led'])
         title,controls,_=self.field_views['disable_pico_led']
         for child in title.winfo_children():
-            if isinstance(child,tk.Label):child.configure(text='PICO LED')
+            if isinstance(child,tk.Label):child.configure(text='Pico LED')
         pico=controls[0];pico._lighting_inverse=True;raw=self.vars['disable_pico_led']
         pico.variable=tk.BooleanVar(master=pico,value=not bool(self.doc.values.get('disable_pico_led',1)))
         pico.command=lambda:raw.set(not pico.variable.get())

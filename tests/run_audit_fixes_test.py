@@ -79,7 +79,8 @@ struct send_element{uint8_t data[512]{};size_t len=0;uint32_t enqueued_ms=0;bool
 std::deque<send_element> send_fifo;
 unsigned queue_get_level(std::deque<send_element>*q){return q->size();}
 bool queue_is_full(std::deque<send_element>*q){return q->size()==10;}
-bool queue_try_remove(std::deque<send_element>*q,send_element*p){if(q->empty())return false;*p=q->front();q->pop_front();return true;}
+unsigned queue_removals=0;
+bool queue_try_remove(std::deque<send_element>*q,send_element*p){if(q->empty())return false;++queue_removals;*p=q->front();q->pop_front();return true;}
 bool queue_try_add(std::deque<send_element>*q,send_element*p){if(q->size()==10)return false;q->push_back(*p);return true;}
 uint32_t get_absolute_time(){return 100;}uint32_t to_ms_since_boot(uint32_t t){return t;}
 struct {int auto_haptics_enable=0;}cfg;auto&get_config(){return cfg;}
@@ -101,11 +102,38 @@ int main(){
  control[5]=123;bt_write(control,78);assert(send_fifo.size()==9);
  control[5]=0;bt_write(control,78);assert(send_fifo.size()==10); // A -> B -> A preserves intent
  assert(send_fifo.back().data[6]==0);
- send_fifo.clear();native_queued=0;control[5]=120;bt_write(control,78);control[5]=0;bt_write(control,78);control[5]=120;bt_write(control,78);
+ send_element item;
+ while(pop_send_fifo(item)){}
+ assert(queued_controls==0&&native_queued==0);
+ control[5]=120;bt_write(control,78);control[5]=0;bt_write(control,78);control[5]=120;bt_write(control,78);
  assert(send_fifo.size()==3);bt_write(control,78);assert(send_fifo.size()==3);
- send_fifo.clear();native_queued=0;for(int i=0;i<10;i++){control[5]=i;bt_write(control,78);}
+ while(pop_send_fifo(item)){}
+ for(int i=0;i<10;i++){control[5]=i;bt_write(control,78);}
  assert(send_fifo.size()==10);bt_write(audio,398);assert(send_fifo.size()==10);
- puts("PASS: actual bt_write: repeated control bounded, audio eviction, distinct control preserved, full control queue");
+ while(pop_send_fifo(item)){}
+ control[5]=20;bt_write(control,78);
+ for(int i=0;i<7;i++)bt_write(audio,398);
+ const auto removals=queue_removals;
+ control[1]++;control[35]++;
+ bt_write(control,78);assert(send_fifo.size()==8&&queue_removals==removals);
+ assert(pop_send_fifo(pending_send)&&queued_controls==0);pending_send_valid=true;
+ bt_write(control,78);assert(send_fifo.size()==8&&queued_controls==1);
+ uint8_t short_control[12]{0x31};
+ bt_write(short_control,12);
+ bt_write(control,78);assert(send_fifo.size()==10&&queued_controls==3);
+ control[5]=42;bt_write(control,78); // Evicts audio while available.
+ assert(send_fifo.size()==10&&queued_controls==4);
+ bt_discard_audio();assert(send_fifo.size()==4&&queued_controls==4);
+ bt_write(control,78);assert(send_fifo.size()==4);
+ for(int i=0;i<6;i++){control[5]=80+i;bt_write(control,78);}
+ assert(queued_controls==10);
+ control[5]=100;bt_write(control,78);assert(queued_controls==10); // Rejected, cache unchanged.
+ assert(pop_send_fifo(item));assert(queued_controls==9);
+ control[5]=85;bt_write(control,78);assert(send_fifo.size()==9);
+ control[5]=100;bt_write(control,78);assert(send_fifo.size()==10);
+ while(pop_send_fifo(item)){}
+ assert(queued_controls==0);
+ puts("PASS: actual bt_write: duplicate lookup without rotation, A-B-A order, retry isolation, short reports, audio eviction and full-queue rejection");
 }
 """)
 
@@ -212,12 +240,23 @@ constexpr int MIC_FRAMES=480;
 struct mic_decode_element{uint32_t generation;int16_t data[480];uint16_t len;};
 uint32_t mic_stream_generation=0, mic_now_mock=0;
 bool mic_active=true;
+struct Config {bool disable_mic=false;} config;
+Config &get_config(){return config;}
+constexpr int MIC_OPUS_SIZE=71;
+struct mic_element {uint32_t generation;uint8_t data[MIC_OPUS_SIZE];};
+struct MicInputQueue {int count=0;} mic_fifo;
+bool bt_is_ready(){return true;}
+bool queue_is_full(MicInputQueue*){return false;}
+bool queue_try_remove(MicInputQueue*,void*){return false;}
+bool queue_try_add(MicInputQueue *q,const mic_element*){++q->count;return true;}
+#define __not_in_flash_func(x) x
 uint32_t get_absolute_time(){return mic_now_mock;} uint32_t to_ms_since_boot(uint32_t t){return t;}
 float volume[2]{};
 int stale_mic=0, playback_ticks=0;int mic_decode_fifo;uint8_t mute[2]{};int16_t captured[960]{};
 bool queue_try_remove(int*,mic_decode_element*p){if(!p)return false;for(int i=0;i<480;i++)p->data[i]=i+1;p->len=960;p->generation=mic_stream_generation-stale_mic;return true;}
 unsigned write_limit=1920,capture_bytes=0;
 uint16_t tud_audio_write(const void*p,uint16_t n){n=std::min<unsigned>(n,write_limit);memcpy(captured,p,n);capture_bytes=n;return n;}
+"""+extract(s,'bool audio_mic_active()')+extract(s,'void __not_in_flash_func(mic_add_queue)')+r"""
 void process(){
 """+s[a:b]+r"""
  ++playback_ticks;
@@ -226,22 +265,32 @@ int main(){process();assert(captured[0]==1&&captured[1]==1&&captured[959]==480);
  mic_active=false;capture_bytes=0;process();assert(capture_bytes==0);mic_active=true;++mic_stream_generation;write_limit=1920;process();assert(captured[0]==1);
  write_limit=0;process();mic_now_mock+=20;write_limit=1920;process();assert(captured[0]==1);
  capture_bytes=0;stale_mic=1;int before=playback_ticks;process();assert(capture_bytes==0&&playback_ticks==before+1);stale_mic=0;process();assert(capture_bytes>0);
- puts("PASS: USB mic gain/mute, partial writes, close/reopen, bounded pending age");}
+ write_limit=400;process();assert(capture_bytes==400);
+ config.disable_mic=true;++mic_stream_generation;capture_bytes=0;process();assert(!capture_bytes);
+ uint8_t incoming[MIC_OPUS_SIZE]{};
+ mic_add_queue(incoming,sizeof(incoming));assert(!mic_fifo.count);
+ config.disable_mic=false;++mic_stream_generation;write_limit=1920;process();assert(captured[0]==1);
+ mic_add_queue(incoming,sizeof(incoming));assert(mic_fifo.count==1);
+ puts("PASS: USB mic gain/mute, partial writes, policy toggles, close/reopen, bounded pending age");}
 """)
 
 s=(root/'src/audio.cpp').read_text(encoding='utf-8')
-idle=s[s.index('    if (!connected) {\n        if (link_changed)'):s.index('    // Mic playback')]
+idle=s[s.index('    if (connected && link_changed && mic_active)'):s.index('    // Mic playback')]
 run('audio-idle',r"""
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
-bool connected=false,link_changed=false,discard_usb=false,headset_state_known=true;
-unsigned mic_stream_generation=0,mic_fifo=0,mic_decode_fifo=0,usb_bytes=0,clears=0;
+bool connected=false,link_changed=false,discard_usb=false,headset_state_known=true,mic_active=true;
+bool bt_is_ready(){return connected;}
+unsigned mic_stream_generation=0,mic_fifo=0,mic_decode_fifo=0,usb_bytes=0,clears=0,mic_clears=0,status_updates=0;
 uint8_t g_oled_ah_input_peak=1,g_oled_ah_output_peak=1;
 bool queue_is_empty(unsigned *q){return *q==0;}
 bool queue_try_remove(unsigned *q,void *){if(!*q)return false;--*q;return true;}
 unsigned tud_audio_available(){return usb_bytes;}
 void tud_audio_clear_ep_out_ff(){++clears;usb_bytes=0;}
+void tud_audio_clear_ep_in_ff(){++mic_clears;}
+void update_mic_status(){++status_updates;}
+"""+extract(s,'static void reset_mic_stream()')+extract(s,'void audio_mic_policy_changed()')+r"""
 void tick(){
 """+idle+r"""
 }
@@ -250,7 +299,11 @@ int main(){
  mic_fifo=2;mic_decode_fifo=2;link_changed=true;discard_usb=true;tick();
  assert(mic_stream_generation==1&&!headset_state_known&&!mic_fifo&&!mic_decode_fifo&&!clears);
  link_changed=false;discard_usb=false;mic_decode_fifo=1;usb_bytes=12;tick();tick();
- assert(!mic_decode_fifo&&!usb_bytes&&clears==1&&mic_stream_generation==1);
+ assert(!mic_decode_fifo&&!usb_bytes&&clears==1&&mic_stream_generation==1&&mic_clears==1);
+ connected=true;mic_fifo=2;audio_mic_policy_changed();
+ assert(mic_stream_generation==2&&mic_clears==2&&!mic_fifo&&status_updates==1);
+ tick();assert(mic_clears==2&&status_updates==1);
+ audio_mic_policy_changed();assert(mic_clears==3&&status_updates==2);
  assert(!g_oled_ah_input_peak&&!g_oled_ah_output_peak);
  puts("PASS: disconnect resets once; late mic frames and new USB bytes still discarded");
 }
@@ -682,14 +735,14 @@ run('config-save-reply',r"""
 #include <cstdio>
 #include <unordered_map>
 #include <vector>
-std::unordered_map<uint8_t,std::vector<uint8_t>> feature_data;
+std::vector<uint8_t> pico_settings_reply;
 bool save_ok=true;int saves=0;
-bool config_save(){++saves;const auto &p=feature_data[0x84];assert(p.size()==63&&p[0]==0x66&&p[1]==2&&p[2]==0xfe&&p[3]==1);return save_ok;}
+bool config_save(){++saves;const auto &p=pico_settings_reply;assert(p.size()==63&&p[0]==0x66&&p[1]==2&&p[2]==0xfe&&p[3]==1);return save_ok;}
 void command(const uint8_t *buffer,uint16_t bufsize){switch(2){
 """+s[a:b]+r"""
 }}
 int main(){uint8_t tag[]{0x12,0x34,0x56,0x78};
- for(bool ok:{true,false}){save_ok=ok;command(tag,4);const auto &r=feature_data[0x84];assert(r[2]==(ok?0:2)&&r[3]==1&&!memcmp(r.data()+4,tag,4));}
- command(nullptr,0);for(int i=4;i<8;i++)assert(feature_data[0x84][i]==0);assert(saves==3);
+ for(bool ok:{true,false}){save_ok=ok;command(tag,4);const auto &r=pico_settings_reply;assert(r[2]==(ok?0:2)&&r[3]==1&&!memcmp(r.data()+4,tag,4));}
+ command(nullptr,0);for(int i=4;i<8;i++)assert(pico_settings_reply[i]==0);assert(saves==3);
  puts("PASS: pending before flash, success/failure, request-tag echo and legacy empty payload");}
 """)

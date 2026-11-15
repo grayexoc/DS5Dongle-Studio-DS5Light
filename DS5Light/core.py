@@ -1,10 +1,16 @@
 """독립 구현: causal 대역별 배경 억제. 음악/음성 분리기는 아니다."""
 from dataclasses import dataclass
 import numpy as np
-from scipy.signal import butter, sosfilt
+
+
+def load_signal_filters():
+    import scipy.signal
+    return scipy.signal
 
 RATE = 48000
 BLOCK = 240
+HAPTIC_GAIN_MIN = 0.5
+HAPTIC_GAIN_MAX = 2.0
 
 @dataclass(frozen=True)
 class Controls:
@@ -53,7 +59,8 @@ def duplicate(x):
 class Processor:
     def __init__(self):
         # Complementary differences sum exactly to x; common stereo controls.
-        self.sos = [butter(2, f, fs=RATE, output='sos') for f in (120, 600, 2500)]
+        self._signal = load_signal_filters()
+        self.sos = [self._signal.butter(2, f, fs=RATE, output='sos') for f in (120, 600, 2500)]
         self.zi = [np.zeros((len(s), 2, 2)) for s in self.sos]
         self.bg = np.full(4, 1e-8)
         self.mean = np.zeros(4)
@@ -133,7 +140,11 @@ class Processor:
             self._coefficient_controls = controls
         lows = []
         for k, sos in enumerate(self.sos):
-            low, self.zi[k] = sosfilt(sos, x, axis=0, zi=self.zi[k])
+            if len(sos) == 1:
+                low, state = self._signal.lfilter(sos[0, :3], sos[0, 3:], x, axis=0, zi=self.zi[k][0])
+                self.zi[k] = state[None]
+            else:
+                low, self.zi[k] = self._signal.sosfilt(sos, x, axis=0, zi=self.zi[k])
             lows.append(low)
         bands = self._bands[:, :n]
         np.copyto(bands[0], lows[0])
@@ -232,12 +243,13 @@ class StreamingResampler:
         self.step = source_rate/dest_rate
         self.position = 0.
         self.tail = np.empty((0, 2))
-        self.sos = butter(6, .42*min(source_rate, dest_rate), fs=source_rate, output='sos') if source_rate != dest_rate else None
+        self._signal = load_signal_filters() if source_rate != dest_rate else None
+        self.sos = self._signal.butter(6, .42*min(source_rate, dest_rate), fs=source_rate, output='sos') if self._signal is not None else None
         self.zi = np.zeros((len(self.sos), 2, 2)) if self.sos is not None else None
     def process(self, x):
         if self.sos is None:
             return x.copy()
-        x, self.zi = sosfilt(self.sos, x, axis=0, zi=self.zi)
+        x, self.zi = self._signal.sosfilt(self.sos, x, axis=0, zi=self.zi)
         a = np.concatenate((self.tail, x))
         positions = np.arange(self.position, len(a)-1, self.step)
         if len(positions):

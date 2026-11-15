@@ -19,8 +19,7 @@ PLANS = {
         ('세부 조정', 'Fine tuning', 'stick_mouse_deadzone stick_mouse_curve stick_mouse_invert', True, True)],
     'Auto-Haptics & Speaker Effect Leak': [
         ('오디오햅틱 모드', 'Audio haptics mode', 'auto_haptics_enable', False, False),
-        ('오디오햅틱 세기', 'Audio haptics strength', 'auto_haptics_gain auto_mute_mix auto_mute_replace', False, True),
-        ('', '', 'mix_native_level mix_native_filter rumble_haptic_strength', False, True),
+        ('', '', 'auto_haptics_gain auto_mute_mix auto_mute_replace mix_native_level mix_native_filter rumble_haptic_strength', False, True),
         ('주파수·반응 세부 조정', 'Frequency & response tuning', 'ah_dsp_source auto_haptics_smooth auto_haptics_gate auto_haptics_lowpass_hz auto_haptics_slope ah_xover_hz ah_low_gain ah_high_gain', True, True)],
     'General Haptics & Audio': [
         ('햅틱및 진동 세기', 'Haptics and rumble strength', 'haptics_gain rumble_gain rumble_mode rumble_release', False, False),

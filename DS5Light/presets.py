@@ -5,6 +5,7 @@ import math
 import os
 import tempfile
 from pathlib import Path
+from core import HAPTIC_GAIN_MAX
 
 SLOT_COUNT = 12
 
@@ -37,7 +38,7 @@ def validate(value):
     if type(c['strength']) not in (float, int) or not math.isfinite(c['strength']) or not 0 <= c['strength'] <= 1:
         raise ValueError(_ui_tr('억제 세기 범위 오류'))
     gain=c.get('gain',1.0)
-    if type(gain) not in (int,float) or not math.isfinite(gain) or not 0<=gain<=1.5:
+    if type(gain) not in (int,float) or not math.isfinite(gain) or not 0<=gain<=HAPTIC_GAIN_MAX:
         raise ValueError(_ui_tr('진동 세기 범위 오류'))
     impact=c.get('impact',.85)
     if type(impact) not in (int,float) or not math.isfinite(impact) or not 0<=impact<=1:

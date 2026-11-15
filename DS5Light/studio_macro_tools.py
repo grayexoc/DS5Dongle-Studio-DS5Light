@@ -59,6 +59,7 @@ class LiveMonitor:
     """One opt-in read-only observer. Feature requests serialize with Studio jobs."""
     def __init__(self,path,diagnostics=True):
         self.path=path;self.diagnostics=diagnostics;self.stop=threading.Event();self.results=queue.Queue(maxsize=1);self.thread=None
+        self.visible=threading.Event();self.visible.set()
     def start(self):
         self.thread=threading.Thread(target=self.run,name='DS5Light-Studio-live',daemon=True);start_thread(self.thread)
     def publish(self,data):
@@ -69,11 +70,13 @@ class LiveMonitor:
     def run(self):
         import hid
         device=hid.device();diag={};snapshot=None;next_diag=0;landing=None;half=0;received_at=None
-        seen_mask=0;reports=0;diag_at=None
+        seen_mask=0;reports=0;diag_at=None;last_buttons=0;last_hidden=0;last_hidden_sticks=0;last_output={}
         try:
             device.open_path(self.path);device.set_nonblocking(1)
             client=SettingsClient(device,cancel=self.stop.is_set)
             while not self.stop.wait(.04):
+                if not self.visible.wait(.5):continue
+                if self.stop.is_set():break
                 # Drain a bounded queue; redraw at 10 Hz instead of per USB packet.
                 until=time.monotonic()+.004
                 while time.monotonic()<until:
@@ -89,19 +92,27 @@ class LiveMonitor:
                             current['mask']|=half
                         else:half=0
                         snapshot=current
+                        if current['mask']:last_buttons=current['mask']
                         received_at=time.monotonic()
                         seen_mask|=current['mask'];reports+=1
                 now=time.monotonic()
                 if self.diagnostics and now>=next_diag and _DEVICE_LOCK.acquire(blocking=False):
                     try:
                         for fid,key,typ in [(0x7b,'touch_x','u16'),(0x7c,'touch_info','u8'),(0x88,'suppress_low','u16'),(0x89,'suppress_high','u16'),(0x8a,'inject_low','u16'),(0x8b,'inject_high','u16'),(0x8c,'stick','u8'),(0x8d,'keyboard','u16')]:
-                            if self.stop.is_set():break
+                            if self.stop.is_set() or not self.visible.is_set():break
                             diag[key]=client.read_one([fid,key,typ,key,'number',[0,65535]])
                     finally:_DEVICE_LOCK.release()
                     diag_at=time.monotonic()
                     next_diag=now+1
+                    hidden=diag.get('suppress_low',0)|(diag.get('suppress_high',0)<<16)
+                    if hidden or diag.get('stick',0)&3:
+                        last_hidden=hidden;last_hidden_sticks=diag.get('stick',0)&3
+                    # shortcut: polling can miss brief outputs; exact execution history needs firmware support.
+                    if diag.get('inject_low',0) or diag.get('inject_high',0) or diag.get('keyboard',0)&255:
+                        last_output=dict(diag)
                 self.publish(dict(input=snapshot,diag=dict(diag),received_at=received_at,
-                                  seen_mask=seen_mask,reports=reports,diag_at=diag_at))
+                                  seen_mask=seen_mask,reports=reports,diag_at=diag_at,
+                                  last_buttons=last_buttons,last_hidden=last_hidden,last_hidden_sticks=last_hidden_sticks,last_output=last_output))
         except Exception as exc:self.publish(dict(error=str(exc)))
         finally:device.close()
 
@@ -265,8 +276,13 @@ class MacroTools:
         bar=tk.Frame(box,bg=BG);bar.grid(row=1,column=0,columnspan=2,sticky='ew')
         for i,(title,command) in enumerate([(_ui_tr('가져오기'),self.import_macros),(_ui_tr('내보내기'),self.export_macros),(_ui_tr('입력 확인 중지') if self.live_enabled else _ui_tr('실시간 입력 확인'),self.toggle_live)]):
             ttk.Button(bar,text=title,command=command).grid(row=0,column=i,padx=(0,6),sticky='ew');bar.columnconfigure(i,weight=1)
-        self.live_text=tk.StringVar(value=_ui_tr('PC로 보내는 패드 입력과 펌웨어의 매핑 처리 상태를 확인합니다. 숨긴 입력은 보이지 않을 수 있으며, 짧은 출력은 진단 조회 사이에 지나갈 수 있습니다.'))
-        tk.Label(box,textvariable=self.live_text,bg=BG,fg=MUTED,wraplength=425,justify='left',anchor='w').grid(row=2,column=0,columnspan=2,sticky='ew',pady=(12,0))
+        self.live_text=tk.StringVar(value=_ui_tr('화면에 보이는 동안 관측한 마지막 입력·출력을 유지합니다. 숨긴 조건 버튼과 짧은 출력은 놓칠 수 있습니다.'))
+        self.live_label=tk.Label(box,textvariable=self.live_text,bg=BG,fg=MUTED,wraplength=425,justify='left',anchor='w')
+        self.live_label.grid(row=2,column=0,columnspan=2,sticky='ew',pady=(12,0))
+        self._live_view=None
+        self.live_notice=tk.Label(box,text=_ui_tr('\n짧은 출력·전체 조합키·프로필 전환 등은 확인하지 못할 수 있음').lstrip(),bg=BG,fg=GOLD,wraplength=425,justify='left',anchor='w')
+        self.live_notice.grid(row=3,column=0,columnspan=2,sticky='ew',pady=(6,0))
+        self.live_notice.grid_remove()
         if self.live_enabled and self.live_result:self.show_live_result(self.live_result)
     def import_macros(self):
         if not self.macro_edit_ready():return
@@ -307,6 +323,7 @@ class MacroTools:
         if not self.path or self.busy:return
         self.live_result=None
         self.live_enabled=True;self.monitor=LiveMonitor(self.path)
+        self.monitor.visible.clear()
         try:self.monitor.start()
         except Exception as exc:
             self.stop_live();self.render_fields()
@@ -315,7 +332,8 @@ class MacroTools:
     def stop_live(self):
         self.live_enabled=False
         monitor=getattr(self,'monitor',None)
-        if monitor:monitor.stop.set()
+        if monitor:
+            monitor.stop.set();monitor.visible.set()
         if getattr(self,'live_job',None):
             try:self.parent.after_cancel(self.live_job)
             except tk.TclError:pass
@@ -325,6 +343,15 @@ class MacroTools:
         if not self.live_enabled:return
         from studio_help import GROUPS
         if self.closed or self.app.selected_tab!=2 or GROUPS[self.category][0]!=_ui_tr('매핑·매크로') or not self.parent.winfo_viewable():self.stop_live();return
+        label=getattr(self,'live_label',None)
+        visible=bool(label and label.winfo_viewable() and
+            label.winfo_rooty()<self.canvas.winfo_rooty()+self.canvas.winfo_height() and
+            label.winfo_rooty()+label.winfo_height()>self.canvas.winfo_rooty())
+        if visible:self.monitor.visible.set()
+        else:
+            self.monitor.visible.clear()
+            self.live_job=self.parent.after(100,self.live_poll)
+            return
         try:
             result=self.monitor.results.get_nowait()
             if result.get('error'):
@@ -334,33 +361,43 @@ class MacroTools:
         self.live_job=self.parent.after(100,self.live_poll)
     def show_live_result(self,result):
         if not hasattr(self,'live_text'):return
-        from studio_settings_ui import BUTTONS,OUT_BUTTONS,HID_KEYS
+        view=tuple(result.get(key) for key in ('input','diag','seen_mask','last_buttons','last_hidden','last_hidden_sticks','last_output'))
+        if view==getattr(self,'_live_view',None):return
+        self._live_view=view
+        from studio_settings_ui import BUTTONS,HID_KEYS
         d=result.get('diag',{});s=result.get('input')
         names=lambda mask:' + '.join(n for i,n in enumerate(BUTTONS) if mask&(1<<i)) or _ui_tr('없음')
-        received=result.get('received_at');age=max(0,time.monotonic()-received) if received is not None else None
-        text=(_ui_tr('마지막 수신 입력: ') if age is not None and age>=1 else _ui_tr('PC로 보내는 패드 입력: '))+(names(s['mask']) if s else _ui_tr('입력 보고 대기 중'))
-        if age is not None:text+=_ui_tr('\n마지막 수신 {0}초 전 · 수신 보고 {1}개').format(f'{age:.1f}',result.get('reports',0))
+        text=_ui_tr('PC로 보내는 패드 입력: ')+(names(s['mask']) if s else _ui_tr('입력 보고 대기 중'))
         text+=_ui_tr('\n확인 시작 후 감지한 버튼: ')+names(result.get('seen_mask',s['mask'] if s else 0))
+        text+=_ui_tr('\n최근 관측 입력: ')+names(result.get('last_buttons',0))
+        hidden_parts=[names(result['last_hidden'])] if result.get('last_hidden') else []
+        for bit,label in ((1,_ui_tr('왼쪽 스틱')),(2,_ui_tr('오른쪽 스틱'))):
+            if result.get('last_hidden_sticks',0)&bit:hidden_parts.append(label)
+        text+=_ui_tr('\n최근 숨긴 조건 입력: ')+(' · '.join(hidden_parts) or _ui_tr('없음'))
+        output=result.get('last_output',{});parts=[]
+        injected=output.get('inject_low',0)|(output.get('inject_high',0)<<16)
+        if injected:parts.append(names(injected))
+        kb=output.get('keyboard',0);count=kb&15
+        if count:
+            code=kb>>8
+            key=next((name for name,value in HID_KEYS.items() if value==code),f'HID {code}')
+            parts.append(_ui_tr('키보드 {0}개 · 첫 키 {1}').format(count,key))
+        mouse=(kb>>4)&15
+        for bit,label in ((1,_ui_tr('마우스 왼쪽')),(2,_ui_tr('마우스 오른쪽')),(4,_ui_tr('마우스 중간'))):
+            if mouse&bit:parts.append(label)
+        text+=_ui_tr('\n최근 관측 출력: ')+(' · '.join(parts) or _ui_tr('없음'))
         if s:text+=_ui_tr('\n스틱 L {0}/{1} · R {2}/{3} · 트리거 L {4} / R {5}').format(f"{s['lx']}",f"{s['ly']}",f"{s['rx']}",f"{s['ry']}",f"{s['l2']}",f"{s['r2']}")
         if d:
-            hidden=d.get('suppress_low',0)|(d.get('suppress_high',0)<<16);injected=d.get('inject_low',0)|(d.get('inject_high',0)<<16);kb=d.get('keyboard',0)
-            outputs=' + '.join(OUT_BUTTONS[i+1] if i+1<len(OUT_BUTTONS) else str(i+1) for i in range(32) if injected&(1<<i)) or _ui_tr('없음')
+            hidden=d.get('suppress_low',0)|(d.get('suppress_high',0)<<16)
             sticks=' + '.join(name for bit,name in [(1,_ui_tr('왼쪽 스틱')),(2,_ui_tr('오른쪽 스틱'))] if d.get('stick',0)&bit)
-            mouse=' + '.join(name for bit,name in [(1,_ui_tr('왼쪽')),(2,_ui_tr('오른쪽')),(4,_ui_tr('가운데'))] if ((kb>>4)&15)&bit) or _ui_tr('없음')
-            text+=_ui_tr('\n현재 매핑 처리 상태 (약 1초 간격):\n게임에서 숨긴 입력: ')+names(hidden)+(' · '+sticks if sticks else '')
-            text+=_ui_tr('\n펌웨어 출력 상태: ')+outputs+_ui_tr(' · 키보드 {0}키 · 마우스 {1}').format(f'{kb & 15}',f'{mouse}')
-            first=(kb>>8)&255
-            if kb&15 and first:
-                key=next((name for name,code in HID_KEYS.items() if code==first),f'HID 0x{first:02X}')
-                text+=_ui_tr(' · 첫 키 {0}').format(key)
+            text+=_ui_tr('\n게임에서 숨긴 입력: ')+names(hidden)+(' · '+sticks if sticks else '')
             if 'touch_x' in d and 'touch_info' in d:
                 half=d['touch_info']&3
                 side=(_ui_tr('중앙 또는 손가락 없음'),_ui_tr('왼쪽'),_ui_tr('오른쪽'),_ui_tr('미확인'))[half]
                 text+=_ui_tr('\n최근 터치 클릭 판정: {0} · 처음 터치한 X {1}').format(side,d['touch_x'])
-            if result.get('diag_at') is not None:
-                text+=_ui_tr('\n진단 조회 {0}초 전 · 짧은 출력은 표시되지 않을 수 있습니다.').format(f"{max(0,time.monotonic()-result['diag_at']):.1f}")
             text+=_ui_tr('\n게임 입력 치환: ')+(_ui_tr('적용 중') if d.get('stick',0)&4 else _ui_tr('꺼짐'))
         self.live_text.set(text)
+        if hasattr(self,'live_notice'):self.live_notice.grid()
     def record_keys(self,parent,variables,release):
         editor=getattr(self,'macro_editor',None)
         if editor and not editor.closed:editor.start_capture('keys')

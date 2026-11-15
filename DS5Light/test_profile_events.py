@@ -33,6 +33,29 @@ class EventTests(unittest.TestCase):
    for clock.return_value in (0,0,1,1,3,3,30):monitor.tick(DeviceIdentity(b'pad','ours'))
    self.assertEqual(scan.call_count,3);opened.assert_not_called()
   monitor.close()
+ def test_missing_collection_can_reappear_under_same_hid_path(self):
+  monitor=events.ProfileEvents()
+  identity=DeviceIdentity(b'pad','ours')
+  row=dict(path=b'event',usage_page=0xff00,usage=0x52,serial_number='ours')
+  device=Mock()
+  device.get_feature_report.return_value=frame()
+  def receive(*args):
+   monitor.stop.set()
+   return frame(2)
+  device.read.side_effect=receive
+  with (patch.object(events,'start_thread',side_effect=lambda thread:thread.run()),
+        patch.object(events.time,'monotonic') as clock,
+        patch('hid.enumerate',side_effect=[[],[],[],[row]]) as scan,
+        patch('hid.device',return_value=device)):
+   for clock.return_value in (0,0,1,1,3,3,62):monitor.tick(identity)
+   self.assertEqual(scan.call_count,3)
+   clock.return_value=63
+   monitor.tick(identity)
+   monitor.tick(identity)
+   self.assertTrue(monitor.healthy)
+   self.assertTrue(monitor.changed)
+   device.open_path.assert_called_once_with(b'event')
+  monitor.close()
  def test_listener_deduplicates_and_falls_back_on_disconnect(self):
   monitor=events.ProfileEvents()
   class Immediate:

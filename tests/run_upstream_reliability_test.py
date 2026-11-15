@@ -11,6 +11,20 @@ auth=bt[bt.index('        case HCI_EVENT_AUTHENTICATION_COMPLETE:'):bt.index('  
 start=main.index('    if (cyw43_arch_init()) {')
 failure=main[start:main.index('\n    cyw43_arch_gpio_put',start)]
 usb_wait=bt[bt.index('bool bt_usb_features_pending() {'):bt.index('\n#else\nbool bt_usb_features_pending()')]
+cmd=(root/'src/cmd.cpp').read_text(encoding='utf-8')
+disconnect=bt[bt.index('bool bt_disconnect()'):bt.index('bool bt_is_connected()')]
+control_start=bt.index('            if (packet[0] == 0xA3 && size < 2)')
+control=bt[control_start:bt.index('            dse_on_control_packet',control_start)]
+wake=(root/'src/wake.cpp').read_text(encoding='utf-8')
+wake_reset=wake[wake.index('void wake_on_bt_disconnect('):wake.index('void wake_task(')]
+neutral_start=main.index('uint8_t interrupt_in_data[63]')
+neutral=main[neutral_start:main.index('critical_section_t report_cs',neutral_start)]
+reset_start=main.index('void controller_input_on_disconnect(')
+input_reset=main[reset_start:main.index('// Invoked when received GET_REPORT',reset_start)]
+get_start=main.index('uint16_t tud_hid_get_report_cb(')
+get_report=main[get_start:main.index('bool tud_audio_set_itf_cb(',get_start)]
+reply_start=cmd.index('static void pico_cmd_reply_read(')
+reply=cmd[reply_start:cmd.index('void pico_cmd_set(',reply_start)]
 code=r'''
 #include <cassert>
 #include <cstdint>
@@ -19,7 +33,7 @@ code=r'''
 #include <map>
 #include <vector>
 using hid_report_type_t=int;
-constexpr int HID_REPORT_TYPE_OUTPUT=2;
+constexpr int HID_REPORT_TYPE_OUTPUT=2, HID_REPORT_TYPE_FEATURE=3;
 struct SetStateData { uint8_t data[63]; };
 int reportSeqCounter=0, sends=0, updates=0, commands=0, features=0, state_sets=0;
 bool spk_active=false, changed=true;
@@ -46,7 +60,10 @@ uint8_t hci_event_authentication_complete_get_status(uint8_t *p) {return p[0];}
 uint16_t hci_event_authentication_complete_get_connection_handle(uint8_t *p) {return p[1];}
 const char *bd_addr_to_str(uint8_t*) {return "mock";}
 void gap_drop_link_key_for_bd_addr(uint8_t*) {++drops;}
-void bt_disconnect() {++disconnects;}
+constexpr int HCI_CON_HANDLE_INVALID=0xffff, GAP_CONNECTION_ACL=1, ERROR_CODE_COMMAND_DISALLOWED=12;
+int connection_type=GAP_CONNECTION_ACL, disconnect_status=ERROR_CODE_SUCCESS;
+int gap_get_connection_type(uint16_t){return connection_type;}
+int gap_disconnect(uint16_t handle){assert(handle==acl_handle);++disconnects;return disconnect_status;}
 void manual_power_note_activity() {++graces;}
 void gap_inquiry_start(int n) {assert(n==30);++searches;}
 void hci_send_cmd(int*,uint16_t,int) {++encrypts;}
@@ -61,11 +78,49 @@ bool usb_identity_pending=false, link_connected=true, suspended=false, host_susp
 int restored=0;
 std::map<uint8_t, std::vector<uint8_t>> feature_data;
 bool bt_is_connected(){return link_connected;}
+bool channels_open=true,check_dse=false,is_dse=false;
+bool bt_is_ready(){return link_connected&&channels_open;}
+bool macro_power_off_pending=false,control_full=false;
+constexpr uint32_t kControlRetryMs=40;
+int control_fifo=0, power_offs=0, usb_queries=0;
+bool queue_is_full(int*){return control_full;}
+void bt_power_off_controller(){++power_offs;}
+std::vector<uint8_t> get_feature_data(uint8_t id,uint16_t){
+ ++usb_queries;
+ const auto report=feature_data.find(id);
+ return report==feature_data.end()?std::vector<uint8_t>{}:report->second;
+}
+int edge_unlocks=0,sleep_acks=0;
+void dse_on_connect(){++edge_unlocks;}
+bool dse_is_profile_report(uint8_t id){return id>=0x70&&id<=0x7b;}
+bool dse_profiles_ready(){return true;}
+int usb_profile_event_get(uint8_t*,uint16_t){return 0;}
+std::vector<uint8_t> pico_portal_reply,pico_settings_reply;
+void manual_power_sleep_reply_read(){++sleep_acks;}
+int report_cs=0,wake_cs=0, ps_resets=0, macro_resets=0, mouse_resets=0, flick_resets=0;
+void critical_section_enter_blocking(int *cs){assert(*cs==0);++*cs;}
+void critical_section_exit(int *cs){assert(*cs==1);--*cs;}
+void ps_shortcut_reset(){++ps_resets;}
+void macro_reset(){++macro_resets;}
+void gyro_mouse_reset(){++mouse_resets;}
+void flick_stick_reset(){++flick_resets;}
+bool report_dirty=false,g_tm_down=true,bt_link_up=true;
+uint8_t prev_b7=1,prev_b8=2,prev_b9=3;
+uint8_t g_sm_stick_x=0,g_sm_stick_y=255;
+volatile uint8_t g_l2_pos=255,g_r2_pos=255,g_l1_btn=1,g_r1_btn=1;
+struct T2State { bool latched=false; } l2_st{true},r2_st{true};
+enum {WAKE_IDLE,WAKE_PENDING_PRESS,WAKE_REQUESTED,WAKE_KEY_DOWN,WAKE_KEY_UP_SENT} state=WAKE_KEY_DOWN;
+bool wake_owns_keyboard();
+#define ENABLE_SERIAL 0
 bool tud_suspended(){return suspended;}
 bool wake_host_is_suspended(){return host_suspended;}
 void restore_full_usb_identity(){++restored;}
 '''
-code+=usb_wait+'\n'
+code+=usb_wait+'\n'+disconnect+'\n'+reply+'\n'+get_report+'\n'+neutral+input_reset+wake_reset
+code+='void receive_control(uint8_t *packet,uint16_t size) {\n'+control+'}\n'
+start=bt.index('void bt_macro_power_off_task(bool requested)')
+end=bt.index('\n}',bt.index('void init_feature()',start))+2
+code+=bt[start:end]+'\n'
 code+=callback+'\nvoid auth(uint8_t *packet) {switch(6) {\n'+auth+'}}\n'
 code+='void boot() {\n'+failure+'\n}\n'
 code+=r'''
@@ -78,13 +133,29 @@ int main() {
  bt_usb_identity_task();assert(!restored);
  host_suspended=false;bt_usb_identity_task();bt_usb_identity_task();
  assert(restored==1&&!usb_identity_pending);
- feature_data.clear();usb_identity_pending=true;usb_feature_started_ms=0;now=119;
+ now=0;
+ is_dse=true;
+ init_feature();assert(usb_identity_pending&&check_dse&&!is_dse&&usb_queries==5);
+ feature_data[0x05].resize(41);feature_data[0x09].resize(20);feature_data[0x20].resize(64);
+ now=119;
  bt_usb_identity_task();assert(restored==1&&usb_identity_pending);
- now=120;link_connected=false;bt_usb_identity_task();assert(restored==1);
- link_connected=true;bt_usb_identity_task();assert(restored==2&&!usb_identity_pending);
+ now=120;channels_open=false;bt_usb_identity_task();assert(restored==1);
+ channels_open=true;bt_usb_identity_task();assert(restored==2&&!usb_identity_pending);
  config.usb_gamepad_mode=1;usb_identity_pending=true;now=0;
  bt_usb_identity_task();assert(restored==3&&!usb_identity_pending);
- config.usb_gamepad_mode=0;now=0;
+ config.usb_gamepad_mode=0;
+ now=0;control_full=true;bt_macro_power_off_task(true);
+ assert(macro_power_off_pending&&power_offs==0);
+ now=20;control_full=false;bt_macro_power_off_task(false);bt_macro_power_off_task(false);
+ assert(!macro_power_off_pending&&power_offs==1);
+ now=0xfffffff0u;control_full=true;bt_macro_power_off_task(true);
+ now+=40;control_full=false;bt_macro_power_off_task(false);
+ assert(!macro_power_off_pending&&power_offs==1);
+ control_full=true;bt_macro_power_off_task(true);link_connected=false;
+ bt_macro_power_off_task(false);link_connected=true;control_full=false;bt_macro_power_off_task(false);
+ assert(!macro_power_off_pending&&power_offs==1);
+ bt_macro_power_off_task(true);assert(power_offs==2);
+ now=0;
  uint8_t p[65]{};p[0]=2;for(int i=1;i<64;++i)p[i]=i;
  tud_hid_set_report_cb(0,0,0,p,64);assert(sends==1&&updates==1);
  uint8_t first[63];memcpy(first,sent+3,63);
@@ -112,9 +183,54 @@ int main() {
  event[0]=5;auth(event);event[0]=6;auth(event);assert(drops==2&&searches==3);
  event[0]=0;auth(event);assert(encrypts==1&&disconnects==3);
  event[1]=8;event[0]=5;auth(event);assert(drops==2&&disconnects==3);
+ const int prior_disconnects=disconnects;
+ connection_type=0;
+ assert(!bt_disconnect()&&disconnects==prior_disconnects);
+ connection_type=GAP_CONNECTION_ACL;
+ assert(bt_disconnect()&&disconnects==prior_disconnects+1);
+ disconnect_status=ERROR_CODE_COMMAND_DISALLOWED; // already queued in BTstack
+ assert(bt_disconnect());
+ disconnect_status=1;assert(!bt_disconnect());
+
+ init_feature();
+ uint8_t handshake[]={0x02}, short_edge[]={0xa3,0x70}, edge[]={0xa3,0x70,0x52};
+ receive_control(handshake,sizeof(handshake));
+ receive_control(short_edge,sizeof(short_edge));
+ assert(check_dse&&!is_dse&&edge_unlocks==0);
+ now+=120;bt_usb_identity_task();assert(!usb_identity_pending);
+ receive_control(edge,sizeof(edge));receive_control(edge,sizeof(edge));
+ assert(!check_dse&&is_dse&&edge_unlocks==1&&usb_identity_pending);
+
+ uint8_t native[]={0xa3,0x81,0xaa}, usb_reply[63]{};
+ pico_portal_reply={0x66,0x04,0x01};
+ receive_control(native,sizeof(native));
+ const int prior_queries=usb_queries;
+ assert(get_feature_data(0x81,63)[1]==0xaa); // Edge's internal poll
+ assert(tud_hid_get_report_cb(0,0x81,3,usb_reply,63)==3&&usb_reply[0]==0x66);
+ assert(usb_queries==prior_queries+1); // the local read doesn't poll Bluetooth
+ assert(tud_hid_get_report_cb(0,0x81,3,usb_reply,63)==1&&usb_reply[0]==0xaa);
+ pico_settings_reply={0x66,0x1b,0,1,1,0,0,0};
+ uint8_t native_settings[]={0xa3,0x84,0xbb};
+ receive_control(native_settings,sizeof(native_settings));
+ assert(tud_hid_get_report_cb(0,0x84,3,usb_reply,2)==2&&!sleep_acks);
+ assert(tud_hid_get_report_cb(0,0x84,3,usb_reply,63)==8&&sleep_acks==1);
+
+ memset(interrupt_in_data,255,sizeof(interrupt_in_data));
+ controller_input_on_disconnect();
+ assert(report_dirty&&!report_cs&&!l2_st.latched&&!r2_st.latched);
+ assert(interrupt_in_data[0]==128&&interrupt_in_data[7]==8&&interrupt_in_data[8]==0);
+ assert(interrupt_in_data[32]==0x80&&interrupt_in_data[36]==0x80);
+ assert(!g_l2_pos&&!g_r2_pos&&!g_l1_btn&&!g_r1_btn&&!g_tm_down);
+ assert(g_sm_stick_x==128&&g_sm_stick_y==128&&mouse_resets==1&&flick_resets==1);
+ wake_on_bt_disconnect();
+ assert(!bt_link_up&&state==WAKE_KEY_DOWN&&wake_owns_keyboard());
+ assert(prev_b7==8&&!prev_b8&&!prev_b9&&ps_resets==1&&macro_resets==1);
+ state=WAKE_PENDING_PRESS;
+ wake_on_bt_disconnect();assert(state==WAKE_IDLE&&!wake_owns_keyboard());
+
  boot();assert(!slept&&!reboots);init_error=1;try {boot();assert(false);}catch(int) {}
  assert(slept==500&&reboots==1);
- puts("PASS: USB paths, bounded initial feature wait, suspend and XInput gates, feature routing, auth and boot recovery");
+ puts("PASS: USB paths, USB restore on missing detection response, bounded macro power-off retry, suspend and XInput gates, Edge detection, Pico reply isolation, GAP disconnect, neutral input, wake key release, auth and boot recovery");
 }
 '''
 (out/'test.cpp').write_text(code,encoding='utf-8')
@@ -127,7 +243,7 @@ from test_support import firmware_build
 build=firmware_build(root)
 entries=json.loads((build/'compile_commands.json').read_text())
 with (out/'syntax.txt').open('w',encoding='utf-8') as log:
- for name in ('main.cpp','bt.cpp','wake.cpp','macro.cpp','audio.cpp','cmd.cpp'):
+ for name in ('main.cpp','bt.cpp','wake.cpp','macro.cpp','audio.cpp','cmd.cpp','config.cpp','manual_power.cpp','dse.cpp'):
   entry=next(e for e in entries if Path(e['file']).name==name)
   command,n=re.subn(r' -o \S+ -c ',' -fsyntax-only ',entry['command']);assert n==1
   command=command.replace(entry['file'],str(root/'src'/name))

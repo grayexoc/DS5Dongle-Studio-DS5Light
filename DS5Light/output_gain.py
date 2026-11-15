@@ -1,9 +1,10 @@
-"""Final PCM output level: 100% is exact unity, changes slew over at most 30 ms."""
+"""Final PCM output level: 100% is exact unity, changes slew over at most 40 ms."""
 
 from studio_i18n import text as _ui_tr
 import math
 
 import numpy as np
+from core import HAPTIC_GAIN_MAX
 
 
 
@@ -32,7 +33,7 @@ class OutputGain:
 
     def process(self,data,target):
 
-        if type(target) not in (int,float) or not math.isfinite(target) or not 0<=target<=1.5:
+        if type(target) not in (int,float) or not math.isfinite(target) or not 0<=target<=HAPTIC_GAIN_MAX:
 
             raise ValueError(_ui_tr('진동 세기 범위 오류'))
 

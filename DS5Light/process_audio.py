@@ -16,6 +16,7 @@ from datetime import datetime
 from ctypes import wintypes
 from windows_audio import snapshot as audio_snapshot
 from process_filter import is_excluded_process
+from capture_clock import CaptureClock
 
 HELPER=Path(__file__).with_name('ProcessCapture.exe')
 CAPTURE_RATE=48000
@@ -145,6 +146,7 @@ class ProcessCaptureStream:
         self.drops=0; self.stale=0; self.messages=deque(maxlen=12)
         self.protocol=None; self.last_read_timing=None; self.discard_before=0.
         self.prefill_discarded_frames=0; self.timestamp_errors=0; self.discontinuities=0
+        self._packet_frames=CAPTURE_READ_FRAMES
         self.child=subprocess.Popen([str(HELPER),str(pid),str(channels)],stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,stderr=subprocess.PIPE,bufsize=0,creationflags=0x08000000)
         self.reader=threading.Thread(target=self._read,daemon=True); start_thread(self.reader)
@@ -185,6 +187,7 @@ class ProcessCaptureStream:
                 if flags&1:self.discontinuities+=1
                 with self.condition:
                     if self.closed:break
+                    if size:self._packet_frames=size//(self.channels*2)
                     if stamp<self.discard_before:
                         self.prefill_discarded_frames+=size//(self.channels*2);continue
                     if len(self.queue)==self.queue.maxlen: self.drops+=1
@@ -199,6 +202,9 @@ class ProcessCaptureStream:
         # Keep compatibility with older stream adapters and manually supplied buffers.
         if not hasattr(self,'condition'):self.condition=threading.Condition(self.lock)
         if not hasattr(self,'pending_segments'):self.pending_segments=deque()
+        if not hasattr(self,'_clock'):
+            self._clock=CaptureClock();self._clock_events=None
+            self.rate_corrected_frames=0;self.rate_corrected_blocks=0
         if self.pending and not self.pending_segments:
             self.pending_segments.append([len(self.pending),None,self.pending_time,None,0,self.pending_time])
     def _available_locked(self,frames=CAPTURE_READ_FRAMES):
@@ -240,13 +246,40 @@ class ProcessCaptureStream:
         self._buffer_state()
         with self.condition:
             if self._available_locked(n)<n:raise RuntimeError(_ui_tr('게임 캡처 버퍼 부족'))
-            return self._take_locked(n)
+            data=self._take_clocked_locked(n)
+            if data is None:raise RuntimeError(_ui_tr('게임 캡처 버퍼 부족'))
+            return data
+    def _take_clocked_locked(self,n):
+        events=(self.stale,getattr(self,'drops',0),getattr(self,'discontinuities',0))
+        if self._clock_events!=events:
+            self._clock.reset();self._clock_events=events
+        buffered=(len(self.pending)+sum(len(p[1]) for p in self.queue))//(self.channels*2)
+        plan=self._clock.plan(n,buffered,getattr(self,'_packet_frames',CAPTURE_READ_FRAMES))
+        if plan is None:return self._take_locked(n)
+        consumed,needed,_,_=plan
+        # Only use available lookahead; never wait for another packet to correct drift.
+        if self._available_locked(needed)<needed:
+            self._clock.reset()
+            return self._take_locked(n) if len(self.pending)>=n*self.channels*2 else None
+        if events!=(self.stale,getattr(self,'drops',0),getattr(self,'discontinuities',0)):
+            self._clock.reset();return self._take_locked(n)
+        data=bytes(self.pending[:needed*self.channels*2])
+        phase=self._clock.phase
+        output=self._clock.render(data,self.channels,plan)
+        self._take_locked(consumed)
+        if self.last_read_timing[0] is not None:
+            captured,*rest=self.last_read_timing
+            self.last_read_timing=(captured+phase/CAPTURE_RATE,*rest)
+        self.rate_corrected_frames+=consumed-n;self.rate_corrected_blocks+=1
+        return output
     def read_wait(self,n,stop_event):
         self._buffer_state()
         with self.condition:
             while True:
                 if stop_event.is_set():raise KeyboardInterrupt()
-                if self._available_locked(n)>=n:return self._take_locked(n)
+                if self._available_locked(n)>=n:
+                    data=self._take_clocked_locked(n)
+                    if data is not None:return data
                 # Data/EOF/close notify immediately; timeout only backs up cancellation.
                 self.condition.wait(.1)
     def wake_waiters(self):
@@ -259,12 +292,15 @@ class ProcessCaptureStream:
             self.prefill_discarded_frames+=sum(len(packet[1])//(self.channels*2) for packet in self.queue)
             self.pending.clear();self.pending_segments.clear();self.queue.clear()
             self.pending_time=0.;self.last_read_timing=None
+            if hasattr(self,'_clock'):self._clock.reset()
             self.condition.notify_all()
     def buffer_snapshot(self):
         with self.condition:
             frames=(len(self.pending)+sum(len(packet[1]) for packet in self.queue))//(self.channels*2)
             return dict(buffer_ms=frames/CAPTURE_RATE*1000,prefill_discarded_frames=self.prefill_discarded_frames,
                         timestamp_errors=self.timestamp_errors,discontinuities=self.discontinuities,
+                        rate_corrected_frames=getattr(self,'rate_corrected_frames',0),
+                        rate_corrected_blocks=getattr(self,'rate_corrected_blocks',0),
                         capture_timestamp_supported=self.protocol==b'DS5T')
     def get_input_latency(self): return 0.0 # Not measured; process-mode status marks unknown.
     def stop_stream(self): self.close()

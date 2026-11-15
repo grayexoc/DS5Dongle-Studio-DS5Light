@@ -44,15 +44,13 @@ int reportSeqCounter = 0;
 uint8_t packetCounter = 0;
 bool spk_active = false;
 
-uint8_t interrupt_in_data[63] = {
-    0x7f, 0x7d, 0x7f, 0x7e, 0x00, 0x00, 0xa7,
-    0x08, 0x00, 0x00, 0x00, 0x52, 0x43, 0x30, 0x41,
-    0x01, 0x00, 0x0e, 0x00, 0xef, 0xff, 0x03, 0x03,
-    0x7b, 0x1b, 0x18, 0xf0, 0xcc, 0x9c, 0x60, 0x00,
-    0xfc, 0x80, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00,
-    0x00, 0x00, 0x09, 0x09, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0xa7, 0xad, 0x60, 0x00, 0x29, 0x18, 0x00,
-    0x53, 0x9f, 0x28, 0x35, 0xa5, 0xa8, 0x0c, 0x8b
+uint8_t interrupt_in_data[63]{};
+static constexpr uint8_t neutral_input_data[63] = {
+    128, 128, 128, 128, 0, 0, 0, 0x08, // centered sticks, released hat
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0x80, 0, 0, 0, 0x80, // both touch contacts inactive
 };
 
 critical_section_t report_cs;
@@ -256,10 +254,11 @@ static inline void macro_apply_buttons(uint8_t *r) {
     if (macro_suppress_stick(true))  { r[2] = 128; r[3] = 128; }
 }
 
+static T2State r2_st{}, l2_st{};
+
 static inline void apply_trigger_output(uint8_t *r) {
     const auto &c = get_config();
     macro_apply_buttons(r);
-    static T2State r2_st{}, l2_st{};
     // Both passes read the PHYSICAL trigger values and decide their own latch
     // first. Only then are the stage-2 presses applied. Doing it inline meant
     // R2's press landed before L2's pass, which then cleared the very click bit
@@ -1263,6 +1262,26 @@ void __not_in_flash_func(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16
     }
 }
 
+void controller_input_on_disconnect() {
+    critical_section_enter_blocking(&report_cs);
+    memcpy(interrupt_in_data, neutral_input_data, sizeof(interrupt_in_data));
+    report_dirty = true;
+    critical_section_exit(&report_cs);
+
+    r2_st = {};
+    l2_st = {};
+    extern volatile uint8_t g_l2_pos, g_r2_pos, g_l1_btn, g_r1_btn;
+    g_l2_pos = 0;
+    g_r2_pos = 0;
+    g_l1_btn = 0;
+    g_r1_btn = 0;
+    g_sm_stick_x = 128;
+    g_sm_stick_y = 128;
+    g_tm_down = false;
+    gyro_mouse_reset();
+    flick_stick_reset();
+}
+
 // Invoked when received GET_REPORT control request
 // Application must fill buffer report's content and return its length.
 // Return zero will cause the stack to STALL request
@@ -1286,6 +1305,11 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
     if (itf == 0 && report_type == HID_REPORT_TYPE_FEATURE && report_id == 0x8f)
         return usb_profile_event_get(buffer, reqlen);
 
+    if (itf == 0 && report_type == HID_REPORT_TYPE_FEATURE &&
+        (report_id == 0x81 || report_id == 0x84)) {
+        if (const auto n = pico_cmd_get_reply(report_id, buffer, reqlen)) return n;
+    }
+
     // DSE profiles: while the unlock + prefetch is still in progress, return 0
     // (NAK) for profile reads so the PS app retries rather than caching an
     // empty snapshot. Still kick off the background BT fetch.
@@ -1296,22 +1320,6 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
 
     std::vector<uint8_t> feature_data = get_feature_data(report_id, reqlen);
     if (!feature_data.empty()) {
-        // 0x81 (portal command replies) and 0x82 (slot-command replies, split off
-        // to dodge the portal's 0x81 diagnostic poll) both carry a full 0x66-framed
-        // reply that must be returned VERBATIM. Every other report id is a native
-        // report whose stored leading byte is the report id and gets stripped.
-        // CLAMP to reqlen in every path: TinyUSB sizes the transfer buffer from
-        // the DESCRIPTOR-declared report size. Copying more than reqlen is a
-        // buffer overflow in the USB stack (this is exactly how routing 63-byte
-        // slot replies through 0x82 - declared as a 9-byte report - corrupted
-        // reads and threw errors in WebHID). Slot replies live on 0x84, whose
-        // declared size is the full 63 bytes.
-        if ((report_id == 0x81 || report_id == 0x84) && feature_data[0] == 0x66) {
-            const uint16_t n = (uint16_t)((feature_data.size() < reqlen) ? feature_data.size() : reqlen);
-            memcpy(buffer, feature_data.data(), n);
-            pico_cmd_reply_read(report_id, buffer, n);
-            return n;
-        }
         const uint16_t n = (uint16_t)(((feature_data.size() - 1) < reqlen) ? (feature_data.size() - 1) : reqlen);
         memcpy(buffer, feature_data.data() + 1, n);
         return n;
@@ -1463,6 +1471,7 @@ int main() {
 #endif
 
     // Initialize the critical section for the report buffer
+    memcpy(interrupt_in_data, neutral_input_data, sizeof(interrupt_in_data));
     critical_section_init(&report_cs);
     wake_init();
 
@@ -1578,7 +1587,7 @@ int main() {
         #ifdef ENABLE_WAKE_HID
         ps_shortcut_task();
         macro_task();
-        if (macro_take_power_off() && bt_is_ready()) bt_power_off_controller();
+        bt_macro_power_off_task(macro_take_power_off());
         uint8_t macro_slot; bool macro_chime; uint32_t macro_source;
         if (macro_take_profile(macro_slot, macro_chime, macro_source)) {
             uint8_t active; bool edited; uint8_t name[SLOT_NAME_LEN];

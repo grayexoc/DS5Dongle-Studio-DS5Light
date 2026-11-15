@@ -407,7 +407,7 @@ def compact_ko_help(text):
     return '\n'.join(result)
 
 
-def help_text(key):
+def help_text(key,*,default=None,description=None):
 
     from localization import LANGUAGE
 
@@ -432,8 +432,9 @@ def help_text(key):
             'lightbar_rgb':'Choose the fixed lightbar color. Apply or save the profile to send it.'}
 
         from studio_english_strings import FIELD_HELP
-        desc=FIELD_HELP.get(key, DESCRIPTIONS.get(key) or extra.get(key,WEB_HELP.get(key,'')))
-        if key in REFERENCE and key!='audio_buffer_length': desc+='\n\nRecommended: '+format_value(key,REFERENCE[key])
+        desc=description if description is not None else FIELD_HELP.get(key, DESCRIPTIONS.get(key) or extra.get(key,WEB_HELP.get(key,'')))
+        if default is not None:desc+='\n\nDefault: '+format_value(key,default)
+        elif key in REFERENCE and key!='audio_buffer_length': desc+='\n\nRecommended: '+format_value(key,REFERENCE[key])
         elif key=='speaker_volume':desc+='\n\nDefault: '+format_value(key,DEFAULTS[key])
 
         return label(key)+(('\n\n'+desc) if desc else '')
@@ -442,13 +443,14 @@ def help_text(key):
 
     title=label(key)+' · '+f[3]
 
-    desc=DESCRIPTIONS.get(key,'').replace(_ui_tr('동글'),'Pico').replace(_ui_tr('오토햅틱'),_ui_tr('오디오햅틱')).replace(_ui_tr('오토 햅틱'),_ui_tr('오디오햅틱'))
+    desc=(description if description is not None else DESCRIPTIONS.get(key,'')).replace(_ui_tr('동글'),'Pico').replace(_ui_tr('오토햅틱'),_ui_tr('오디오햅틱')).replace(_ui_tr('오토 햅틱'),_ui_tr('오디오햅틱'))
 
     text=title+('\n\n'+compact_ko_help(desc) if desc else '')
 
-    if key in REFERENCE:text+=_ui_tr('\n\n추천 시작값: ')+format_value(key,REFERENCE[key])
+    if default is not None:text+=_ui_tr('\n\n기본값 기준: ')+format_value(key,default)
+    elif key in REFERENCE:text+=_ui_tr('\n\n추천 시작값: ')+format_value(key,REFERENCE[key])
 
-    elif key in DEFAULTS and key!='headset_volume':
+    elif key in DEFAULTS and key not in ('headset_volume','r2t_mode'):
 
         value=DEFAULTS[key]
 
@@ -573,3 +575,4 @@ DESCRIPTIONS['headset_volume']=_ui_tr('듀얼센스 단자에 연결한 헤드�
 DESCRIPTIONS['lock_volume']=_ui_tr('Windows·게임의 듀얼센스 음량 변경 명령 차단\n게임 자체의 소리 크기 설정은 별도')
 LABELS['at_pushback_src']=_ui_tr('트리거 반동 소스')
 DESCRIPTIONS['at_pushback_src']=_ui_tr('트리거 반동을 만드는 일반 진동·오디오햅틱 신호 선택\n커스텀 트리거 효과 설정 중 반동 세기 조절 가능')
+DESCRIPTIONS['disable_usb_sn']=_ui_tr('켜면 일부 게임·모드와의 호환성 개선\nDualSense Edge는 특히 햅틱·스피커 호환성을 위해 켜기 권장\n변경 시 장치가 재연결되며 윈도 소리 제어판의 기본 장치를 다시 선택해야 할 수 있음')

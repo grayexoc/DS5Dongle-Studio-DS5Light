@@ -300,7 +300,8 @@ void wake_on_bt_input(const uint8_t *hid_input, uint16_t len) {
 void wake_on_bt_disconnect(void) {
     bt_link_up = false;
     critical_section_enter_blocking(&wake_cs);
-    state = WAKE_IDLE;
+    // A wake already in progress must still send its keyboard release.
+    if (!wake_owns_keyboard()) state = WAKE_IDLE;
     prev_b7 = 0x08; prev_b8 = 0x00; prev_b9 = 0x00;
     critical_section_exit(&wake_cs);
     ps_shortcut_reset();
@@ -389,8 +390,8 @@ void wake_task(void) {
         // to receive and obey; if it is not delivered, or is ignored, the
         // controller silently stays connected and awake - and with the link still
         // up the wake FSM never sees the disconnect it expects, so a later PS
-        // press does not wake the host either. bt_disconnect() is an HCI command
-        // to our OWN radio, so it cannot be refused. A disconnected DualSense
+        // press does not wake the host either. BTstack queues the link teardown
+        // for our own radio. A disconnected DualSense
         // still powers down on its own idle timeout, so the battery saving is
         // kept; it just happens a few minutes later.
         // (Matches upstream's fix for the same intermittent failure.)

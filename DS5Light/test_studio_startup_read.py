@@ -78,10 +78,11 @@ class EntryTests(unittest.TestCase):
         for key in LIGHTBAR_FIELDS:ui.doc.values.pop(key);ui.doc.baseline.pop(key)
         with patch.object(ui,'task') as task:
             ui.begin_entry();self.root.update_idletasks();task.assert_not_called()
-    def test_open_settings_cancels_pending_startup_slot_sweep(self):
+    def test_open_settings_keeps_pending_lightweight_initial_probe(self):
         ui=self.editor();callback=Mock()
         self.ui.studio.startup_id=self.root.after(1,callback)
-        ui.open();self.root.update();callback.assert_not_called()
-        self.assertIsNone(self.ui.studio.startup_id)
+        job=self.ui.studio.startup_id
+        ui.open();self.root.update_idletasks();callback.assert_not_called()
+        self.assertEqual(self.ui.studio.startup_id,job)
 
 if __name__=='__main__':unittest.main()

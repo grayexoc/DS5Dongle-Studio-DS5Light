@@ -30,7 +30,7 @@ code = r'''
 #include <cstdio>
 #include "state_mgr.h"
 #include "output_diagnostics.h"
-std::map<uint8_t,std::vector<uint8_t>> feature_data;
+std::vector<uint8_t> pico_settings_reply;
 bool ready=true, processing=false;
 uint8_t auto_mode=0;
 OutputTest output_test;
@@ -75,46 +75,46 @@ void command(uint8_t id,const uint8_t *buffer,uint16_t bufsize){switch(id){
 }}
 int main(){
  uint8_t payload[5]={0,0x12,0x34,0x56,0x78};
- command(0x1e,payload,5);auto r=feature_data[0x84];
+ command(0x1e,payload,5);auto r=pico_settings_reply;
  assert(r.size()==63&&r[2]==0&&r[3]==1&&r[4]==0&&!memcmp(r.data()+5,payload+1,4));
  assert(r[9]==19&&r[10]==1&&r[12]==4&&r[13]==100&&r[15]==200&&r[17]==uint8_t(-42));
  assert(r[18]==3&&r[19]==3&&r[27]==1&&r[35]==1&&r[43]==uint8_t(1234));
  assert(r[47]==1&&r[48]==100&&r[50]==200&&r[52]==0x78&&r[55]==0x12&&r[56]==1&&r[57]==1&&r[58]==2);
  assert(starts==0&&activity==0);
  g_audio_transport_stats.sent=0xffffffff;g_audio_transport_stats.retries=9;
- payload[0]=1;command(0x1e,payload,5);r=feature_data[0x84];
+ payload[0]=1;command(0x1e,payload,5);r=pico_settings_reply;
  assert(r[9]==255&&r[12]==255&&r[41]==9&&r[45]==5);
- for(unsigned n=0;n<5;++n){command(0x1e,payload,n);assert(feature_data[0x84][2]==1);}
- payload[0]=2;command(0x1e,payload,5);r=feature_data[0x84];
+ for(unsigned n=0;n<5;++n){command(0x1e,payload,n);assert(pico_settings_reply[2]==1);}
+ payload[0]=2;command(0x1e,payload,5);r=pico_settings_reply;
  assert(r[2]==0&&r[4]==2&&!memcmp(r.data()+5,payload+1,4));
  assert(r[9]==255&&r[12]==255&&r[13]==2&&r[17]==3&&r[21]==4);
- payload[0]=3;command(0x1e,payload,5);assert(feature_data[0x84][2]==1);
+ payload[0]=3;command(0x1e,payload,5);assert(pico_settings_reply[2]==1);
  for(unsigned kind=1;kind<=15;++kind){
   payload[0]=kind;command(0x1f,payload,5);
-  assert(feature_data[0x84][2]==0&&output_test.kind==kind);
+  assert(pico_settings_reply[2]==0&&output_test.kind==kind);
  }
  unsigned before=starts;payload[0]=16;command(0x1f,payload,5);
- assert(feature_data[0x84][2]==1&&starts==before&&output_test.kind==15);
+ assert(pico_settings_reply[2]==1&&starts==before&&output_test.kind==15);
  payload[0]=1;processing=true;command(0x1f,payload,5);assert(starts==before);
  processing=false;auto_mode=1;command(0x1f,payload,5);assert(starts==before);
  auto_mode=0;ready=false;command(0x1f,payload,5);assert(starts==before);
  ready=true;power=ManualPowerState::Stopping;command(0x1f,payload,5);assert(starts==before);
  payload[0]=0;processing=true;command(0x1f,payload,5);
- assert(feature_data[0x84][2]==0&&output_test.kind==0&&output_test.release&&starts==before);
+ assert(pico_settings_reply[2]==0&&output_test.kind==0&&output_test.release&&starts==before);
  // Capability and preview requests must reach the real command dispatch.
- payload[0]=0;before=activity;command(0x20,payload,5);r=feature_data[0x84];
+ payload[0]=0;before=activity;command(0x20,payload,5);r=pico_settings_reply;
  assert(r.size()==63&&r[0]==0x66&&r[1]==0x20&&r[2]==0&&r[3]==1&&r[4]==0&&r[9]==0x1f);
  assert(!memcmp(r.data()+5,payload+1,4)&&chimes==0&&activity==before);
- for(unsigned n=0;n<5;++n){command(0x20,payload,n);assert(feature_data[0x84][2]==1);}
- payload[0]=2;command(0x20,payload,5);assert(feature_data[0x84][2]==1&&chimes==0);
- payload[0]=1;command(0x20,payload,5);r=feature_data[0x84];
+ for(unsigned n=0;n<5;++n){command(0x20,payload,n);assert(pico_settings_reply[2]==1);}
+ payload[0]=2;command(0x20,payload,5);assert(pico_settings_reply[2]==1&&chimes==0);
+ payload[0]=1;command(0x20,payload,5);r=pico_settings_reply;
  assert(r[2]==0&&r[4]==1&&!memcmp(r.data()+5,payload+1,4)&&chimes==1&&activity==before+1);
- chime_ok=false;command(0x20,payload,5);assert(feature_data[0x84][2]==2&&chimes==2);
- payload[0]=0;command(0x21,payload,1);r=feature_data[0x84];
+ chime_ok=false;command(0x20,payload,5);assert(pico_settings_reply[2]==2&&chimes==2);
+ payload[0]=0;command(0x21,payload,1);r=pico_settings_reply;
  assert(r[0]==0x66&&r[1]==0x21&&r[2]==0&&r[3]==1&&r[4]==0&&serial_writes==0);
- payload[0]=1;payload[1]=1;command(0x21,payload,2);assert(feature_data[0x84][2]==0&&feature_data[0x84][4]==1&&serial_writes==1);
- serial_save_ok=false;payload[1]=0;command(0x21,payload,2);assert(feature_data[0x84][2]==2&&feature_data[0x84][4]==1&&serial_writes==2);
- payload[1]=2;command(0x21,payload,2);assert(feature_data[0x84][2]==1&&serial_writes==2);
+ payload[0]=1;payload[1]=1;command(0x21,payload,2);assert(pico_settings_reply[2]==0&&pico_settings_reply[4]==1&&serial_writes==1);
+ serial_save_ok=false;payload[1]=0;command(0x21,payload,2);assert(pico_settings_reply[2]==2&&pico_settings_reply[4]==1&&serial_writes==2);
+ payload[1]=2;command(0x21,payload,2);assert(pico_settings_reply[2]==1&&serial_writes==2);
  puts("PASS: real diagnostic/test/extension/serial commands: tags, capabilities, preview gates, malformed payload and no read side effects");
 }
 '''

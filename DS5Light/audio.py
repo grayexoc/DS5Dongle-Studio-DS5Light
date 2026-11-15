@@ -154,7 +154,7 @@ class OutputProcessor:
 
     def __init__(self):
 
-        self.processor=Processor(); self.last_policy=None; self.level=OutputGain()
+        self.processor=None; self.last_policy=None; self.level=OutputGain()
 
         self._capacity=0
 
@@ -192,17 +192,15 @@ class OutputProcessor:
                 data=pcm.tobytes()
             return self.level.process(data,controls.gain)  # Exact original bytes at steady 100%.
 
-        if self.last_policy in ('bypass','pure'):
-
-            self.processor=Processor()
-
-        self.last_policy='filtered'
-
         source=np.frombuffer(data,'<i2').reshape(-1,4)
 
         n=len(source)
 
         if not n:return self.level.process(data,controls.gain)
+
+        if self.processor is None or self.last_policy in ('bypass','pure'):
+            self.processor=Processor()
+        self.last_policy='filtered'
 
         self._buffers(n)
 
@@ -319,7 +317,11 @@ class Engine:
 
             try:
 
-                bridge_conflict(); self._check(); self._run()
+                bridge_conflict(); self._check()
+                controls=self.controls
+                if controls.mode=='normal' and not controls.bypass:
+                    self.output_processor.processor=Processor()
+                self._check(); self._run()
 
             except KeyboardInterrupt: self.status=_ui_tr('정지'); self.phase='stopped'
 

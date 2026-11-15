@@ -17,6 +17,7 @@ class LightingTests(unittest.TestCase):
         self.assertEqual(titles.index('조명'),titles.index('장치')+1)
         for key in ui.LIGHTING_FIELDS:self.assertIn(key,ui.field_views)
         self.assertEqual(ui.field_views['lightbar_off'][1][0].text,'끄기')
+        self.assertEqual(ui.field_views['disable_pico_led'][0].winfo_children()[0].cget('text'),'Pico LED')
         self.assertFalse(ui.doc.changes)
 
     def test_pico_positive_toggle_preserves_wire_polarity(self):

@@ -25,15 +25,15 @@ class GainTests(unittest.TestCase):
         self.assertEqual(OutputProcessor().process(x,Controls(bypass=True)),x)
     def test_boost_mute_and_output_limit(self):
         x=np.tile(np.array([1000,-1000,30000,-30000],dtype='<i2'),(1920,1)).tobytes()
-        level=OutputGain(); y=np.frombuffer(level.process(x,1.5),'<i2').reshape(-1,4)
-        np.testing.assert_array_equal(y[-1],[1500,-1500,32767,-32768])
+        level=OutputGain(); y=np.frombuffer(level.process(x,2.),'<i2').reshape(-1,4)
+        np.testing.assert_array_equal(y[-1],[2000,-2000,32767,-32768])
         self.assertGreater(level.limited_samples,0)
         muted=np.frombuffer(level.process(x,0),'<i2').reshape(-1,4)
         np.testing.assert_array_equal(muted[-1],[0,0,0,0])
     def test_slew_is_bounded_and_chunk_independent(self):
         x=np.full((1920,4),8000,dtype='<i2')
-        a=OutputGain(); full=np.frombuffer(a.process(x.tobytes(),1.5),'<i2')
-        b=OutputGain(); split=np.frombuffer(b''.join(b.process(chunk.tobytes(),1.5) for chunk in np.split(x,16)),'<i2')
+        a=OutputGain(); full=np.frombuffer(a.process(x.tobytes(),2.),'<i2')
+        b=OutputGain(); split=np.frombuffer(b''.join(b.process(chunk.tobytes(),2.) for chunk in np.split(x,16)),'<i2')
         self.assertLessEqual(int(np.max(np.abs(full.astype(int)-split))),1)
         frames=full.reshape(-1,4)[:,0]
         self.assertLessEqual(int(np.max(np.abs(np.diff(frames.astype(int))))),10)
@@ -54,7 +54,7 @@ class GainTests(unittest.TestCase):
             np.testing.assert_array_equal(front[:,:2],legacy[:,:2])
             self.assertTrue(np.any(legacy[:,2:]));self.assertFalse(np.any(front[:,2:]))
     def test_invalid_gain_rejected(self):
-        for value in (-.1,1.51,float('nan'),True):
+        for value in (-.1,2.01,float('nan'),True):
             with self.assertRaises(ValueError): OutputGain().process(bytes(8),value)
 
 
@@ -62,7 +62,9 @@ class PersistenceTests(unittest.TestCase):
     def test_legacy_preferences_gain_defaults_to_unity(self):
         data=default_preferences(); data['controls'].pop('gain')
         self.assertEqual(validate_preferences({'version':1,'preferences':data})['controls']['gain'],1.)
-        data['controls']['gain']=1.51
+        data['controls']['gain']=2.
+        self.assertEqual(validate_preferences({'version':1,'preferences':data})['controls']['gain'],2.)
+        data['controls']['gain']=2.01
         with self.assertRaises(ValueError): validate_preferences({'version':1,'preferences':data})
     def test_game_link_migrates_atomically_and_can_be_removed(self):
         with tempfile.TemporaryDirectory() as temp:

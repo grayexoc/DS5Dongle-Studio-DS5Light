@@ -313,8 +313,7 @@ void manual_power_task() {
         }
         if (!connected) { enter_dormant(); return; }
         if (!disconnect_requested && now - state_started_ms >= 150) {
-            bt_disconnect();
-            disconnect_requested = true;
+            disconnect_requested = bt_disconnect();
         }
         if (now - state_started_ms >= 3000) enter_dormant();
         return;
@@ -332,8 +331,7 @@ void manual_power_task() {
             disconnect_requested = false;
         }
         if (!disconnect_requested && now - state_started_ms >= 10000) {
-            bt_disconnect();
-            disconnect_requested = true;
+            disconnect_requested = bt_disconnect();
         }
         if (device_auto_dormant() && now - state_started_ms >= 13000) enter_dormant();
         return;

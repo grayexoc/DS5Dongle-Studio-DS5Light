@@ -686,8 +686,10 @@ bool config_activation_save_pending() { return activation_save_pending; }
 
 void set_config(const uint8_t *new_config, const uint16_t len) {
     const auto copy_len = len < sizeof(Config_body) ? len : sizeof(Config_body);
+    const bool mic_was_disabled = config.body.disable_mic;
     memmove(&config.body, new_config, copy_len);
     config_valid();
+    if (mic_was_disabled != bool(config.body.disable_mic)) audio_mic_policy_changed();
     if (config.body.disable_pico_led) {
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
     }else {

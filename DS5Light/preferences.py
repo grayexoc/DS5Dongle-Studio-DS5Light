@@ -6,8 +6,9 @@ from pathlib import Path
 import tempfile
 import time
 
-from core import Controls
+from core import Controls, HAPTIC_GAIN_MAX
 from mute_shortcut import default_binding, validate_binding
+from studio_startup import clean_slot_history
 
 
 def default_preferences():
@@ -25,6 +26,7 @@ def default_preferences():
         'window_height': 1000,
         'mute_shortcut': default_binding(),
         'controls': Controls().__dict__,
+        'studio_slots': [],
     }
 
 
@@ -66,7 +68,7 @@ def validate(value):
         raise ValueError(_ui_tr('오디오 옵션 값이 올바르지 않습니다.'))
     if type(c.strength) not in (int, float) or not 0 <= c.strength <= 1 or c.limiter not in ('hard', 'soft'):
         raise ValueError(_ui_tr('오디오 옵션 범위가 올바르지 않습니다.'))
-    if type(c.gain) not in (int,float) or not 0<=c.gain<=1.5:
+    if type(c.gain) not in (int,float) or not 0<=c.gain<=HAPTIC_GAIN_MAX:
         raise ValueError(_ui_tr('진동 세기 범위 오류'))
     if type(c.impact) not in (int,float) or not 0<=c.impact<=1:
         raise ValueError(_ui_tr('충격 보존 범위 오류'))
@@ -77,6 +79,7 @@ def validate(value):
     out.update({key: data.get(key, defaults[key]) for key in defaults})
     out['controls'] = c.__dict__
     out['mute_shortcut'] = shortcut
+    out['studio_slots'] = clean_slot_history(data.get('studio_slots', []))
     return out
 
 

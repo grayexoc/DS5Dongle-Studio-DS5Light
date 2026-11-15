@@ -34,6 +34,11 @@ class PresentationTests(unittest.TestCase):
                 self.assertTrue(any('가'<=char<='힣' for char in description),key)
         self.assertEqual(reference_point('audio_buffer_length'),(48,'추천'))
         self.assertIn('끊기면 64',help_text('audio_buffer_length'))
+        self.assertIn(' · Hide USB serial number',help_text('disable_usb_sn'))
+        self.assertIn(' · Game rumble to triggers',help_text('r2t_mode'))
+        self.assertIn(' · Gyro activation',help_text('gyro_mode'))
+        self.assertNotIn('기본값 기준',help_text('r2t_mode'))
+        self.assertIn('기본 장치를 다시 선택',help_text('disable_usb_sn'))
         self.assertEqual(LABELS['gyro_output'],'자이로 작동 기준')
         self.assertEqual(LABELS['haptics_gain'],'네이티브 햅틱 세기')
         self.assertEqual(TITLES['Device & Connection'],'장치')
@@ -104,6 +109,23 @@ class PresentationTests(unittest.TestCase):
             client.command.return_value=bytes((0x66,0x0c,1,0))
             with self.assertRaises(ValueError):operation()
 
+    def test_trigger_status_is_clickable_text_and_respects_busy_state(self):
+        e=self.editor();e.path=b'test';e.select_category(2)
+        link=next(w for w in walk(e.body) if isinstance(w,tk.Label) and w.cget('text')=='Pico 효과 상태 확인')
+        self.assertEqual(link.cget('cursor'),'hand2')
+        self.assertFalse(link.bind('<Enter>'))
+        tip=next(tip for tip in e.tips if tip.widget.master is link.master)
+        self.assertTrue(tip.widget.bind('<Enter>'))
+        self.assertTrue(link.bind('<Return>'))
+        self.root.deiconify();self.root.update()
+        with patch.object(e,'check_trigger_status') as check:
+            link.event_generate('<Button-1>');self.root.update()
+            check.assert_called_once_with('L2')
+            e.busy=True
+            link.event_generate('<Button-1>');self.root.update()
+            self.assertEqual(check.call_count,1)
+        e.busy=False
+
     def test_quick_input_stages_self_mapping_and_copies_to_correct_side(self):
         from studio_settings_protocol import validate_changes
         e=self.editor();e.select_category(2)
@@ -119,6 +141,11 @@ class PresentationTests(unittest.TestCase):
         self.assertIn('저항 시작 위치',self.texts(e))
         self.assertEqual(e.range_controls['t2_l2_pos'][1].marker,14)
         self.assertEqual(e.range_controls['at_l2_strength'][1].marker,100)
+        from studio_option_help import option_help
+        self.assertIn('기본값 기준: 100',option_help(e,'at_l2_strength'))
+        self.assertNotIn('기본값 기준: 70',option_help(e,'at_l2_strength'))
+        self.assertIn('게임에 트리거 100% 입력 전달',option_help(e,'t2_l2_pos'))
+        self.assertIn('기본값 기준: 14',option_help(e,'t2_l2_pos'))
         self.root.deiconify()
         self.root.update_idletasks()
         self.assertFalse(any(w.find_withtag('full_input_depth') for w in walk(e.body) if isinstance(w,tk.Canvas)))

@@ -35,6 +35,11 @@ class EntryQueries:
         if getattr(self,'external_stale',False):return
         if not self.path:return
         if self.category==5 and self.slots_cache_path!=self.path and 'slots' not in self.entry_attempts:
+            row=next((r for r in self.device_rows if r['path']==self.path),None)
+            if row and sum(r.get('serial_number')==row.get('serial_number') for r in self.device_rows)==1:
+                cached=self.app.studio.cached_slots(row)
+                if cached:
+                    self.slots=cached;self.slots_cache_path=self.path;self.render_fields();return
             self.entry_attempts.add('slots');self.task('slots',lambda:self.with_client(lambda c:c.slots()));return
         if self.category==4 and not self.doc.macros and 'macros' not in self.entry_attempts:
             self.entry_attempts.add('macros');self.task('macros',lambda:self.with_client(lambda c:c.read_macros()))

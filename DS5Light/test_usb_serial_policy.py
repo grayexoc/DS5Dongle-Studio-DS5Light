@@ -55,10 +55,14 @@ class UITests(unittest.TestCase):
         self.assertIn('USB 시리얼 숨기기',controls)
         dock=controls['충전독 장착 시 연결 해제']
         serial=controls['USB 시리얼 숨기기']
-        self.assertEqual(serial.master.master,dock.master)
-        self.assertGreater(int(serial.master.grid_info()['row']),int(dock.grid_info()['row']))
+        self.assertEqual(serial.master.master,dock.master.master)
+        self.assertGreater(int(serial.master.grid_info()['row']),int(dock.master.grid_info()['row']))
         self.assertNotIn('disable_usb_sn',ui.field_views)
         self.assertIn('윈도 소리 제어판',help_text('disable_usb_sn'))
+        self.assertIn('활성화하면 버튼을 눌러 피코를 켜야 합니다. 끄면 기존의 대기모드를 사용합니다.',controls)
+        self.assertEqual(int(controls['활성화하면 버튼을 눌러 피코를 켜야 합니다. 끄면 기존의 대기모드를 사용합니다.'].cget('wraplength')),0)
+        tips=[tip.text() if callable(tip.text) else tip.text for tip in ui.tips]
+        self.assertTrue(any('포고핀을 이용한 충전 도킹 시' in text for text in tips))
 
     def test_common_save_uses_its_own_command_and_verifies_native_reconnect(self):
         ui=self.configured_editor();ui.doc.values['usb_gamepad_mode']=0
@@ -82,7 +86,8 @@ class UITests(unittest.TestCase):
         with patch('studio_settings_ui.ui_text',side_effect=lambda ko,en:en),patch('localization.LANGUAGE','en'):
             ui=self.configured_editor()
             text=help_text('disable_usb_sn')
-            self.assertIn('wired DualSense',text)
+            self.assertIn('DualSense Edge',text)
+            self.assertIn('Windows Sound',text)
             self.assertIn('Windows Sound control panel',text)
             self.assertEqual(ui.standby_value('usb_serial_policy'),0)
 

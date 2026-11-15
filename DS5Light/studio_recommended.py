@@ -187,6 +187,7 @@ class RecommendedPresets:
         self.stopped_task('recommended',operation)
 
     def finish_recommended(self,result):
+        self.app.studio.forget_slot_history(result.get('old_path') or self.path)
         if not result.get('verified'):
             self.resume=False;self.uncertain=True;self.write_ready=False
             self.progress.configure(text=result.get('notice',_ui_tr('저장·전환 상태를 다시 조회하세요.')),kind='warning');return

@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
-#include <unordered_map>
+#include <vector>
 
 #include "bt.h"
 #include "config.h"
@@ -25,7 +25,8 @@
 // 0xf9 command response so the config UI can display the real gated mic/speaker
 // state, reflecting the disable_mic / disable_speaker settings.
 extern bool spk_active;
-extern std::unordered_map<uint8_t, std::vector<uint8_t> > feature_data;
+static std::vector<uint8_t> pico_portal_reply;
+static std::vector<uint8_t> pico_settings_reply;
 
 template<typename T>
 static bool read_config_value(T &value, uint8_t const *buffer, uint16_t bufsize) {
@@ -637,13 +638,24 @@ static void pico_power_command(const uint8_t *buffer, uint16_t bufsize) {
     reply[6] = static_cast<uint8_t>(manual_power_error());
     reply[7] = (bt_is_connected() ? 1 : 0) | (bt_is_ready() ? 2 : 0) |
                (config_activation_save_pending() ? 4 : 0) | 8; // physical-key wake only
-    feature_data[0x84].assign(reply, reply + sizeof(reply));
+    pico_settings_reply.assign(reply, reply + sizeof(reply));
 }
 
-void pico_cmd_reply_read(uint8_t report_id, const uint8_t *payload, uint16_t len) {
+static void pico_cmd_reply_read(uint8_t report_id, const uint8_t *payload, uint16_t len) {
     if (report_id == 0x84 && payload && len >= 8 && payload[0] == 0x66 &&
         payload[1] == 0x1b && payload[2] == 0 && payload[3] == 1 && payload[4] == 1)
         manual_power_sleep_reply_read();
+}
+
+uint16_t pico_cmd_get_reply(uint8_t report_id, uint8_t *buffer, uint16_t reqlen) {
+    if (report_id != 0x81 && report_id != 0x84) return 0;
+    auto &reply = report_id == 0x81 ? pico_portal_reply : pico_settings_reply;
+    const uint16_t n = reply.size() < reqlen ? reply.size() : reqlen;
+    if (n == 0) return 0;
+    memcpy(buffer, reply.data(), n);
+    if (report_id == 0x81) reply.clear();
+    pico_cmd_reply_read(report_id, buffer, n);
+    return n;
 }
 
 void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
@@ -681,16 +693,16 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             buf[0] = 0x66;
             buf[1] = 0x01;
             buf[2] = success ? 0x00 : 0x01;
-            feature_data[0x81].assign(buf, buf + sizeof(buf));
+            pico_portal_reply.assign(buf, buf + sizeof(buf));
             break;
         }
         case 0x02: {
             // Optional request tag distinguishes this completion from a stale reply.
             uint8_t reply[63]{0x66, 0x02, 0xfe, 1};
             if (bufsize >= 4) memcpy(reply + 4, buffer, 4);
-            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
             reply[2] = config_save() ? 0 : 2;
-            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;
         }
         case 0x03: {
@@ -722,7 +734,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     printf("[CMD] Config get failed, field id: 0x%02X\n", field_id);
                 }
             }
-            feature_data[0x81].assign(buf, buf + sizeof(buf));
+            pico_portal_reply.assign(buf, buf + sizeof(buf));
             break;
         }
         case 0x05: {
@@ -732,7 +744,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             buf[1] = 0x05;
             const auto len = std::min(strlen(PICO_PROGRAM_VERSION_STRING), sizeof(buf) - 2);
             memcpy(buf + 2, PICO_PROGRAM_VERSION_STRING, len);
-            feature_data[0x81].assign(buf, buf + sizeof(buf));
+            pico_portal_reply.assign(buf, buf + sizeof(buf));
             break;
         }
         case 0x06: {
@@ -749,10 +761,10 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             //   bit0 = controller mic actually streaming (host opened it AND !disable_mic)
             //   bit1 = controller speaker actually driven (host opened it AND !disable_speaker)
             uint8_t flags = 0x80;
-            if (audio_mic_active() && !get_config().disable_mic) flags |= 0x01;
+            if (audio_mic_active()) flags |= 0x01;
             if (spk_active && !get_config().disable_speaker) flags |= 0x02;
             buf[3] = flags;
-            feature_data[0x81].assign(buf, buf + sizeof(buf));
+            pico_portal_reply.assign(buf, buf + sizeof(buf));
             break;
         }
         case 0x07: {
@@ -775,7 +787,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             printf("[CMD] save profile slot\n");
             { uint8_t pend[63]{}; pend[0]=0x66; pend[1]=0x08; pend[2]=0xFE;
               if (bufsize >= 1) pend[3] = buffer[0];
-              feature_data[0x84].assign(pend, pend + sizeof(pend)); }
+              pico_settings_reply.assign(pend, pend + sizeof(pend)); }
             uint8_t buf[63]{};
             buf[0] = 0x66; buf[1] = 0x08; buf[2] = 0x01; // default: fail
             if (bufsize >= 1 && buffer[0] < SLOT_COUNT) {
@@ -784,7 +796,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 if (slot_save(idx, buffer + 1, nlen)) buf[2] = 0x00;
                 buf[3] = idx;
             }
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
         case 0x09: {
@@ -803,7 +815,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             // never collide with it. (0x82 was WRONG: its descriptor size is 9 bytes -> USB buffer overflow on read.)
             { uint8_t pend[63]{}; pend[0]=0x66; pend[1]=0x09; pend[2]=0xFE;
               if (bufsize >= 1) pend[3] = buffer[0];
-              feature_data[0x84].assign(pend, pend + sizeof(pend)); }
+              pico_settings_reply.assign(pend, pend + sizeof(pend)); }
             uint8_t buf[63]{};
             buf[0] = 0x66; buf[1] = 0x09; buf[2] = 0x01;
             if (bufsize >= 1 && buffer[0] < SLOT_COUNT) {
@@ -816,7 +828,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 buf[5] = stage; // 0 none, 1 bad idx, 2 slot unreadable, 3 persist failed
                 buf[3] = buffer[0];
             }
-            feature_data[0x84].assign(buf, buf + sizeof(buf)); // 0x82: collision-free (see above)
+            pico_settings_reply.assign(buf, buf + sizeof(buf)); // 0x82: collision-free (see above)
             break;
         }
         case 0x0a: {
@@ -825,7 +837,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             printf("[CMD] read profile slot info\n");
             { uint8_t pend[63]{}; pend[0]=0x66; pend[1]=0x0a; pend[2]=0xFE;
               if (bufsize >= 1) pend[3] = buffer[0];
-              feature_data[0x84].assign(pend, pend + sizeof(pend)); }
+              pico_settings_reply.assign(pend, pend + sizeof(pend)); }
             uint8_t buf[63]{};
             buf[0] = 0x66; buf[1] = 0x0a; buf[2] = 0x01;
             if (bufsize >= 1 && buffer[0] < SLOT_COUNT) {
@@ -839,7 +851,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 }
                 buf[3] = buffer[0];
             }
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -863,7 +875,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     }
                 }
             }
-            feature_data[0x84].assign(buf, buf + sizeof(buf)); // 0x84: portal 0x81 poll can't clobber backup reads
+            pico_settings_reply.assign(buf, buf + sizeof(buf)); // 0x84: portal 0x81 poll can't clobber backup reads
             break;
         }
 
@@ -880,7 +892,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     memcpy(buf + 5, eff, 11);
                 }
             }
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -903,7 +915,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 set_config(nc);
                 buf[2] = 0x00; buf[3] = buffer[0]; buf[4] = buffer[1];
             }
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -921,7 +933,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 memcpy(buf + 5, src, 11);
                 buf[16] = (uint8_t)(dt & 0xFF); buf[17] = (uint8_t)(dt >> 8);
             }
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -934,7 +946,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             const bool arm = (bufsize >= 1 && buffer[0] != 0);
             tl_set_armed(arm);
             buf[3] = arm ? 1 : 0;
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -955,7 +967,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     memcpy(buf + 8, eff, 11);
                 }
             }
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -981,7 +993,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             buf[17] = d.last_wake_tud_ok;
             buf[18] = d.last_wake_host_suspended;
             buf[19] = wake_host_is_suspended() ? 1 : 0;
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -1007,14 +1019,14 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 }
                 buf[2] = 0x00; buf[3] = 0xFF;
                 memcpy(buf + 4, &used, sizeof(used));
-                feature_data[0x84].assign(buf, buf + sizeof(buf));
+                pico_settings_reply.assign(buf, buf + sizeof(buf));
                 break;
             }
             if (bufsize >= 1 && macro_get(buffer[0], rec)) {
                 buf[2] = 0x00; buf[3] = buffer[0];
                 memcpy(buf + 4, &rec, sizeof(rec));
             }
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -1028,7 +1040,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 memcpy(&rec, buffer + 1, sizeof(rec));
                 if (macro_set_entry(buffer[0], rec)) { buf[2] = 0x00; buf[3] = buffer[0]; }
             }
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -1036,7 +1048,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             // COMMIT the RAM image to the macro sector.
             uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x19;
             buf[2] = macro_commit() ? 0x00 : 0x01;
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -1048,7 +1060,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             const bool on = (bufsize >= 1) && (buffer[0] != 0);
             macro_suspend(on);
             buf[3] = on ? 1 : 0;
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -1066,7 +1078,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 if (reply[2] == 0) manual_power_note_activity();
             }
             reply[4] = device_auto_dormant();
-            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;
         }
 
@@ -1112,7 +1124,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
 #endif
                 }
             }
-            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;
         }
         case 0x1f: {
@@ -1127,7 +1139,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     manual_power_note_activity(5000);
                 }
             }
-            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;
         }
         case 0x20: {
@@ -1140,7 +1152,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     reply[2] = audio_profile_chime() ? 0 : 2;
                 }
             }
-            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;
         }
         case 0x21: {
@@ -1152,7 +1164,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 if (reply[2] == 0) manual_power_note_activity(60000);
             }
             reply[4] = device_usb_serial_hidden();
-            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;
         }
         case 0x1d: {
@@ -1163,7 +1175,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 reply[2] = device_set_disconnect_on_dock(buffer[1] != 0) ? 0 : 2;
             }
             reply[4] = device_disconnect_on_dock();
-            feature_data[0x84].assign(reply, reply + sizeof(reply));
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;
         }
 
@@ -1185,7 +1197,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             buf[27] = cfg.mix_native_level;
             buf[28] = cfg.ah_dsp_source;
             // Keep metadata replies on 0x81; 0x84 carries slot commands.
-            feature_data[0x81].assign(buf, buf + sizeof(buf));
+            pico_portal_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -1210,7 +1222,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     memcpy(buf + 8, src, 11);
                 }
             }
-            feature_data[0x84].assign(buf, buf + sizeof(buf));
+            pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
 
@@ -1238,7 +1250,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 buf[3] = applied;
                 if (applied) set_config(reinterpret_cast<const uint8_t *>(&nc), sizeof(nc));
             }
-            feature_data[0x81].assign(buf, buf + sizeof(buf));
+            pico_portal_reply.assign(buf, buf + sizeof(buf));
             break;
         }
         case 0x0c: {
@@ -1268,7 +1280,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 if (ok) buf[2] = 0x00;
                 buf[3] = done;
             }
-            feature_data[0x81].assign(buf, buf + sizeof(buf));
+            pico_portal_reply.assign(buf, buf + sizeof(buf));
             break;
         }
     }

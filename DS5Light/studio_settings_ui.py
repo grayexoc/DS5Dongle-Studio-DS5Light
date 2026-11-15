@@ -101,12 +101,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self._option_groups=[]
         self._open_option_groups={('triggers','common')}
     def open(self):
-        # If the user opens settings immediately, its serialized snapshot also
-        # supplies current-profile identity. Do not launch a redundant 32-slot
-        # startup sweep behind it. The main profile menu loads slots on demand.
-        startup=getattr(self.app.studio,'startup_id',None)
-        if startup is not None:
-            self.app.root.after_cancel(startup);self.app.studio.startup_id=None
+        # The initial lightweight probe defers while this settings read is busy.
         if not self.built:self.build()
         self.begin_entry()
     def _open_if_visible(self):
@@ -457,13 +452,13 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             'Functions\nWake and device search / enter deep sleep'
         )).pack(side='left',padx=(6,0))
         toggle.set_enabled(mode is not None and not self.busy)
-        note=ui_text('끄면 대기 모드를 사용합니다. 선택하면 Pico에 바로 저장됩니다.',
-                     'Off uses standby mode. Changes save to Pico immediately.')
+        note=ui_text('활성화하면 버튼을 눌러 피코를 켜야 합니다. 끄면 기존의 대기모드를 사용합니다.',
+                     'When enabled, press a button to wake Pico. Off uses the existing standby mode.')
         if mode is None:
             note=ui_text('절전 정책을 조회하지 못했습니다. 지원 펌웨어와 연결을 확인하세요.',
                          'Standby policy unavailable. Check firmware support and connection.')
         note=getattr(self,'_policy_save_errors',{}).get('standby_policy',note)
-        tk.Label(box,text=note,bg=CARD,fg=MUTED,wraplength=500,justify='left').grid(row=2,column=0,columnspan=2,sticky='w',pady=(4,0))
+        tk.Label(box,text=note,bg=CARD,fg=MUTED,wraplength=0,justify='left').grid(row=2,column=0,columnspan=2,sticky='w',pady=(4,0))
 
         if 'enable_wake' in self.doc.values:
             wake=tk.Frame(box,bg=CARD);wake.grid(row=3,column=0,columnspan=2,sticky='ew',padx=(20,0),pady=(4,0));wake.columnconfigure(0,weight=1)
@@ -471,9 +466,15 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
 
         dock=self.standby_value('dock_policy')
         dock_var=tk.BooleanVar(master=box,value=dock==1)
-        dock_toggle=CircleCheck(box,text=ui_text('충전독 장착 시 연결 해제','Disconnect when docked'),
+        dock_row=tk.Frame(box,bg=CARD)
+        dock_row.grid(row=4,column=0,columnspan=2,sticky='w',pady=(8,0))
+        dock_toggle=CircleCheck(dock_row,text=ui_text('충전독 장착 시 연결 해제','Disconnect when docked'),
             variable=dock_var,command=lambda:self.change_standby_policy(dock_var,'dock_policy'),background=CARD)
-        dock_toggle.grid(row=4,column=0,columnspan=2,sticky='w',pady=(8,0))
+        dock_toggle.pack(side='left')
+        self.help_icon(dock_row,ui_text(
+            '포고핀을 이용한 충전 도킹 시 듀얼센스 연결을 자동으로 해제합니다.',
+            'Automatically disconnects DualSense when placed on a pogo-pin charging dock.'
+        )).pack(side='left',padx=(6,0))
         dock_toggle.set_enabled(dock is not None and not self.busy)
         dock_error=getattr(self,'_policy_save_errors',{}).get('dock_policy')
         if dock is None or dock_error:
@@ -949,6 +950,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             else:self.progress.configure(text=result,kind='progress')
             self.poll_id=self.parent.after(60,self.poll);return
         self.busy=False;self.reconnect_wait=False
+        if kind in ('slot_save','restore','recommended') or error and kind=='apply':
+            self.app.studio.forget_slot_history(self.path)
         if kind in READ_JOBS:
             edge_row_present='disable_usb_sn' in self.field_views
             self.read_view_unlock();self._read_view_kind=None
@@ -1057,6 +1060,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 state.update({key:self.doc.baseline[key] for key in ('mix_native_level','ah_dsp_source') if key in self.doc.baseline})
                 self.app.studio._observe_profile(self.path,state)
             if result.get('profile_saved'):
+                self.app.studio.forget_slot_history(result.get('old_path') or result.get('path') or self.path)
                 self.invalidate_slot_cache()
                 self.profile_save_needed=False
                 self.app.studio.catalog_invalid=True;self.app.studio.last_read=-1e9
@@ -1101,14 +1105,19 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         elif kind=='chime_preview':self.progress.configure(text=_ui_tr('전환 신호음 요청 완료 · 프로필은 바뀌지 않았습니다.'),kind='info')
         elif kind=='slots' and not self.external_stale:
             self.slots=result;self.slots_cache_path=self.path
+            row=next((r for r in self.device_rows if r['path']==self.path),None)
+            if row and sum(r.get('serial_number')==row.get('serial_number') for r in self.device_rows)==1:
+                self.app.studio.remember_slots(row,result)
             self.progress.configure(text=_ui_tr('슬롯 목록 새로 고침 완료'),kind='info')
         elif kind=='slot_save':
+            self.app.studio.forget_slot_history(self.path)
             self.profile_save_needed=False;self.progress.configure(text=_ui_tr('프로필 슬롯 저장 응답 확인'));self.app.studio.last_read=-1e9;self.app.studio.catalog_invalid=True
             if isinstance(result,dict):
                 from studio_slots import Slot
                 self.slots=[Slot(s.index,'saved',result['name']) if s.index==result['index'] else s for s in self.slots]
         elif kind=='bootloader':self.progress.configure(text=_ui_tr('Pico UF2 설치 모드 요청 완료'));self.loaded=False;self.write_ready=False;self.path=None;self.pico_recognized=False
         elif kind=='restore':
+            self.app.studio.forget_slot_history(self.path)
             self.slots=[]
             self.external_stale=True;self.write_ready=False
             self.entry_attempts.discard('fields')
@@ -1489,9 +1498,20 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                    command=lambda:self.copy_trigger(prefix,sides[other]),
                    state='normal' if enabled and sides[other] + 'mode' in values and
                    (not fast_active or all(key in values for key in fast_trigger_keys(sides[other])[:3])) else 'disabled').grid(row=row,column=0,sticky='w',pady=6)
-        ttk.Button(box,text=ui_text('Pico 효과 상태 확인','Check Pico effect status'),
-                   command=lambda:self.check_trigger_status(side),
-                   state='normal' if self.path and self.loaded and not self.busy else 'disabled').grid(row=row,column=1,sticky='e',pady=6)
+        can_check=bool(self.path and self.loaded and not self.busy)
+        status=tk.Frame(box,bg=CARD)
+        status.grid(row=row,column=1,sticky='e',pady=6)
+        status_link=tk.Label(status,text=ui_text('Pico 효과 상태 확인','Check Pico effect status'),bg=CARD,fg=GOLD,
+            disabledforeground=MUTED,font=(_ui_tr('맑은 고딕'),8,'underline'),highlightthickness=0,
+            cursor='hand2' if can_check else '',takefocus=can_check,state='normal' if can_check else 'disabled')
+        status_link.pack(side='left')
+        def check_status(event=None):
+            if self.path and self.loaded and not self.busy:self.check_trigger_status(side)
+            return 'break'
+        for sequence in ('<Button-1>','<Return>','<space>'):status_link.bind(sequence,check_status)
+        self.help_icon(status,ui_text(
+            '현재 효과·게임 효과 우선 여부·반동 신호를 한 번 조회\n효과 실행이나 단축 트리거 입력 검사는 아님',
+            'Reads active effects, game priority and recoil signal once. Does not run effects or test full trigger input.')).pack(side='left',padx=(5,0))
 
     def reveal_trigger_field(self,key):
         view=self.field_views.get(key)

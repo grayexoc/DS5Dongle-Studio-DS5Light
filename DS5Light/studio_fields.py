@@ -47,6 +47,8 @@ for _section in SECTIONS:
         ])
 
 FIELDS = {f[1]: f for s in SECTIONS for f in s["fields"]}
+for _key,_name in (('disable_usb_sn','Hide USB serial number'),('r2t_mode','Game rumble to triggers'),('gyro_mode','Gyro activation')):
+    FIELDS[_key][3]=_name
 
 # The firmware accepts all T2Button values, including a trigger targeting itself.
 # Preserve mappings created outside this editor when backing up a profile.

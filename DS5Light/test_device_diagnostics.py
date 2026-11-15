@@ -457,6 +457,16 @@ class DialogTests(unittest.TestCase):
         self.assertEqual(self.dialog.json_value(b'\x01\xff'), '01ff')
         with self.assertRaises(TypeError):self.dialog.json_value(object())
 
+    def test_audio_signal_guidance_is_shown_and_cleared_on_read_failure(self):
+        status=dict(ready=True,auto_haptics=0,usb_mode='DualSense',speaker_diagnostics=True)
+        observation=dict(blocks_delta=1,channels=4,front_peak=0,rear_left_peak=0,rear_right_peak=0)
+        with patch.object(self.dialog,'start_input_monitor'):
+            self.dialog.show(dict(status=status,audio_observation=observation))
+        self.assertIn('4채널 신호는 거의 무음',self.dialog.audio_hint.get())
+        self.dialog.show(dict(diagnostic_error='read failed'))
+        self.assertNotIn('4채널 신호는 거의 무음',self.dialog.audio_hint.get())
+        self.assertIn('장치 연결',self.dialog.audio_hint.get())
+
     def test_timing_summary_and_manual_response_are_saved_as_data(self):
         value = dict(reports=250, hz=250., max_ms=8., intervals_ms=[4., 8., 4.])
         self.dialog.show(value)

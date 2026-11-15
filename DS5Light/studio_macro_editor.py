@@ -92,7 +92,7 @@ class MacroEditor(InlineCapture):
         self.button_dropdown.grid(row=0,column=1,sticky='ew')
         self.button_dropdown.bind('<<ComboboxSelected>>',self.choose_button)
         ttk.Button(bar,text=_ui_tr('선택 초기화'),command=self.clear_buttons).grid(row=1,column=0,sticky='w',pady=(8,0))
-        ttk.Button(bar,text=_ui_tr('버튼 눌러 지정'),command=lambda:self.start_capture('input')).grid(row=1,column=1,sticky='e',pady=(8,0))
+        ttk.Button(bar,text=_ui_tr('버튼을 직접 눌러 지정'),command=lambda:self.start_capture('input')).grid(row=1,column=1,sticky='e',pady=(8,0))
         self.ps_shortcut_row=tk.Frame(self.button_area,bg=CARD)
         self.ps_shortcut=tk.BooleanVar(value=bool(ui.doc.values.get('ps_shortcut_enabled')))
         self.ps_shortcut_control=CircleCheck(self.ps_shortcut_row,text=_ui_tr('PS 기본 단축키'),variable=self.ps_shortcut,
@@ -117,7 +117,7 @@ class MacroEditor(InlineCapture):
         self.form(two,1,_ui_tr('출력 종류'),_ui_tr('스틱 방향 매핑은 키보드로 출력합니다.'),self.output_kind_control)
         self.output_area=tk.Frame(two,bg=CARD);self.output_area.columnconfigure(1,weight=1);self.output_area.grid(row=2,column=0,columnspan=2,sticky='ew')
         self.output_control=ControllerChoice(self.output_area,textvariable=self.output,values=[]);self.form(self.output_area,0,_ui_tr('실행할 동작'),_ui_tr('원래 버튼 대신 보낼 단일 버튼 또는 마우스 동작입니다. 듀얼센스 출력 조합키는 현재 펌웨어 형식에서 지원하지 않습니다.'),self.output_control)
-        self.output_record=ttk.Button(self.output_area,text=_ui_tr('버튼 눌러 지정'),command=lambda:self.start_capture('output'));self.output_record.grid(row=1,column=1,sticky='e',pady=6)
+        self.output_record=ttk.Button(self.output_area,text=_ui_tr('버튼을 직접 눌러 지정'),command=lambda:self.start_capture('output'));self.output_record.grid(row=1,column=1,sticky='e',pady=6)
         self.chime_area=tk.Frame(two,bg=CARD);self.chime_area.grid(row=5,column=0,columnspan=2,sticky='ew',pady=8)
         CircleCheck(self.chime_area,text=_ui_tr('전환 신호음'),variable=self.chime,command=lambda:None,background=CARD).pack(side='left')
         ttk.Button(self.chime_area,text=_ui_tr('미리듣기'),command=self.preview_chime).pack(side='left',padx=10)
@@ -130,7 +130,7 @@ class MacroEditor(InlineCapture):
             caption=tk.Label(header,text=_ui_tr('키 {0}').format(f'{i + 1}'),bg=CARD,fg=MUTED);caption.pack(side='left');self.key_captions.append(caption)
             ui.help_icon(header,_ui_tr('일반 키와 Ctrl·Shift·Alt·Win을 같은 입력 칸에 지정합니다. 조합은 최대 4키이며 스틱 방향 매핑은 위·오른쪽·아래·왼쪽 키를 각각 지정합니다. 목록에 없는 키는 HID 숫자 형식으로 입력할 수 있습니다.')).pack(side='left',padx=(4,0))
             control=self.combo(cell,var,list(HID_KEYS),width=9,editable=True);control.pack(fill='x');self.key_controls.append(control)
-        self.record_key_button=ttk.Button(self.key_area,text=_ui_tr('키보드 입력 지정'),command=lambda:self.start_capture('keys'));self.record_key_button.grid(row=1,column=0,columnspan=4,sticky='w',pady=(10,0))
+        self.record_key_button=ttk.Button(self.key_area,text=_ui_tr('키보드 키를 직접 눌러 지정'),command=lambda:self.start_capture('keys'));self.record_key_button.grid(row=1,column=0,columnspan=4,sticky='e',pady=(10,0))
         three=tk.Frame(two,bg=CARD);three.grid(row=4,column=0,columnspan=2,sticky='ew',pady=(12,0));three.columnconfigure(1,weight=1)
         tk.Label(three,text=_ui_tr('동작 규칙'),bg=CARD,fg=GOLD,font=(_ui_tr('맑은 고딕'),10,'bold')).grid(row=0,column=0,columnspan=2,sticky='w',pady=(0,6))
         self.form(three,1,_ui_tr('조건 버튼 전달'),_ui_tr('켜면 선택한 버튼은 게임에 보내지 않고 지정한 동작만 보냅니다. 예를 들어 L3를 R3로 바꾸면 게임에는 R3만 전달됩니다. 누르는 동안 유지에서 사용할 수 있습니다.'),None)
@@ -147,7 +147,13 @@ class MacroEditor(InlineCapture):
         control=self.combo(self.release_row,self.release_name,list(self.orders));control.bind('<<ComboboxSelected>>',lambda e:self.release.set(str(self.orders[self.release_name.get()])))
         self.form(self.release_row,0,_ui_tr('키를 놓는 순서'),_ui_tr('숫자는 위 키 입력 칸의 위치입니다. 일반적인 조합은 누른 순서의 역순이며 키보드 기록을 쓰면 해제 순서도 기록합니다.'),control)
         footer=self.footer=tk.Frame(d,bg=BG,padx=18,pady=12);footer.grid(row=2,column=0,sticky='ew');footer.columnconfigure(0,weight=1)
-        self.feedback=tk.StringVar();tk.Label(footer,textvariable=self.feedback,bg=BG,fg=GOLD,wraplength=560,justify='right',anchor='e').grid(row=0,column=0,columnspan=2,sticky='ew',pady=(0,10))
+        self.feedback=tk.StringVar()
+        self.save_hint=_ui_tr('완료하면 미저장 공용 매핑을 모두 Pico에 저장합니다. 프로필 사용 여부는 다음 확인창에서 저장합니다.')
+        feedback_label=tk.Label(footer,textvariable=self.feedback,bg=BG,fg=GOLD,wraplength=560,justify='right',anchor='e')
+        feedback_label.grid(row=0,column=0,columnspan=2,sticky='ew',pady=(0,10))
+        widget_trace(feedback_label,self.feedback,lambda *_:feedback_label.configure(
+            wraplength=0 if self.feedback.get()==self.save_hint else 560,
+            font=(_ui_tr('맑은 고딕'),8 if self.feedback.get()==self.save_hint else 10)))
         actions=tk.Frame(footer,bg=BG);actions.grid(row=1,column=1,sticky='e')
         ttk.Button(actions,text=_ui_tr('취소'),command=self.close,width=12).pack(side='left',padx=(0,8))
         self.previous=ttk.Button(actions,text=_ui_tr('이전'),command=lambda:self.go_step(self.step-1),width=10);self.previous.pack(side='left',padx=(0,8))
@@ -276,7 +282,7 @@ class MacroEditor(InlineCapture):
             reason=reserved_input(raw,records,mask,bool(self.ui.doc.values.get('ps_shortcut_enabled',0)))
             if reason:raise ValueError(reason)
             warnings=[s for s in conflicts(records,mask) if f'{self.index+1:02d} ·' in s or f'· {self.index+1:02d} ·' in s]
-            self.feedback.set('\n'.join(warnings[:2]) or _ui_tr('완료하면 미저장 공용 매핑을 모두 Pico에 저장합니다. 프로필 사용 여부는 다음 확인창에서 저장합니다.'))
+            self.feedback.set('\n'.join(warnings[:2]) or self.save_hint)
             self.save.configure(state='normal' if not self.ui.busy else 'disabled')
         except (ValueError,KeyError,StopIteration) as exc:
             self.feedback.set(str(exc) or _ui_tr('입력과 출력 항목을 확인하세요.'));self.save.configure(state='disabled')

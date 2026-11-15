@@ -17,9 +17,11 @@ typedef void (*bt_data_callback_t)(CHANNEL_TYPE channel, uint8_t *data, uint16_t
 
 int bt_init();
 void bt_register_data_callback(bt_data_callback_t callback);
+void controller_input_on_disconnect();
 void bt_send_packet(uint8_t *data, uint16_t len);
 void bt_send_control(uint8_t *data, uint16_t len);
 void bt_power_off_controller();
+void bt_macro_power_off_task(bool requested);
 bool bt_disconnect();
 bool bt_is_connected();
 bool bt_is_ready();

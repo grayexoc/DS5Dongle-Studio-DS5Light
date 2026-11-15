@@ -210,11 +210,44 @@ def finish_speaker_measurement(device, report, max_elapsed_ms, cancel):
     after = decode_speaker_counters(tagged_command(client, 0x1e, 2))
     elapsed_ms = (final['uptime_ms'] - status['uptime_ms']) & 0xffffffff
     if (not final['ready'] or final.get('output_route') != status.get('output_route')
-            or final['auto_haptics'] != status['auto_haptics'] or elapsed_ms > max_elapsed_ms):
+            or final['auto_haptics'] != status['auto_haptics']
+            or final['usb_mode'] != status['usb_mode'] or final['channels'] != status['channels']
+            or elapsed_ms <= 0 or elapsed_ms > max_elapsed_ms):
         raise RuntimeError('오디오 경로가 변경됐습니다. 다시 검사하세요.')
     report['speaker_delta'] = {key: (after[key] - before[key]) & 0xffffffff for key in before}
     report['speaker_interval_ms'] = elapsed_ms
     report['speaker_counters'] = after
+    if all(key in page for page in (status, final) for key in ('usb_audio_blocks','rear_left_peak','rear_right_peak')):
+        report['audio_observation'] = dict(
+            blocks_delta=(final['usb_audio_blocks'] - status['usb_audio_blocks']) & 0xffffffff,
+            interval_ms=elapsed_ms, channels=final['channels'], auto_haptics=final['auto_haptics'],
+            usb_mode=final['usb_mode'], front_peak=final['front_peak'],
+            rear_left_peak=final['rear_left_peak'], rear_right_peak=final['rear_right_peak'])
+
+
+def audio_signal_guidance(report):
+    """Interpret an existing explicit check; end-block peaks are not interval maxima."""
+    status=report.get('status',{})
+    if report.get('diagnostic_error') or not status.get('ready'):
+        return '장치 연결과 진단 상태를 확인한 뒤 오디오 전송 5초 검사를 실행하세요.'
+    if status.get('usb_mode') != 'DualSense' or status.get('auto_haptics') != 0:
+        return '네이티브 햅틱 무신호 확인은 DualSense 모드·오디오햅틱 끔 프로필에서 실행하세요.'
+    if 'speaker_delta' in report.get('page_errors',{}):
+        return '검사 구간을 확인하지 못했습니다. 상태를 새로 고침하고 다시 검사하세요.'
+    observation=report.get('audio_observation')
+    if not observation:
+        if not status.get('speaker_diagnostics'):
+            return '현재 펌웨어의 진단 정보로는 오디오 수신과 무음을 구분할 수 없습니다.'
+        return '햅틱 효과가 있는 구간에서 오디오 전송 5초 검사를 실행하면 수신 없음과 무음 신호를 구분해 안내합니다.'
+    if observation['blocks_delta']==0:
+        return '검사 구간에 새 USB 오디오 수신이 없습니다. 게임의 출력 장치와 Pico 오디오 연결을 확인하세요.'
+    if observation['channels']!=4:
+        return '오디오는 수신되지만 4채널이 아닙니다. 네이티브 햅틱을 지원하는 게임과 해당 Pico의 4채널 출력을 확인하세요.'
+    if max(observation['rear_left_peak'],observation['rear_right_peak'])<=1:
+        if observation['front_peak']<=1:
+            return '오디오는 수신되지만 마지막으로 읽은 4채널 신호는 거의 무음입니다. 효과가 있는 구간에서도 같다면 게임의 출력 경로와 Windows 오디오 설정을 확인하세요.'
+        return '스피커 신호는 수신되지만 마지막 햅틱 채널은 거의 무음입니다. 햅틱 효과가 있는 구간에서 다시 검사하세요. 게임·모드별 지원 차이도 확인하세요.'
+    return '마지막으로 읽은 햅틱 채널에서 신호가 감지됐습니다. 실제 전송 완료와 손잡이 진동까지 확인한 결과는 아닙니다.'
 
 
 def speaker_settings(client, route=None):

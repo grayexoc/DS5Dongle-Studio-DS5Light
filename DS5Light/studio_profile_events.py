@@ -25,6 +25,8 @@ def same_device(row,identity):
 
 
 class ProfileEvents:
+    MISSING_RETRY_INTERVAL=60.
+
     def __init__(self):
         self.key=None;self.stop=threading.Event();self.results=queue.SimpleQueue()
         self.changed=False;self.healthy=False;self.retry_at=0.;self.closed=False
@@ -42,7 +44,8 @@ class ProfileEvents:
             elif kind=='changed':self.changed=True
             elif kind=='missing':
                 self.missing+=1
-                if self.missing<3:self.retry_at=time.monotonic()+self.missing
+                delay=self.missing if self.missing<3 else self.MISSING_RETRY_INTERVAL
+                self.retry_at=time.monotonic()+delay
             elif kind=='failed':self.healthy=False;self.retry_at=time.monotonic()+3
         if not identity.hid_path or time.monotonic()<self.retry_at:return
         self.retry_at=float('inf');token=self.stop

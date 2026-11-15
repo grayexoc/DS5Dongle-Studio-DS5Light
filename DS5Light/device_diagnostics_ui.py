@@ -14,7 +14,7 @@ from studio_i18n import text as tr
 from studio_power import blocked
 from device_diagnostics import (collect_snapshot, measure_reports, run_output_test,
                                 with_selected_device, RUMBLE_TEST_MODES, audio_recovery_candidates,
-                                finish_speaker_measurement)
+                                finish_speaker_measurement, audio_signal_guidance)
 
 
 TEST_NAMES = dict(haptic_left='왼쪽 햅틱', haptic_right='오른쪽 햅틱', speaker='스피커',
@@ -120,6 +120,9 @@ class DeviceDiagnosticsDialog:
         self.speaker_meter_button.pack(fill='x', pady=(6,0));self.buttons.append(self.speaker_meter_button)
         button = ttk.Button(state, text=tr('Pico 오디오 연결 복구'), command=self.select_audio_output, style='Diagnostic.TButton')
         button.pack(fill='x', pady=(6,0));self.buttons.append(button)
+        self.audio_hint=tk.StringVar(value=tr('햅틱 효과가 있는 구간에서 오디오 전송 5초 검사를 실행하면 수신 없음과 무음 신호를 구분해 안내합니다.'))
+        tk.Label(state,textvariable=self.audio_hint,bg='#151515',fg='#d6ad52',
+                 wraplength=300,justify='left',anchor='w').pack(fill='x',pady=(10,0))
         timing_host = self.card(right, tr('◷ 입력 수신 검사'))
         timing_host.pack(fill='both', expand=True)
         timing = timing_host.content
@@ -170,7 +173,7 @@ class DeviceDiagnosticsDialog:
         self.update_test_buttons()
         from studio_settings_ui import FieldTip
         FieldTip(self.diagram,lambda:tr('XInput 모드에서는 입력 수신 검사를 사용할 수 없습니다.') if (self.report or {}).get('status',{}).get('usb_mode')=='XInput' else tr('버튼·스틱·트리거 입력 시 해당 부분을 강조합니다.'))
-        FieldTip(self.speaker_meter_button, lambda:tr('Pico 스피커 처리 카운터의 증가량을 확인합니다. 버퍼 부족에는 시작·무음 처리도 포함됩니다.'))
+        FieldTip(self.speaker_meter_button, lambda:tr('오디오 수신량과 마지막 햅틱 신호, 스피커 처리 카운터를 확인합니다. 신호 크기는 마지막 블록의 값이며 전체 검사 구간의 최대값이 아닙니다.'))
         FieldTip(self.measure_button,lambda:tr('XInput 모드에서는 입력 수신 검사를 사용할 수 없습니다.')
                  if (self.report or {}).get('status',{}).get('usb_mode')=='XInput' else
                  tr('5초간 PC의 입력 수신 간격을 확인합니다.'))
@@ -476,6 +479,7 @@ class DeviceDiagnosticsDialog:
     def show(self, value):
         status = value.get('status')
         if status:
+            self.audio_hint.set(tr(audio_signal_guidance(value)))
             mode = {0:tr('끔'),1:'Mix',2:'Replace'}.get(status.get('auto_haptics'), tr('미확인'))
             route = {'speaker': '스피커', 'headset': '헤드셋'}.get(status.get('output_route'))
             self.identity_text.set('DualSense · '+tr('연결됨' if status.get('connected') else '연결 해제')+
@@ -498,6 +502,7 @@ class DeviceDiagnosticsDialog:
             for var,text in zip(self.metric_values,(number('hz','Hz'),number('max_ms','ms'))):var.set(text)
             self.draw_intervals()
         if value.get('diagnostic_error'):
+            self.audio_hint.set(tr(audio_signal_guidance(value)))
             self.stop_input_monitor()
             self.state_text.set(tr('상태 조회 실패')+'\n'+tr(value['diagnostic_error']))
             self.identity_text.set(tr('상태 조회 실패'))

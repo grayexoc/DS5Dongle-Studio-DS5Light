@@ -136,8 +136,21 @@ static bool native_audio_waiting() {
     return native_queued || (pending_send_valid && pending_send.native_audio);
 }
 
+// Core0 owns the FIFO. Audio eviction and stripping leave queued 0x31 reports in order.
+static uint8_t queued_controls = 0;
+static uint16_t last_control_len = 0;
+static uint8_t last_control_state[63];
+
+static bool pop_send_fifo(send_element &item) {
+    if (!queue_try_remove(&send_fifo, &item)) return false;
+    if (item.native_audio) --native_queued;
+    if (item.data[1] == 0x31) --queued_controls;
+    return true;
+}
+
 struct ControlSend { uint8_t data[MTU_CONTROL]; uint16_t len; uint8_t retries; };
 static queue_t control_fifo;
+static bool macro_power_off_pending = false;
 
 static void bt_control_send_ready() {
     static ControlSend item;
@@ -174,13 +187,14 @@ void bt_send_control(uint8_t *data, uint16_t len) {
 }
 
 bool bt_disconnect() {
-    if (acl_handle == HCI_CON_HANDLE_INVALID) {
+    if (acl_handle == HCI_CON_HANDLE_INVALID ||
+        gap_get_connection_type(acl_handle) != GAP_CONNECTION_ACL) {
         return false;
     }
 
-    // 0x13 = remote user terminated connection
-    hci_send_cmd(&hci_disconnect, acl_handle, 0x13);
-    return true;
+    // BTstack queues the disconnect until command credits are available.
+    const uint8_t status = gap_disconnect(acl_handle);
+    return status == ERROR_CODE_SUCCESS || status == ERROR_CODE_COMMAND_DISALLOWED;
 }
 
 bool bt_is_connected() {
@@ -482,11 +496,11 @@ bool bt_usb_features_pending() {
         const auto report = feature_data.find(id);
         return report != feature_data.end() && report->second.size() >= length;
     };
-    return !(ready(0x05, 41) && ready(0x09, 20) && ready(0x20, 64));
+    return check_dse || !(ready(0x05, 41) && ready(0x09, 20) && ready(0x20, 64));
 }
 
 void bt_usb_identity_task() {
-    if (!usb_identity_pending || !bt_is_connected() ||
+    if (!usb_identity_pending || !bt_is_ready() ||
         tud_suspended() || wake_host_is_suspended() || bt_usb_features_pending()) return;
     usb_identity_pending = false;
     restore_full_usb_identity();
@@ -739,6 +753,11 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
         }
 
         case HCI_EVENT_DISCONNECTION_COMPLETE: {
+            if (acl_handle == HCI_CON_HANDLE_INVALID ||
+                hci_event_disconnection_complete_get_connection_handle(packet) != acl_handle ||
+                hci_event_disconnection_complete_get_status(packet) != ERROR_CODE_SUCCESS) break;
+            controller_input_on_disconnect();
+            wake_on_bt_disconnect();
             state_rumble_reset();
 #if !ENABLE_SERIAL
             // Hide the USB device when no controller is paired, whenever the host is awake --
@@ -764,14 +783,6 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
                     // off. Re-enumerate under our IDLE product ID: same
                     // interfaces, different identity, so nothing recognises it
                     // as a controller while none is attached.
-                    // Tell the wake module the link is gone FIRST. Without this
-                    // its bt_link_up flag stays set (wake_on_bt_disconnect was
-                    // declared but never called from anywhere, here or in the
-                    // upstream baseline), so wake_task immediately sees
-                    // "host awake + controller present + idle identity" and undoes
-                    // the switch — the device vanished and came straight back as a
-                    // DualSense, which is exactly what was observed.
-                    wake_on_bt_disconnect();
                     usb_set_idle_pid(true);
                     usb_schedule_reconnect();
                 } else {
@@ -799,6 +810,8 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             hid_interrupt_cid = 0;
             while (queue_try_remove(&send_fifo, NULL)) {}
             pending_send_valid = false;
+            macro_power_off_pending = false;
+            queued_controls = 0;
             native_queued = 0;
             cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 #if ENABLE_BATT_LED
@@ -856,30 +869,17 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                 bt_disconnect();
             }
         } else if (channel == hid_control_cid) {
-            // HID HANDSHAKE is one byte (e.g. 0x02 for unsupported GET_REPORT).
-            // Only a DATA feature report needs the second report-id byte.
             if (packet[0] == 0xA3 && size < 2) return;
-            if (check_dse) {
-                if (packet[0] == 0xA3 && packet[1] == 0x70) {
-                    printf("Connected DSE Controller\n");
-                    check_dse = false;
-                    is_dse = true;
-                    // Unlock Edge profiles; USB connects immediately, profile
-                    // reads are gated until the snapshot is prepared.
-                    dse_on_connect();
+            // A one-byte HID handshake does not identify the request it answers.
+            if (!is_dse && size >= 3 && packet[0] == 0xA3 && packet[1] == 0x70) {
+                printf("Connected DSE Controller\n");
+                check_dse = false;
+                is_dse = true;
+                dse_on_connect();
 #if !ENABLE_SERIAL
-                    // don't re-enumerate while the host is suspended -- it would wake a sleeping host
-                    // (wake_task() performs the restore once the host is up again)
-                    usb_identity_pending = true;
+                // Upgrade the USB identity even if the initial wait already expired.
+                usb_identity_pending = true;
 #endif
-                } else if (packet[0] == 0x02) {
-                    printf("Connected DS5 Controller\n");
-                    check_dse = false;
-                    is_dse = false;
-#if !ENABLE_SERIAL
-                    usb_identity_pending = true;
-#endif
-                }
             }
             if (packet[0] == 0xA3) {
                 uint8_t report_id = packet[1];
@@ -959,7 +959,6 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
 
                     printf("Init DualSense\n");
 
-                    init_feature();
                     // 初始化手柄状态
                     state_init();
                     uint8_t report32[142]{};
@@ -982,10 +981,8 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                     printf("[L2CAP] Unknown Channel psm: 0x%02X", psm);
                 }
 
-                /*if (hid_control_cid != 0 && hid_interrupt_cid != 0) {
-                    printf("[L2CAP] HID channels ready, request CAN_SEND_NOW for SET_PROTOCOL\n");
-                    l2cap_request_can_send_now_event(hid_control_cid);
-                }*/
+                if ((psm == PSM_HID_CONTROL || psm == PSM_HID_INTERRUPT) && hid_control_open && hid_interrupt_open)
+                    init_feature();
             } else {
                 const uint16_t psm = l2cap_event_channel_opened_get_psm(packet);
                 hid_control_cid = 0;
@@ -1036,8 +1033,7 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                 l2cap_event_can_send_now_get_local_cid(packet) != hid_interrupt_cid) break;
             for (unsigned scanned = 0; scanned < kSendScanLimit; ++scanned) {
                 if (!pending_send_valid) {
-                    pending_send_valid = queue_try_remove(&send_fifo, &pending_send);
-                    if (pending_send_valid && pending_send.native_audio) --native_queued;
+                    pending_send_valid = pop_send_fifo(pending_send);
                     pending_send_retries = 0;
                 }
                 if (!pending_send_valid) break;
@@ -1172,23 +1168,11 @@ void __not_in_flash_func(bt_write)(const uint8_t *data, const uint16_t len) {
     if (hid_interrupt_cid == 0) return;
     if (data[0] == 0x36 && get_config().auto_haptics_enable == 0 && !native_audio_waiting())
         native_progress_ms = to_ms_since_boot(get_absolute_time());
-    // Coalesce only against the latest control intent; A -> B -> A is not a duplicate.
-    if (data[0] == 0x31 && len >= 66) {
-        const uint count = queue_get_level(&send_fifo);
-        bool duplicate = false;
-        static send_element item;
-        for (uint i=0; i<count; ++i) {
-            if (!queue_try_remove(&send_fifo, &item)) break;
-            const auto *old = item.data + 1;
-            if (old[0] == 0x31) {
-                duplicate = item.len == len + 1 &&
-                    memcmp(old + 3, data + 3, 32) == 0 &&
-                    memcmp(old + 39, data + 39, 27) == 0;
-            }
-            queue_try_add(&send_fifo, &item);
-        }
-        if (duplicate) return;
-    }
+    // Compare the last queued control only. The pending retry is outside the FIFO.
+    const bool control = data[0] == 0x31;
+    if (control && len >= 66 && queued_controls && last_control_len == len &&
+        memcmp(last_control_state, data + 3, 32) == 0 &&
+        memcmp(last_control_state + 36, data + 39, 27) == 0) return;
     // Core0 owns all FIFO access. Evict only the oldest queued audio;
     // rotating the original count preserves the order of every remaining report.
     if ((data[0] == 0x36 && queue_get_level(&send_fifo) >= kAudioQueueLimit) || queue_is_full(&send_fifo)) {
@@ -1222,6 +1206,11 @@ void __not_in_flash_func(bt_write)(const uint8_t *data, const uint16_t len) {
         }
         return;
     }
+    if (control) {
+        ++queued_controls;
+        last_control_len = len;
+        if (len >= 66) memcpy(last_control_state, packet.data + 4, sizeof(last_control_state));
+    }
     if (packet.native_audio) ++native_queued;
     if (queue_get_level(&send_fifo) == 1) {
         l2cap_request_can_send_now_event(hid_interrupt_cid);
@@ -1235,13 +1224,9 @@ vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
     if (has_cached_report) {
         ret = feature_data[reportId];
     }
-    const bool use_pico_cmd_response =
-        reportId == 0x81 &&
-        ret.size() >= 2 &&
-        ret[0] == 0x66;
     if (!has_cached_report ||
         // Get Test Command Result
-        (reportId == 0x81 && !use_pico_cmd_response) ||
+        reportId == 0x81 ||
         // DSE: Set Profile Save?
         reportId == 0x63 ||
         reportId == 0x65 ||
@@ -1257,9 +1242,6 @@ vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
             printf("[L2CAP] Requesting Get Feature Report 0x%02X\n", reportId);
 #endif
         }
-    }
-    if (use_pico_cmd_response) {
-        feature_data.erase(reportId);
     }
     return ret;
 }
@@ -1290,11 +1272,35 @@ void bt_power_off_controller() {
     set_feature_data(0x08, bluetooth_control, sizeof(bluetooth_control));
 }
 
+void bt_macro_power_off_task(bool requested) {
+    static uint32_t started_ms = 0;
+    if (!macro_power_off_pending && !requested) return;
+    if (!bt_is_ready()) {
+        macro_power_off_pending = false;
+        return;
+    }
+    const uint32_t now = to_ms_since_boot(get_absolute_time());
+    if (!macro_power_off_pending) {
+        macro_power_off_pending = true;
+        started_ms = now;
+    }
+    if (now - started_ms >= kControlRetryMs) {
+        macro_power_off_pending = false;
+        return;
+    }
+    if (queue_is_full(&control_fifo)) return;
+    // Core0 owns the queue. Once there is space, submit this request only once.
+    bt_power_off_controller();
+    macro_power_off_pending = false;
+}
+
 void init_feature() {
     feature_data.clear();
+    check_dse = true;
+    is_dse = false;
 #if !ENABLE_SERIAL
     usb_feature_started_ms = to_ms_since_boot(get_absolute_time());
-    usb_identity_pending = false;
+    usb_identity_pending = true;
 #endif
     get_feature_data(0x09, 20);
     get_feature_data(0x20, 64);
@@ -1303,6 +1309,5 @@ void init_feature() {
     // DSE
     // check DSE by request 0x70 feature report. DSE return DEFAULT
     // If len == 1, it's DS5
-    check_dse = true;
     get_feature_data(0x70, 64);
 }

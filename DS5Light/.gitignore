@@ -7,7 +7,7 @@ reports/
 *.zip
 *.spec
 .env*
-
+.tools/
 .serena/
 .gitnexus/
 .build-temp/

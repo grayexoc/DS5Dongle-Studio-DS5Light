@@ -20,6 +20,7 @@ from studio_slots import devices,run_device
 from device_binding import DeviceBinding,resolve_hid
 
 from studio_power import blocked as power_blocked
+from studio_startup import StartupDiscovery
 
 
 
@@ -29,7 +30,7 @@ AUTOHAPTICS_OFF_MESSAGE=_ui_tr('현재 Studio 프로필의 오디오햅틱이 �
 
 
 
-class StudioPanel:
+class StudioPanel(StartupDiscovery):
 
     def __init__(self,app,parent):
 
@@ -54,6 +55,7 @@ class StudioPanel:
         self._battery_ready_key=None;self._battery_recovery_pending=None
 
         self.controller_connected=None  # Unknown until a verified observation.
+        self.initial_connected=False;self.initial_deadline=None
 
         row=ttk.Frame(parent);row.pack(fill='x');row.columnconfigure(2,weight=1)
 
@@ -91,13 +93,6 @@ class StudioPanel:
 
 
 
-    def initial_read(self):
-
-        self.startup_id=None
-
-        self.discover(allow_running=True)
-
-
 
     def on_open(self):
 
@@ -105,7 +100,7 @@ class StudioPanel:
 
         # Startup, Start and post-activation reads keep the current slot fresh.
 
-        if not self.busy and not self.slots:self.discover()
+        if not self.busy and (not self.slots or self.catalog_invalid):self.discover(refresh=True)
 
         self.parent.after_idle(self._color_profile_popup)
 
@@ -257,7 +252,7 @@ class StudioPanel:
 
         if getattr(getattr(self.app,'studio_settings',None),'busy',False):return
 
-        if self.app.engine and not (allow_running and kind=='discover'):return
+        if self.app.engine and not (allow_running and kind in ('discover','startup')):return
 
         self.operation=kind;self.busy=True;self.render();self.app.last_render=None;self.app.render()
 
@@ -419,6 +414,7 @@ class StudioPanel:
         if not profile or profile.get('auto_haptics_enable') not in (0,1,2):return
 
         self.controller_connected=True
+        self.initial_connected=True
 
         old=self.observed_profile
 
@@ -433,6 +429,8 @@ class StudioPanel:
         self.last_profile_check=time.monotonic()
 
         device_row=profile.get('device_row')
+        serial=profile.get('device_serial') or (device_row or {}).get('serial_number')
+        if serial:self.device_serials[path]=serial
 
         if device_row and 'vendor_id' in device_row:
 
@@ -612,6 +610,7 @@ class StudioPanel:
         target=self._battery_recovery_pending
 
         if not target:return
+        if not self.initial_connected and self.initial_deadline is not None and time.monotonic()<self.initial_deadline:return
 
         if not missing:
 
@@ -936,6 +935,13 @@ class StudioPanel:
             self.poll_id=self.app.root.after(80,self.poll);return
 
         self.busy=False;self.operation=None
+        if kind=='startup':
+            result=self.finish_initial_read(result if not error else None)
+            if result is None:
+                self.render();self.app.last_render=None;self.app.render()
+                if self._start_callback is not None:self._begin_start_check()
+                return
+            kind='discover';error=None
 
         if kind=='check_start':
 
@@ -974,6 +980,8 @@ class StudioPanel:
             self.paths=[device['path'] for device,_,_ in found]
 
             for device_index,(device,slots,profile) in enumerate(found,1):
+                if sum(d.get('serial_number')==device.get('serial_number') for d,_,_ in found)==1:
+                    self.remember_slots(device,slots)
 
                 if device.get('serial_number'):self.device_serials[device['path']]=device['serial_number']
 

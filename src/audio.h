@@ -20,6 +20,7 @@ void audio_diagnostic_snapshot(uint8_t *data);
 void core1_entry();
 void set_headset(bool state);
 void set_mic_active(bool active);
+void audio_mic_policy_changed();
 bool audio_mic_active();
 void mic_add_queue(uint8_t *data, uint16_t len);
 void update_mic_status();

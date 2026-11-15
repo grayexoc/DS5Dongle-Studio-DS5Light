@@ -74,12 +74,88 @@ class ModifiedUITests(unittest.TestCase):
         before=dict(self.ui.process_dot_colors); self.ui.render_games()
         self.assertEqual(before,self.ui.process_dot_colors)
 
+    def test_refresh_keeps_current_process_but_rejects_reused_pid(self):
+        app=self.ui
+        app.scope.set('process')
+        app.desired_game='Game.exe'
+        rows=[dict(name='Game.exe',pid=123,started=1.,cpu=3.),
+              dict(name='Other.exe',pid=124,started=2.,cpu=4.)]
+        app.render_games(rows)
+        self.assertEqual(app._run_route()[1:3],(123,1.))
+        app.game.set(next(key for key,pid in app.game_map.items() if pid==124))
+        app._finish_game_refresh(rows,None,False)
+        self.assertEqual(app._run_route()[1:3],(124,2.))
+        app.render_games([rows[0],dict(rows[1],started=3.)])
+        self.assertIsNone(app._run_route()[1])
+
+    def test_start_confirmation_cancels_if_route_changed(self):
+        app=self.ui
+        app.run_intent.request(app._run_route())
+        app.scope.set('process')
+        with patch.object(app.studio,'native_mix_conflict') as next_check:
+            app._start_after_profile_check()
+        next_check.assert_not_called()
+        self.assertFalse(app.run_intent.requested)
+
+    def test_saving_settings_does_not_apply_or_render_controls(self):
+        app=self.ui
+        app.remember_last.set(True)
+        original=app.controls
+        app.gain.set(150)
+        with patch.object(app,'render') as render:
+            snapshot=app._preference_snapshot()
+        render.assert_not_called()
+        self.assertIs(app.controls,original)
+        self.assertEqual(snapshot['controls']['gain'],1.5)
+        app.update_controls()
+        applied=app.controls
+        app.update_controls()
+        self.assertIs(app.controls,applied)
+
+    def test_diagnostics_layout_runs_only_for_change_or_tab_entry(self):
+        app=self.ui
+        app._diagnostics_text=None
+        with (patch.object(app,'_diagnostics_visible',return_value=True),
+              patch.object(app.diagnostics_body,'fit_text') as fit,
+              patch.object(app,'_schedule_diagnostic_spacing') as schedule):
+            app._update_diagnostics()
+            app._update_diagnostics()
+            fit.assert_called_once()
+            schedule.assert_not_called()
+            app._update_diagnostics(True)
+            schedule.assert_called_once()
+
     def test_failed_engine_restores_controls(self):
         self.ui.engine=self.engine(alive=False)
         self.ui.render(); self.ui.tick()
         self.assertIsNone(self.ui.engine)
         self.assertIn('simulated initialization failure',self.ui.status.get())
         self.assertNotIn('disabled',self.ui.start_button.state())
+
+    def test_empty_startup_retries_keep_start_and_load_enabled(self):
+        studio=self.ui.studio
+        studio.initial_deadline=time.monotonic()+10
+        with (patch('studio_panel.start_thread',side_effect=lambda thread:thread.run()),
+              patch('studio_panel.devices',return_value=[]),
+              patch.object(studio._cancel,'wait',return_value=False)):
+            for _ in range(3):
+                studio.task('startup',lambda:None)
+                self.assertTrue(studio.busy)
+                self.assertFalse(self.ui.start_button.instate(['disabled']))
+                self.assertFalse(self.ui.load_button.instate(['disabled']))
+                studio.poll()
+                self.assertFalse(self.ui.start_button.instate(['disabled']))
+            studio.task('startup',lambda:None)
+            self.ui.start_button.invoke()
+            self.assertTrue(self.ui.run_intent.requested)
+            studio.poll()
+            self.assertEqual(studio.operation,'check_start')
+            self.assertTrue(self.ui.start_button.instate(['disabled']))
+            self.assertFalse(self.ui.load_button.instate(['disabled']))
+            studio.poll()
+            self.assertFalse(self.ui.run_intent.requested)
+            self.assertIsNone(self.ui.engine)
+            self.assertFalse(self.ui.start_button.instate(['disabled']))
 
     def test_stop_is_asynchronous_and_callbacks_run_once(self):
         self.ui.engine=self.engine(delay=.3)
@@ -171,8 +247,14 @@ class ModifiedUITests(unittest.TestCase):
 
     def test_gain_slider_and_filter_are_independent(self):
         self.assertEqual(self.ui.gain.get(),100)
-        self.assertEqual(self.ui.gain_slider.maximum,150)
-        self.assertEqual(self.ui.gain_slider.reference,100)
+        slider=self.ui.gain_slider
+        self.assertEqual((slider.minimum,slider.maximum,slider.reference),(50,200,100))
+        labels=[slider.itemcget(item,'text') for item in slider.find_all() if slider.type(item)=='text']
+        self.assertEqual(labels,['50%','100%','200%'])
+        for key,value in (('Home',50),('End',200)):
+            slider._key(SimpleNamespace(keysym=key))
+            self.assertEqual(self.ui.gain.get(),value)
+            self.assertEqual(self.ui.controls.gain,value/100)
         self.ui.gain.set(125); self.ui.filter_on.set(False); self.ui.update_controls()
         self.assertEqual(self.ui.controls.gain,1.25)
         self.assertTrue(self.ui.controls.bypass); self.assertTrue(self.ui.gain_slider.enabled)
@@ -204,9 +286,9 @@ class ModifiedUITests(unittest.TestCase):
         self.ui._process_snapshot=[dict(name='Game.exe',pid=123,started=1.,cpu=1.)]
         self.ui.render_games(); self.ui.auto_apply_game.set(True)
         self.assertIsNone(self.ui.store.bound_slot('Game.exe'))
-        self.ui.slot_name.set('Game'); self.ui.gain.set(150); self.ui.save_slot()
+        self.ui.slot_name.set('Game'); self.ui.gain.set(200); self.ui.save_slot()
         self.assertEqual(self.ui.store.bound_slot('Game.exe'),0)
-        self.assertEqual(self.ui.store.slots[0]['controls']['gain'],1.5)
+        self.assertEqual(self.ui.store.slots[0]['controls']['gain'],2.)
         self.ui.auto_apply_game.set(False); self.ui.save_slot()
         self.assertIsNone(self.ui.store.bound_slot('Game.exe'))
 

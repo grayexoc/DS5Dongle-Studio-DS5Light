@@ -1,3 +1,35 @@
+# v1.0.18 — Audio processing and Studio connection fixes / 오디오 처리·Studio 연결 개선
+
+DS5Light-win-x64-v1.0.18.zip · ds5-studio-light_v47.uf2 (Pico 2 W)
+
+- **Audio processing.** Load SciPy when PC suppression first needs it, reduce filter overhead and handle sustained process-capture backlog. Audio haptics strength now ranges from 50% to 200%, with a 100% default.
+- **Studio settings and discovery.** Simplify Mix controls, improve initial profile discovery and reduce unnecessary updates while monitoring mappings. Remember slot history for each Pico.
+- **Studio v47.** Improve Bluetooth disconnection, input reset, Edge detection and USB recovery. Separate Pico command replies from controller replies. Improve microphone cutoff and delivery of the mapped power-off command when the Bluetooth queue is full.
+
+- **오디오 처리.** PC 억제 필터가 처음 필요할 때 SciPy를 불러오고 필터 처리 부담을 줄였습니다. 선택한 프로세스 캡처에서 버퍼 밀림을 보정합니다. 오디오 햅틱 세기는 50~200%이며 기본값은 100%입니다.
+- **Studio 설정과 장치 인식.** Mix 설정 배치를 정리하고 최초 프로필 인식을 개선했습니다. 매핑 입력 확인 중 불필요한 화면 갱신을 줄이고, Pico별 슬롯 이력을 기억합니다.
+- **Studio v47.** Bluetooth 연결 해제와 입력 중립화, Edge 판별 및 USB 재인식을 보완했습니다. Pico 명령 응답과 컨트롤러 응답을 분리했고, 마이크 차단과 Bluetooth 큐 포화 시 전원 끄기 매핑의 전달을 개선했습니다.
+
+# v1.0.17 — Process capture and haptic strength / 프로세스 캡처·햅틱 세기
+
+DS5Light-win-x64-v1.0.17.zip · App-only update / 앱 단독 업데이트
+
+- Use a moving average of buffered frames to detect and reduce sustained backlog in process capture.
+- Set the top audio haptics slider to 50–200%, with 100% as the default. Older values below 50% load at 50%.
+- 프로세스별 캡처에서 버퍼량의 이동평균으로 누적 대기를 감지하고 보정합니다.
+- 상단 오디오햅틱 세기는 50~200%, 기본값은 100%입니다. 기존 50% 미만 설정은 50%로 불러옵니다.
+
+# v1.0.16 — Initial discovery and resource use / 최초 인식·자원 사용 개선
+
+DS5Light-win-x64-v1.0.16.zip · App-only update / 앱 단독 업데이트
+
+- Reduce single-section filter processing overhead while preserving tested PCM output.
+- Keep last observed mapping input/output; skip unchanged redraws and pause hidden monitoring.
+- Probe current profile first during a bounded initial connection window. Reuse per-Pico slot history in preferences.json; live state still comes from the device.
+- Preserve older preferences and discard only malformed optional history. Invalidate slot history after slot writes/restores.
+- 필터 연산 및 입력 확인 갱신 최적화. 최초 연결 탐색과 기존 설정 파일 내 Pico별 슬롯 기록 추가.
+- Firmware is not rebuilt or flashed. 펌웨어 빌드·기록 및 실기기 지연 측정은 수행하지 않음.
+
 # v1.0.15 — Mapping saves and input checks / 매핑 자동 저장·입력 확인
 
 DS5Light-win-x64-v1.0.15.zip · ds5-studio-light_v45.uf2 (Pico 2 W)

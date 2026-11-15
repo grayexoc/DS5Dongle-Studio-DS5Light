@@ -25,19 +25,19 @@ Thank you to the original authors and contributors. This repository contains mod
 
 ## Download and quick start
 
-**Release v1.0.15 · DS5Light v1.0.15 · Studio firmware v45**
+**Release v1.0.18 · DS5Light v1.0.18 · Studio firmware v47**
 
 Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/latest):
 
 | File | Purpose |
 | --- | --- |
-| `ds5-studio-light_v45.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
-| `DS5Light-win-x64-v1.0.15.zip` | Complete Windows x64 app package. Python is not required. |
+| `ds5-studio-light_v47.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
+| `DS5Light-win-x64-v1.0.18.zip` | Complete Windows x64 app package. Python is not required. |
 
 1. Back up current dongle settings and slots. To install this firmware, enter BOOTSEL mode on the Pico 2 W and copy the UF2 to its USB drive. The app does not flash firmware automatically.
 2. Extract the entire app ZIP into a writable folder. Run `DS5Light.exe`, keeping `_internal` beside it. GitHub's automatic **Source code** archives are not the executable package.
 3. Connect the dongle and controller. In **Studio settings → Recommended presets**, choose a preset and save slot, then **Save and use**. The included files are `Studio Presert/DS_Native.json`, `Audio_Haptic_01.json` and `Audio_Haptic_02.json`.
-4. In **Audio haptics**, select the capture target and output, check the filter and gain, then start processing. New preferences default to PC suppression on, Balanced, 55% suppression, 85% impact preservation and 100% gain; existing preferences take precedence.
+4. In **Audio haptics**, select the capture target and output, check the filter and gain, then start processing. New preferences default to PC suppression on, Balanced, 55% suppression, 85% impact preservation and 100% gain (adjustable from 50% to 200%); existing preferences take precedence.
 5. For native-haptics games, stop app audio processing and select a suitable native profile. Turning off only the PC filter leaves audio transmission active.
 
 Recommended presets change only the current audio-haptics fields, preserving other **current** settings, then save that resulting configuration to the chosen slot. Overwriting a slot replaces its previous contents. Loading an existing dongle slot applies its full configuration.
@@ -160,19 +160,19 @@ DS5Light는 DS5Dongle-Studio 펌웨어의 오디오 햅틱 기능을 보완하�
 
 ## 다운로드와 시작
 
-**릴리즈 v1.0.15 · DS5Light v1.0.15 · Studio 펌웨어 v45**
+**릴리즈 v1.0.18 · DS5Light v1.0.18 · Studio 펌웨어 v47**
 
 [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/latest)에서 첨부 파일을 받으세요.
 
 | 파일 | 용도 |
 | --- | --- |
-| `ds5-studio-light_v45.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
-| `DS5Light-win-x64-v1.0.15.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
+| `ds5-studio-light_v47.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
+| `DS5Light-win-x64-v1.0.18.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
 
 1. 현재 동글 설정과 슬롯을 백업합니다. 펌웨어 설치 시 Pico 2 W를 BOOTSEL 모드로 연결하고 USB 드라이브에 UF2를 복사하세요. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
 2. 앱 ZIP 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행합니다. `_internal` 폴더를 함께 유지하세요. GitHub의 자동 **Source code** 압축 파일은 실행 배포본이 아닙니다.
 3. 동글과 컨트롤러를 연결하고 **Studio설정 → 추천 프리셋**에서 프리셋과 저장 슬롯을 선택한 뒤 **저장 후 사용**을 누릅니다. 파일은 `Studio Presert/DS_Native.json`, `Audio_Haptic_01.json`, `Audio_Haptic_02.json`입니다.
-4. **오디오햅틱**에서 캡처 대상과 출력을 선택하고 필터·세기를 확인한 뒤 시작합니다. 새 설정의 기본값은 PC 필터 켬·균형·억제량 55%·타격 보존 85%·세기 100%이며 기존 저장 설정이 우선합니다.
+4. **오디오햅틱**에서 캡처 대상과 출력을 선택하고 필터·세기를 확인한 뒤 시작합니다. 새 설정의 기본값은 PC 필터 켬·균형·억제량 55%·타격 보존 85%·세기 100%(조절 범위 50~200%)이며 기존 저장 설정이 우선합니다.
 5. 네이티브 햅틱 게임은 앱의 오디오 처리를 정지하고 적절한 네이티브 프로필을 사용하세요. PC 필터만 끄면 오디오 전송은 계속됩니다.
 
 추천 프리셋은 현재 구성의 오디오햅틱 항목만 변경하고 **현재**의 다른 설정을 유지한 결과를 선택한 슬롯에 저장합니다. 슬롯을 덮어쓰면 그 슬롯의 기존 내용이 교체됩니다. 기존 동글 슬롯을 불러오는 경우에는 슬롯의 전체 설정이 적용됩니다.

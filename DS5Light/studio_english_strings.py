@@ -1058,6 +1058,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  'Studio 명령 길이 초과': 'Studio command length exceeded',
  'Replace 완전히 대체': 'Replace Completely replace',
  'Studio 대상 장치를 확인할 수 없습니다.': 'Studio cannot determine the target device.',
+ '캡처 대상 또는 장치 설정이 변경되었습니다. 다시 시작하세요.': 'The capture target or device settings changed. Select Start again.',
  'Studio 응답 자료형 길이 불일치': 'Studio response data type length mismatch',
  'Studio 명령 전송 실패': 'Studio command sending failure',
  'Studio 연결 확인 중…': 'Checking Studio connection...',
@@ -4752,6 +4753,9 @@ FIELD_HELP['speaker_gain']='Use this option to effectively increase a quiet Dual
 FIELD_HELP['lock_volume']='Blocks DualSense volume commands from Windows and games. In-game sound levels are separate.'
 FIELD_LABELS['at_pushback_src']='Trigger recoil source'
 FIELD_HELP['at_pushback_src']='Selects game rumble or audio haptics to drive trigger recoil. Adjust recoil strength while configuring a custom trigger effect.'
+FIELD_HELP['disable_usb_sn']='Improves compatibility with some games and modes. Recommended for DualSense Edge haptics and speaker audio. Applying reconnects USB; you may need to reselect the default device in Windows Sound control panel.'
+EN['버튼을 직접 눌러 지정']='Press controller buttons to assign'
+EN['키보드 키를 직접 눌러 지정']='Press keyboard keys to assign'
 EN.update({
  'PS 기본 단축키': 'PS default shortcuts',
  '짧게 Win+G · 길게 Win+Tab. PS를 매핑에 쓰려면 끄세요. 변경값은 현재 프로필에 편집되고 임시 적용 또는 저장할 때 Pico에 전송됩니다.':
@@ -4841,6 +4845,12 @@ EN.update({
     '동작 변경은 모든 프로필에 영향을 줍니다.\n사용 체크는 현재 프로필에 별도로 저장합니다.': 'Mapping changes affect all profiles.\nActivation checkboxes are saved separately in the current profile.',
     'DualSense Edge의 네이티브 햅틱·스피커 호환성을 위해 USB 시리얼 숨기기를 켜는 것을 권장합니다.': 'Enable Hide USB serial number for better DualSense Edge native haptics and speaker compatibility.',
     'PC로 보내는 패드 입력과 펌웨어의 매핑 처리 상태를 확인합니다. 숨긴 입력은 보이지 않을 수 있으며, 짧은 출력은 진단 조회 사이에 지나갈 수 있습니다.': 'Shows gamepad reports sent to the PC and firmware mapping state. Hidden inputs may not appear, and brief outputs can occur between diagnostic reads.',
+    '화면에 보이는 동안 관측한 마지막 입력·출력을 유지합니다. 숨긴 조건 버튼과 짧은 출력은 놓칠 수 있습니다.': 'Keeps the last input and output observed while this view is visible. Hidden condition buttons and brief outputs may be missed.',
+    '\n최근 관측 입력: ': '\nLast observed input: ',
+    '\n최근 숨긴 조건 입력: ': '\nLast hidden condition input: ',
+    '\n최근 관측 출력: ': '\nLast observed output: ',
+    '키보드 {0}개 · 첫 키 {1}': '{0} keyboard keys · First key {1}',
+    '\n짧은 출력·전체 조합키·프로필 전환 등은 확인하지 못할 수 있음': '\nBrief outputs, full key combinations and actions such as profile switching may not be detected',
     '마지막 수신 입력: ': 'Last received input: ',
     'PC로 보내는 패드 입력: ': 'Gamepad input sent to PC: ',
     '\n마지막 수신 {0}초 전 · 수신 보고 {1}개': '\nLast report {0}s ago · {1} reports received',
@@ -4853,4 +4863,15 @@ EN.update({
     '입력을 지정했습니다. 완료 · Pico 저장을 누르면 저장합니다.': 'Input assigned. Select Finish · Save to Pico to save it.',
     '입력 확인 시작 실패 · ': 'Could not start input monitoring · ',
     '저장 결과를 확인하지 못해 프로필 전환을 중단했습니다. 미저장 매핑은 내보내기로 보관한 뒤 새로 고침하세요.': 'Profile switching stopped because the save result is unverified. Export unsaved mappings before refreshing.',
+    '장치 연결과 진단 상태를 확인한 뒤 오디오 전송 5초 검사를 실행하세요.': 'Check the device connection and diagnostics, then run the 5-second audio transport check.',
+    '네이티브 햅틱 무신호 확인은 DualSense 모드·오디오햅틱 끔 프로필에서 실행하세요.': 'Check missing native haptics in DualSense mode with audio haptics off.',
+    '현재 펌웨어의 진단 정보로는 오디오 수신과 무음을 구분할 수 없습니다.': 'This firmware does not provide enough diagnostic information to distinguish missing audio from silent audio.',
+    '햅틱 효과가 있는 구간에서 오디오 전송 5초 검사를 실행하면 수신 없음과 무음 신호를 구분해 안내합니다.': 'Run the 5-second audio transport check during a haptic effect to distinguish missing audio from silent audio.',
+    '검사 구간을 확인하지 못했습니다. 상태를 새로 고침하고 다시 검사하세요.': 'The measurement interval could not be verified. Refresh status and run the check again.',
+    '검사 구간에 새 USB 오디오 수신이 없습니다. 게임의 출력 장치와 Pico 오디오 연결을 확인하세요.': 'No new USB audio was received during this check. Check the game output device and Pico audio connection.',
+    '오디오는 수신되지만 4채널이 아닙니다. 네이티브 햅틱을 지원하는 게임과 해당 Pico의 4채널 출력을 확인하세요.': 'Audio is arriving, but it is not 4-channel audio. Check native haptic support in the game and the selected Pico 4-channel output.',
+    '오디오는 수신되지만 마지막으로 읽은 4채널 신호는 거의 무음입니다. 효과가 있는 구간에서도 같다면 게임의 출력 경로와 Windows 오디오 설정을 확인하세요.': 'Audio is arriving, but the last observed 4-channel block is nearly silent. If this persists during effects, check the game output route and Windows audio settings.',
+    '스피커 신호는 수신되지만 마지막 햅틱 채널은 거의 무음입니다. 햅틱 효과가 있는 구간에서 다시 검사하세요. 게임·모드별 지원 차이도 확인하세요.': 'Speaker audio is arriving, but the last observed haptic channels are nearly silent. Recheck during a haptic effect and check game or mode support.',
+    '마지막으로 읽은 햅틱 채널에서 신호가 감지됐습니다. 실제 전송 완료와 손잡이 진동까지 확인한 결과는 아닙니다.': 'A signal was detected in the last observed haptic channels. This does not confirm completed delivery or physical vibration.',
+    '오디오 수신량과 마지막 햅틱 신호, 스피커 처리 카운터를 확인합니다. 신호 크기는 마지막 블록의 값이며 전체 검사 구간의 최대값이 아닙니다.': 'Checks received audio, the last haptic signal and speaker counters. Signal peaks describe the last block, not the maximum over the whole check.',
 })

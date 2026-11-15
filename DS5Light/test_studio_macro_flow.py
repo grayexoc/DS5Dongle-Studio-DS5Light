@@ -48,6 +48,14 @@ class MacroFlowUITests(unittest.TestCase):
         ui.macro_editor=MacroEditor(ui,0);return ui,ui.macro_editor
     def test_three_steps_and_no_hid_while_editing(self):
         ui,e=self.macro(record(chord=1,keys=[4]))
+        self.assertEqual(e.output_record.cget('text'),'버튼을 직접 눌러 지정')
+        self.assertEqual(e.record_key_button.cget('text'),'키보드 키를 직접 눌러 지정')
+        self.assertEqual(e.record_key_button.grid_info()['sticky'],'e')
+        e.feedback.set(e.save_hint)
+        feedback=next(w for w in e.footer.winfo_children() if isinstance(w,tk.Label))
+        self.assertEqual(int(feedback.cget('wraplength')),0)
+        e.feedback.set('입력 오류')
+        self.assertGreater(int(feedback.cget('wraplength')),0)
         with patch.object(ui,'with_client') as hid,patch.object(ui,'task') as task:
             e.mode.set('빠르게 두 번 누르기');e.name.set('Test');e.refresh();hid.assert_not_called();task.assert_not_called()
         self.assertEqual(e.draft.build(e.state())[5],16)

@@ -34,7 +34,7 @@ from dataclasses import asdict, replace
 
 from audio import Engine, InstanceLock, devices
 
-from core import Controls
+from core import Controls, HAPTIC_GAIN_MIN, HAPTIC_GAIN_MAX, load_signal_filters
 from app_version import APP_VERSION
 
 from process_audio import ProcessSampler
@@ -388,7 +388,7 @@ class HapticSlider(tk.Canvas):
 
     """Compact gold range control matching the app's visual theme."""
 
-    def __init__(self,parent,variable,command,maximum=100,reference=None,background=CARD,width=200):
+    def __init__(self,parent,variable,command,maximum=100,reference=None,background=CARD,width=200,*,minimum=0):
 
         super().__init__(parent,width=px(parent,width),height=px(parent,36 if reference is not None else 24),bg=background,highlightthickness=0,borderwidth=0,takefocus=1,cursor='hand2')
 
@@ -398,7 +398,7 @@ class HapticSlider(tk.Canvas):
 
         self.pad=max(px(self,9),(self.label_font.measure(f'{maximum}%')+1)//2+px(self,2)) if reference is not None else px(self,9)
 
-        self.maximum=maximum; self.reference=reference;self._logical_width=width
+        self.minimum=minimum; self.maximum=maximum; self.reference=reference;self._logical_width=width
         watch_scale(self,self._scale_slider)
 
         self.bind('<Configure>',lambda _event:self.draw()); self.bind('<Button-1>',self._click); self.bind('<B1-Motion>',self._drag)
@@ -413,7 +413,8 @@ class HapticSlider(tk.Canvas):
 
         width=max(self.winfo_width()-2*self.pad,1)
 
-        value=max(0,min(self.maximum,(x-self.pad)*self.maximum/width)); self.variable.set(round(value,1)); self.command()
+        value=self.minimum+(x-self.pad)*(self.maximum-self.minimum)/width
+        self.variable.set(round(max(self.minimum,min(self.maximum,value)),1)); self.command()
 
     def _click(self,event):
 
@@ -429,7 +430,7 @@ class HapticSlider(tk.Canvas):
 
         value=self.variable.get()
 
-        if event.keysym=='Home': value=0
+        if event.keysym=='Home': value=self.minimum
 
         elif event.keysym=='End': value=self.maximum
 
@@ -439,7 +440,7 @@ class HapticSlider(tk.Canvas):
 
         else: return
 
-        self.variable.set(max(0,min(self.maximum,value))); self.command(); return 'break'
+        self.variable.set(max(self.minimum,min(self.maximum,value))); self.command(); return 'break'
 
     def set_enabled(self,enabled):
 
@@ -450,7 +451,9 @@ class HapticSlider(tk.Canvas):
 
         self.delete('all'); width=max(self.winfo_width(),2*self.pad+1); y=px(self,12); left=self.pad; right=width-self.pad
 
-        knob=left+(right-left)*max(0,min(self.maximum,self.variable.get()))/self.maximum
+        span=self.maximum-self.minimum
+        value=max(self.minimum,min(self.maximum,self.variable.get()))
+        knob=left+(right-left)*(value-self.minimum)/span
 
         self.create_rectangle(left,y-px(self,3),right,y+px(self,3),fill='#242321',outline=BORDER,width=1)
 
@@ -464,11 +467,11 @@ class HapticSlider(tk.Canvas):
 
         if self.reference is not None:
 
-            ref=left+(right-left)*self.reference/self.maximum
+            ref=left+(right-left)*(self.reference-self.minimum)/span
 
             self.create_line(ref,px(self,19),ref,px(self,23),fill=ACCENT)
 
-            for x,label,anchor in ((left,'0%','nw'),(ref,f'{self.reference}%','n'),(right,f'{self.maximum}%','ne')):
+            for x,label,anchor in ((left,f'{self.minimum}%','nw'),(ref,f'{self.reference}%','n'),(right,f'{self.maximum}%','ne')):
 
                 self.create_text(x,px(self,23),text=label,anchor=anchor,fill=MUTED,font=self.label_font)
 
@@ -648,7 +651,7 @@ class App:
 
             if (self.controls.mode not in ('normal','pure') or not 0<=self.controls.strength<=1 or self.controls.limiter not in ('soft','hard')
 
-                or type(self.controls.gain) not in (int,float) or not 0<=self.controls.gain<=1.5):
+                or type(self.controls.gain) not in (int,float) or not 0<=self.controls.gain<=HAPTIC_GAIN_MAX):
 
                 raise ValueError(_ui_tr('PC 기본 설정 오류'))
 
@@ -678,7 +681,7 @@ class App:
 
             except (TypeError,ValueError): pass
 
-        self.controls=replace(self.controls,mode='normal')
+        self.controls=replace(self.controls,mode='normal',gain=max(self.controls.gain,HAPTIC_GAIN_MIN))
 
         saved_width=max(860,min(10000,int(prefs.get('window_width',px(root,860)))))
 
@@ -796,7 +799,9 @@ class App:
 
         self.gain_value=tk.Label(gain_heading,text='100%',bg=BG,fg=ACCENT,font=(_ui_tr('맑은 고딕'),9,'bold'),padx=0,pady=0,borderwidth=0,anchor='e');self.gain_value.pack(side='right')
 
-        self.gain_slider=HapticSlider(gain_frame,self.gain,self.update_controls,maximum=150,reference=100,background=BG,width=200)
+        self.gain_slider=HapticSlider(gain_frame,self.gain,self.update_controls,
+                                     minimum=round(HAPTIC_GAIN_MIN*100),maximum=round(HAPTIC_GAIN_MAX*100),
+                                     reference=100,background=BG,width=200)
 
         self.gain_slider.pack(fill='x')
 
@@ -1440,7 +1445,7 @@ class App:
 
         if index==1 and hasattr(self,'diagnostics_body'):
 
-            self.root.after_idle(self._update_diagnostics)
+            self.root.after_idle(self._update_diagnostics,True)
 
     def filter_help_icon(self,parent,text,background=CARD):
 
@@ -1474,15 +1479,29 @@ class App:
 
         return int(matches[0]['maxInputChannels']) if len(matches)==1 else self.device_channel_cache.get(self.source.get())
 
-    def update_controls(self):
-
-        self.controls=Controls(mode=self.mode.get(),bypass=not self.filter_on.get(),strength=self.strength.get()/100,
+    def _read_controls(self):
+        return Controls(mode=self.mode.get(),bypass=not self.filter_on.get(),strength=self.strength.get()/100,
 
             background=self.bg.get(),transient=self.transient.get(),rear=self.rear.get(),lfe=self.lfe.get(),center=self.center.get(),limiter=LIMITERS[self.limiter.get()],gain=self.gain.get()/100,impact=self.impact.get()/100)
 
-        if self.engine: self.engine.controls=self.controls
+    def update_controls(self):
+        controls=self._read_controls()
+        load_error=None
+        if self.engine and self.engine.controls!=controls:
+            previous=self.engine.controls
+            if controls.mode=='normal' and not controls.bypass and (previous.bypass or previous.mode!='normal'):
+                try:
+                    load_signal_filters()
+                except Exception as exc:
+                    self.filter_on.set(False)
+                    controls=replace(controls,bypass=True)
+                    load_error=exc
+            self.engine.controls=controls
+        if controls!=self.controls:self.controls=controls
 
         self.render()
+        if load_error is not None:
+            messagebox.showerror(_ui_tr('실행 실패'),str(load_error),parent=self.root)
 
     def render(self):
 
@@ -1568,9 +1587,13 @@ class App:
 
         self.refresh_button.configure(state='normal' if process_selectable and not self._process_refresh_running else 'disabled')
 
-        self.load_button.configure(state='disabled' if active else 'normal')
-
-        self.start_button.configure(state='disabled' if active or self.studio.busy or self.studio_settings.busy or self._close_requested or power_blocked(self) else 'normal'); self.stop_button.configure(state='normal' if active and not self._stopping else 'disabled')
+        # Startup discovery can queue a start request without disabling the button on each retry.
+        studio_blocks_start=self.studio.busy and self.studio.operation!='startup'
+        start_disabled=active or studio_blocks_start or self.studio_settings.busy or self._close_requested or power_blocked(self)
+        for button,disabled in ((self.load_button,active),(self.start_button,start_disabled),
+                                (self.stop_button,not active or self._stopping)):
+            if button.instate(['disabled'])!=disabled:
+                button.state(['disabled' if disabled else '!disabled'])
 
         capture_text=f'{self.engine.capture_channels}ch' if self.engine and self.engine.capture_channels else _ui_tr('대기')
 
@@ -1609,18 +1632,17 @@ class App:
         data={'remember_last':self.remember_last.get(),'auto_start':self.auto_start.get(),
 
               'mute_shortcut':dict(self.mute_binding),
+              'studio_slots':self.preference_store.data.get('studio_slots',[]),
 
               'window_width':max(860,self.root.winfo_width()),'window_height':max(860,self.root.winfo_height())}
 
         if data['remember_last']:
 
-            self.update_controls()
-
             data.update(scope=self.scope.get(),channels=CHANNELS[self.channel.get()],channel_auto=CHANNELS[self.channel.get()]==0,input=canonical_device(self.source.get()),
 
                 output=canonical_device(self.destination.get()),game_exe=self.game_names.get(self.game.get(),self.desired_game),
 
-                process_sort=self.process_sort.get(),controls=asdict(self.controls))
+                 process_sort=self.process_sort.get(),controls=asdict(self._read_controls()))
 
         return data
 
@@ -1808,7 +1830,11 @@ class App:
 
         self.schedule_preferences_save()
 
-    def render_games(self,selected_pid=None):
+    def render_games(self,new_snapshot=None):
+        old_key=self.game.get()
+        old_pid=self.game_map.get(old_key)
+        old_process=next((r for r in self._process_snapshot if r['pid']==old_pid),None)
+        if new_snapshot is not None:self._process_snapshot=new_snapshot
 
         rows=[row for row in self._process_snapshot if row['pid']!=os.getpid() and not is_excluded_process(row['name'])]
 
@@ -1825,8 +1851,6 @@ class App:
         else:
 
             rows.sort(key=lambda row:(row['started'] or 0,row['pid']),reverse=True)
-
-        old_pid=selected_pid if selected_pid is not None else self.game_map.get(self.game.get())
 
         self.game_map.clear(); self.game_names.clear(); values=[]
 
@@ -1874,15 +1898,20 @@ class App:
 
                                       image=self.process_dots[color_index],tags=('process',))
 
-        selected=next((key for key,pid in self.game_map.items() if pid==old_pid),None)
+        current_process=rows_by_pid.get(old_pid)
+        selected=None
+        if (old_process and current_process and old_process['name'].casefold()==current_process['name'].casefold()
+                and old_process['started']==current_process['started']
+                and (new_snapshot is None or old_process['started'] is not None)):
+            selected=next((key for key,pid in self.game_map.items() if pid==old_pid),None)
 
-        if not selected and self.desired_game:
+        if old_pid is None and self.desired_game:
 
             pid=match_game(self.desired_game,[(self.game_names[key],value) for key,value in self.game_map.items()])
 
             selected=next((key for key,value in self.game_map.items() if value==pid),None)
 
-        self.game.set(selected or '')
+        if self.game.get()!=(selected or ''):self.game.set(selected or '')
 
         if selected and self.game_map.get(selected) is not None:
 
@@ -1910,7 +1939,7 @@ class App:
 
     def _initial_process_refresh(self):
         if self._closing or self._close_requested:return
-        if self.studio.auto_haptics_mode is None and (self.studio.startup_id is not None or self.studio.operation=='discover'):
+        if self.studio.auto_haptics_mode is None and ((self.studio.startup_id is not None and self.studio.initial_deadline is None) or self.studio.operation in ('discover','startup')):
             self.root.after(150,self._initial_process_refresh)
             return
         self._initial_process_refresh_done=True
@@ -1930,20 +1959,18 @@ class App:
 
         self.refresh_button.configure(state='disabled')
 
-        selected_pid=self.game_map.get(self.game.get())
-
         def collect():
 
             try: result=self._process_sampler.snapshot(); error=None
 
             except Exception as exc: result=None; error=exc
 
-            self._refresh_results.put(("games",result,error,selected_pid,initial))
+            self._refresh_results.put(("games",result,error,initial))
 
         try:start_thread(threading.Thread(target=collect,daemon=True))
-        except Exception as exc:self._refresh_results.put(("games",None,exc,selected_pid,initial))
+        except Exception as exc:self._refresh_results.put(("games",None,exc,initial))
 
-    def _finish_game_refresh(self,rows,error,selected_pid,initial):
+    def _finish_game_refresh(self,rows,error,initial):
 
         self._process_refresh_running=False
         if self.studio.haptics_blocked:
@@ -1958,9 +1985,7 @@ class App:
 
         else:
 
-            self._process_snapshot=rows
-
-            self.render_games(selected_pid)
+            self.render_games(rows)
 
 
             if self.scope.get()=='process' and not self.engine: self.refresh_button.configure(state='normal')
@@ -2075,7 +2100,7 @@ class App:
 
         self.diagnostics_body.fit_text()
 
-    def _update_diagnostics(self):
+    def _update_diagnostics(self,fit_on_entry=False):
 
         # Reuse the main one-second tick. Never compute percentiles in a hidden tab.
 
@@ -2143,7 +2168,8 @@ class App:
 
             self.diagnostics_body.set_text(text);self._diagnostics_text=text
 
-        self._schedule_diagnostic_spacing()
+        elif fit_on_entry:
+            self._schedule_diagnostic_spacing()
 
     def refresh_slots(self,index=0):
 
@@ -2209,7 +2235,7 @@ class App:
 
             c=Controls(**item['controls'])
 
-            self.mode.set('normal'); self.filter_on.set(not c.bypass); self.strength.set(c.strength*100); self.gain.set(c.gain*100); self.impact.set(c.impact*100)
+            self.mode.set('normal'); self.filter_on.set(not c.bypass); self.strength.set(c.strength*100); self.gain.set(max(c.gain,HAPTIC_GAIN_MIN)*100); self.impact.set(c.impact*100)
 
             self.bg.set(c.background); self.transient.set(c.transient); self.rear.set(c.rear); self.lfe.set(c.lfe); self.center.set(c.center)
 
@@ -2297,6 +2323,11 @@ class App:
 
         if (self.engine or self._closing or self._close_requested or self.studio_settings.busy
                 or self.studio.busy or not self.run_intent.requested):return
+        route=self._run_route()
+        if route!=self.run_intent.route:
+            self.run_intent.stop('route_changed')
+            self.status.set(_ui_tr('캡처 대상 또는 장치 설정이 변경되었습니다. 다시 시작하세요.'))
+            return
 
         if self.studio.native_mix_conflict():
             self.run_intent.stop('invalid_route')
@@ -2403,10 +2434,18 @@ class App:
             auto_paired=binding.match_output(self.ds,hid_rows,requested) is not None
             if auto_paired:
                 record('single_device_auto_pair',self.ds,binding,requested)
-            if not auto_paired and not messagebox.askyesno(_ui_tr('출력 확인'),_ui_tr('선택한 출력이 현재 Pico의 듀얼센스 오디오 장치인지 확인하세요. 이 출력으로 연결할까요?')+'\n'+matches[0]['name'],parent=self.root):
-                self.run_intent.stop('output_confirmation_cancelled');return
-            if not auto_paired and not binding.confirm_output(matches[0],allow_container_mismatch=True):
-                self.run_intent.stop('invalid_route');return
+            if not auto_paired:
+                generation=self.run_intent.generation
+                accepted=messagebox.askyesno(_ui_tr('출력 확인'),_ui_tr('선택한 출력이 현재 Pico의 듀얼센스 오디오 장치인지 확인하세요. 이 출력으로 연결할까요?')+'\n'+matches[0]['name'],parent=self.root)
+                if self.run_intent.generation!=generation or self._close_requested:return
+                if route!=self._run_route() or identity!=binding.snapshot():
+                    self.run_intent.stop('route_changed')
+                    self.status.set(_ui_tr('캡처 대상 또는 장치 설정이 변경되었습니다. 다시 시작하세요.'))
+                    return
+                if not accepted:
+                    self.run_intent.stop('output_confirmation_cancelled');return
+                if not binding.confirm_output(matches[0],allow_container_mismatch=True):
+                    self.run_intent.stop('invalid_route');return
         self.update_controls()
 
         candidate=Engine(None if self.source.get()==AUTO else self.source.get(),None if self.destination.get()==AUTO else self.destination.get(),self.controls,process_pid=pid,process_channels=CHANNELS[self.channel.get()],binding=self.studio.binding)
