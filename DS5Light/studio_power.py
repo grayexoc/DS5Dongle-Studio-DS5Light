@@ -110,7 +110,7 @@ class StudioPower:
         self.worker('request',lambda:exchange(self.identity.hid_path,1))
 
     def invalidate(self):
-        a=self.app;a.studio.controller_connected=False;a.studio._show_disconnected()
+        a=self.app;a.studio.mark_pico_absent();a.studio._show_disconnected()
         a.studio_settings.write_ready=False;a.studio_settings.pico_recognized=False
         a.studio_settings.external_stale=True
         a.studio_settings.invalidate_slot_cache()

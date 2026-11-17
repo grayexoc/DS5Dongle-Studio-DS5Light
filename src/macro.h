@@ -353,6 +353,8 @@ void macro_reset();
 // but never fire, so capturing a chord that matches an already-enabled macro
 // cannot type into the portal while the user is recording it.
 void macro_suspend(bool on);
+bool macro_suspend_legacy(bool on);
+bool macro_pause_lease(uint8_t operation, uint32_t owner);
 
 // True while a motion gate is held and strokes are being accumulated. main.cpp
 // suppresses gyro-to-stick aiming while this is set, so performing a gesture

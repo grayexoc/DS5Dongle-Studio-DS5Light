@@ -39,8 +39,8 @@ def collect(exe,target):
         shutil.copy2(Path('licenses/upstream')/name,dst)
     shutil.copytree('licenses/PyAudioWPatch-0.2.12.8',target/'PyAudioWPatch-source-notices',dirs_exist_ok=True)
     binaries=[]
-    for p in (exe.parent/'_internal').rglob('*'):
-        if p.is_file() and p.suffix.lower() in ('.dll','.pyd'):
+    for p in sorted(exe.parent.rglob('*')):
+        if p.is_file() and p.suffix.lower() in ('.dll','.pyd','.exe'):
             binaries.append(dict(file=p.relative_to(exe.parent).as_posix(),sha256=hashlib.sha256(p.read_bytes()).hexdigest()))
     (target/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
     (target/'binary_inventory.json').write_text(json.dumps(binaries,indent=2),encoding='utf-8')

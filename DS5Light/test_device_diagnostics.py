@@ -30,6 +30,23 @@ class Client:
 
 
 class DiagnosticTests(unittest.TestCase):
+    def test_controller_ready_requires_a_current_consistent_diagnostic_sample(self):
+        from studio_settings_protocol import SettingsClient
+        for flags,expected in ((0,False),(1,False),(2,None),(3,True),(4,False)):
+            with self.subTest(flags=flags):
+                body=response();body[9]=flags
+                stale=response();stale[5:9]=b'OLD!'
+                body[5:9]=b'NEW!'
+                device=Mock()
+                device.send_feature_report.return_value=64
+                device.get_feature_report.side_effect=[b'\x84'+stale,b'\x84'+body]
+                with patch('device_diagnostics.secrets.token_bytes',return_value=b'NEW!'):
+                    self.assertIs(SettingsClient(device,sleep=lambda _:None).controller_ready(),expected)
+                self.assertEqual(device.get_feature_report.call_count,2)
+        device.get_feature_report.side_effect=None
+        device.get_feature_report.return_value=bytes(64)
+        self.assertIsNone(SettingsClient(device,sleep=lambda _:None).controller_ready())
+
     def test_speaker_muting_is_reported_without_start_or_settings_write(self):
         for values in (dict(disable_speaker=1,speaker_volume=100,speaker_gain=2),
                        dict(disable_speaker=0,speaker_volume=0,speaker_gain=2)):
@@ -453,9 +470,32 @@ class DialogTests(unittest.TestCase):
         self.dialog.poll()
         self.assertIsNone(self.app.device_diagnostics)
 
+    def test_forced_close_cancels_monitor_without_waiting_for_hid(self):
+        monitor=Mock();self.dialog.input_monitor=monitor;self.dialog.busy=True
+        self.dialog.close(force=True)
+        monitor.stop.set.assert_called_once();monitor.thread.join.assert_not_called()
+        self.assertTrue(self.dialog.cancel.is_set());self.assertIsNone(self.app.device_diagnostics)
+
     def test_export_converts_hid_path_and_keeps_unknown_types_explicit(self):
         self.assertEqual(self.dialog.json_value(b'\x01\xff'), '01ff')
         with self.assertRaises(TypeError):self.dialog.json_value(object())
+
+    def test_shared_export_omits_device_identifiers_and_retains_measurements(self):
+        from unittest.mock import mock_open
+        import json
+        device=dict(hid_path=b'private HID path',serial='private serial',container_id='private GUID',
+                    endpoint_name='private name',edge_serial_present=True)
+        self.dialog.report=dict(device=device,status=dict(usb_mode='DualSense'),firmware='47')
+        self.dialog.timing=dict(device=device,reports=250)
+        file=mock_open()
+        with patch('device_diagnostics_ui.filedialog.asksaveasfilename',return_value='diagnostics.json'), \
+             patch('pathlib.Path.open',file):self.dialog.export()
+        exported=json.loads(file().write.call_args.args[0])
+        self.assertEqual(exported['snapshot']['device'],dict(edge_serial_present=True))
+        self.assertEqual(exported['input_timing']['device'],dict(edge_serial_present=True))
+        self.assertEqual(exported['snapshot']['firmware'],'47')
+        self.assertEqual(exported['input_timing']['reports'],250)
+        self.assertEqual(self.dialog.report['device']['serial'],'private serial')
 
     def test_audio_signal_guidance_is_shown_and_cleared_on_read_failure(self):
         status=dict(ready=True,auto_haptics=0,usb_mode='DualSense',speaker_diagnostics=True)

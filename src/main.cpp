@@ -24,6 +24,7 @@
 #include "hardware/clocks.h"
 #include "hardware/vreg.h"
 #include "hardware/watchdog.h"
+#include "hardware/structs/watchdog.h"
 #include "pico/cyw43_arch.h"
 #include "state_mgr.h"
 #if ENABLE_SERIAL
@@ -42,7 +43,6 @@
 
 int reportSeqCounter = 0;
 uint8_t packetCounter = 0;
-bool spk_active = false;
 
 uint8_t interrupt_in_data[63]{};
 static constexpr uint8_t neutral_input_data[63] = {
@@ -1407,7 +1407,36 @@ void tud_hid_set_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t rep
     }
 }
 
+// Scratch 0 is shared with manual power resume. The tags are distinct and
+// manual_power_boot_is_resume() consumes the saved value before initialization.
+static constexpr uint32_t kCyw43RetryTag = 0x43595700;
+static constexpr uint32_t kCyw43RetryLimit = 4;
+
+static uint32_t cyw43_boot_retries() {
+    const auto marker = watchdog_hw->scratch[0];
+    if (!watchdog_caused_reboot() || (marker & 0xffffff00u) != kCyw43RetryTag) return 0;
+    return std::min(marker & 0xffu, kCyw43RetryLimit);
+}
+
+static void initialize_cyw43(uint32_t retries) {
+    const int error = cyw43_arch_init();
+    if (!error) return;
+    if (retries < kCyw43RetryLimit) {
+        const uint32_t delay_ms = 500u << retries;
+        printf("CYW43 initialization failed (%d); retry %lu/%lu in %lu ms\n", error,
+               static_cast<unsigned long>(retries + 1), static_cast<unsigned long>(kCyw43RetryLimit),
+               static_cast<unsigned long>(delay_ms));
+        sleep_ms(delay_ms);
+        watchdog_hw->scratch[0] = kCyw43RetryTag | (retries + 1);
+        watchdog_reboot(0, 0, 0);
+    } else {
+        printf("CYW43 initialization still failing (%d); power-cycle or use BOOTSEL\n", error);
+    }
+    while (true) sleep_ms(1000);
+}
+
 int main() {
+    const uint32_t cyw43_retries = cyw43_boot_retries();
     const bool manual_resume = manual_power_boot_is_resume();
 #if SYS_CLOCK_KHZ != 150000
     vreg_set_voltage(VREG_VOLTAGE_1_20);
@@ -1423,19 +1452,14 @@ int main() {
     tusb_init(BOARD_TUD_RHPORT, &dev_init);
 #if !ENABLE_SERIAL
     sleep_ms(150);
-    tud_disconnect();
+    usb_detach();
 #endif
     board_init_after_tusb();
 #if ENABLE_SERIAL
     stdio_usb_init();
 #endif
 
-    if (cyw43_arch_init()) {
-        printf("Failed to initialize CYW43, rebooting\n");
-        sleep_ms(500);
-        watchdog_reboot(0, 0, 0);
-        while (true) tight_loop_contents();
-    }
+    initialize_cyw43(cyw43_retries);
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);
 
     // SMPS coil-whine fix: at light load the on-board buck regulator drops into PFM
@@ -1454,7 +1478,7 @@ int main() {
 #endif
 
 #if !ENABLE_SERIAL
-    if (watchdog_caused_reboot() && !manual_resume) {
+    if (watchdog_caused_reboot() && !manual_resume && !cyw43_retries) {
         printf("Rebooted by Watchdog!\n");
         // 当崩溃重启以后，闪三下灯
         for (int i = 0; i < 6; i++) {

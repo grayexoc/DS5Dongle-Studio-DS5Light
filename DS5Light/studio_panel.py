@@ -54,7 +54,8 @@ class StudioPanel(StartupDiscovery):
 
         self._battery_ready_key=None;self._battery_recovery_pending=None
 
-        self.controller_connected=None  # Unknown until a verified observation.
+        self.controller_connected=None  # Bluetooth HID readiness from the selected Pico.
+        self.pico_available=None
         self.initial_connected=False;self.initial_deadline=None
 
         row=ttk.Frame(parent);row.pack(fill='x');row.columnconfigure(2,weight=1)
@@ -248,7 +249,7 @@ class StudioPanel(StartupDiscovery):
 
         if power_blocked(self.app):return
 
-        if self.closed or self.busy or self.app._closing:return
+        if self.closed or self.busy or self.app._closing or self.app._close_requested:return
 
         if getattr(getattr(self.app,'studio_settings',None),'busy',False):return
 
@@ -413,7 +414,9 @@ class StudioPanel(StartupDiscovery):
 
         if not profile or profile.get('auto_haptics_enable') not in (0,1,2):return
 
-        self.controller_connected=True
+        self.pico_available=True
+        if path!=self.profile_path:self.controller_connected=None
+        if 'controller_ready' in profile:self.controller_connected=profile['controller_ready']
         self.initial_connected=True
 
         old=self.observed_profile
@@ -599,7 +602,7 @@ class StudioPanel(StartupDiscovery):
 
         key=(monitor.generation,device['path'],device.get('serial_number'))
 
-        missing=self.current_profile is None or self.connection_missing()
+        missing=self.current_profile is None or self.connection_missing() or self.controller_connected is False
 
         if key!=self._battery_ready_key:
 
@@ -965,7 +968,7 @@ class StudioPanel(StartupDiscovery):
 
                 self.catalog_invalid=True
 
-                if not errors and not self._cancel.is_set():self.controller_connected=False
+                if not errors and not self._cancel.is_set():self.mark_pico_absent()
 
                 self._status(tr(_ui_tr('Studio 응답 확인 실패 · '))+(errors[0] if errors else tr(_ui_tr('연결된 듀얼센스가 없습니다.'))))
 
@@ -1119,9 +1122,13 @@ class StudioPanel(StartupDiscovery):
 
     def connection_missing(self):
 
-        return (self.controller_connected is False
+        return (self.pico_available is False
 
                 or bool(getattr(getattr(self.app,'idle_presence',None),'absent',False))
 
                 or self.app.engine is not None and bool(getattr(getattr(self.app,'controller_presence',None),'disconnected',False)))
+
+    def mark_pico_absent(self):
+        self.pico_available=False
+        self.controller_connected=False
 

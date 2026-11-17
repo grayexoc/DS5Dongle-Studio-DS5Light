@@ -72,7 +72,7 @@ class ConsistencyUITests(unittest.TestCase):
     def test_missing_main_profile_load_performs_discovery_only(self):
         self.editor();s=self.ui.studio;s.slots=[Slot(0,'saved','Audio')];s.slot_paths=[b'A'];s.choice.configure(values=['Audio']);s.choice.current(0)
         self.ui.status.set('연결된 듀얼센스가 없습니다.')
-        s.controller_connected=False
+        s.mark_pico_absent()
         with patch.object(s,'discover') as discover,patch('studio_panel.run_device') as send:
             s.render();self.assertEqual(s.apply.cget('style'),'Accent.TButton');s.activate()
             discover.assert_called_once_with(allow_running=True,refresh=True);send.assert_not_called()

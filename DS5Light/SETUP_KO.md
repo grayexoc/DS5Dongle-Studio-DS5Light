@@ -5,11 +5,14 @@
 ## 패키지와 펌웨어
 
 
-Windows 10/11 x64에서 `DS5Light-win-x64-v1.0.18.zip` 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행하세요. 실행 파일 옆의 `_internal` 폴더를 함께 유지해야 합니다. 실행 배포본에는 Python 설치가 필요하지 않습니다.
+Windows 10/11 x64에서 `DS5Light-win-x64-v1.0.19.zip` 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행하세요. 실행 파일 옆의 `_internal` 폴더를 함께 유지해야 합니다. 실행 배포본에는 Python 설치가 필요하지 않습니다.
 
-앱은 v1.0.18이며 Studio v47과 함께 사용할 수 있습니다. 펌웨어는 별도 첨부 파일 `ds5-studio-light_v47.uf2`로 제공합니다. 이 파일은 Raspberry Pi Pico 2 W용이며 RP2040 Pico W나 Waveshare 보드용이 아닙니다. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
+앱은 v1.0.19이며 Studio v48과 함께 사용할 수 있습니다. 펌웨어는 별도 첨부 파일 `ds5-studio-light_v48.uf2`로 제공합니다. 이 파일은 Raspberry Pi Pico 2 W용이며 RP2040 Pico W나 Waveshare 보드용이 아닙니다. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
 
 펌웨어 변경이나 프로필 저장 전에 현재 설정과 슬롯을 백업하세요. 이 포크의 추가 설정·진단에는 해당 펌웨어의 지원이 필요합니다. 기존 호환 Studio에서도 기본 오디오 전송이 가능할 수 있지만 추가 기능이 모두 제공되는 것은 아닙니다. 일반 설치에 flash_nuke 초기화는 필요하지 않습니다.
+
+- **PC 설정 백업과 앱 제거.** 앱을 닫고, 파일이 있다면 `DS5Light.exe` 옆의 `preferences.json`과 `%LOCALAPPDATA%\DS5Light`의 `presets.json`을 복사하세요. 압축을 푼 앱 폴더를 지우기 전에 이 파일들을 보관하세요. 복원할 때도 앱을 닫은 상태에서 같은 위치에 복사합니다.
+- **Pico 설정 백업과 복구.** Studio 슬롯을 내보내고 앱에서 내보낼 수 없는 설정은 별도로 백업하세요. 펌웨어 업데이트에 실패하면 Pico 2 W를 분리한 뒤 BOOTSEL을 누른 채 다시 연결하고, 나타난 드라이브에 정상 동작이 확인된 Pico 2 W용 UF2를 복사합니다. Studio를 다시 열어 활성 프로필과 설정을 확인한 뒤 저장하세요.
 
 ## 앱에서 Studio 준비
 

@@ -34,11 +34,11 @@
 #define ENABLE_SERIAL 0
 #endif
 
-bool ds_mode() {
-    if (get_config().controller_mode == 2) {
+static bool desired_ds_mode(const Config_body &config) {
+    if (config.controller_mode == 2) {
         return !is_dse;
     }
-    return get_config().controller_mode == 0;
+    return config.controller_mode == 0;
 }
 
 enum {
@@ -196,14 +196,41 @@ static constexpr uint8_t xinput_settings_report[] = {
     PROFILE_EVENT_DESCRIPTOR,
 };
 
-static bool s_xinput_active = false;
-bool usb_xinput_active() { return s_xinput_active; }
+struct UsbDescriptorSettings {
+    bool idle = false;
+    bool xinput = false;
+    bool dual_sense = true;
+    bool serial_hidden = false;
+    bool wake = false;
+    bool keyboard = false;
+    bool mouse = false;
+    uint8_t mouse_instance = 0;
+    uint8_t polling_rate = 0;
+};
+static UsbDescriptorSettings descriptor_settings;
+
+bool usb_xinput_active() { return descriptor_settings.xinput; }
+static bool ds_mode() { return descriptor_settings.dual_sense; }
+
+// TinyUSB can request device, configuration, HID and string descriptors in
+// separate transactions. Keep one set of options until the next attach.
 void usb_select_host_mode() {
-    s_xinput_active = !s_idle_pid && get_config().usb_gamepad_mode == 1;
+    const auto &config = get_config();
+    const bool idle = s_idle_pid;
+    descriptor_settings = {
+        idle,
+        !idle && config.usb_gamepad_mode == 1,
+        desired_ds_mode(config),
+        !idle && usb_edge_serial_hidden(config),
+        config.enable_wake != 0,
+        usb_kbd_iface_needed(config),
+        usb_mouse_iface_needed(config),
+        usb_mouse_instance(config),
+        config.polling_rate_mode,
+    };
 }
 
 static bool served_edge = false;
-static bool served_serial_hidden = false;
 
 bool usb_edge_serial_available() {
     return served_edge && bt_edge_connected();
@@ -214,11 +241,14 @@ bool usb_edge_serial_hidden(const Config_body &config) {
     return device_usb_serial_hidden();
 }
 
-bool usb_edge_serial_refresh_needed() {
+bool usb_identity_refresh_needed() {
     const auto &config = get_config();
+    const bool idle = s_idle_pid;
+    if (descriptor_settings.idle != idle ||
+        descriptor_settings.xinput != (!idle && config.usb_gamepad_mode == 1)) return true;
     if (usb_xinput_active()) return false;
-    return served_serial_hidden != usb_edge_serial_hidden(config) ||
-           (!served_edge && config.controller_mode != 0 && bt_edge_connected());
+    return descriptor_settings.serial_hidden != (!idle && usb_edge_serial_hidden(config)) ||
+           descriptor_settings.dual_sense != desired_ds_mode(config);
 }
 
 uint8_t const *tud_descriptor_device_cb(void) {
@@ -227,23 +257,21 @@ uint8_t const *tud_descriptor_device_cb(void) {
     // because Sony's vendor id plus a gamepad interface is sufficient. So the
     // idle identity uses the Raspberry Pi vendor id (this IS an RP2350 board),
     // its own product id, and its own manufacturer and product strings.
-    s_served_idle_pid = s_idle_pid;   // record what this enumeration hands over
+    s_served_idle_pid = descriptor_settings.idle;
     served_edge = false;
-    served_serial_hidden = false;
     if (usb_xinput_active()) return xinput_device_descriptor();
-    if (s_idle_pid) {
+    if (descriptor_settings.idle) {
         desc_device.idVendor  = 0x2E8A;   // Raspberry Pi — not Sony
         desc_device.idProduct = 0x0DE0;
     } else {
         desc_device.idVendor  = 0x054C;   // Sony, for the real controller identity
         desc_device.idProduct = ds_mode() ? 0x0CE6 : 0x0DF2;
     }
-    served_edge = !s_idle_pid && desc_device.idProduct == 0x0DF2;
-    served_serial_hidden = !s_idle_pid && usb_edge_serial_hidden(get_config());
-    desc_device.iSerialNumber = served_serial_hidden ? 0x00 : 0x03;
+    served_edge = !descriptor_settings.idle && !ds_mode();
+    desc_device.iSerialNumber = descriptor_settings.serial_hidden ? 0x00 : 0x03;
     // USB 2.1 (so the host requests the BOS / MS OS 2.0 selective-suspend opt-in)
     // only when wake is enabled; plain USB 2.0 otherwise.
-    desc_device.bcdUSB = get_config().enable_wake ? 0x0210 : 0x0200;
+    desc_device.bcdUSB = descriptor_settings.wake ? 0x0210 : 0x0200;
     return reinterpret_cast<uint8_t const *>(&desc_device);
 }
 
@@ -596,7 +624,7 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     if (index != 0) return nullptr;
     (void) index; // for multiple configurations
     auto bInterval = 0x01;
-    switch (get_config().polling_rate_mode) {
+    switch (descriptor_settings.polling_rate) {
         case 0:
             bInterval = 0x04;
             break;
@@ -628,13 +656,13 @@ uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     // keeps a device it can be woken from, and no controller appears anywhere.
     // The keyboard block is the last one in the array, so it can be lifted out
     // whole; only its bInterfaceNumber has to be renumbered to 0.
-    const bool wake = get_config().enable_wake;
+    const bool wake = descriptor_settings.wake;
     // Wake, the PS shortcut and macros all share this one keyboard interface.
     // usb_kbd_iface_needed() is the single definition; slot_activate and the
     // portal's ENUM_FIELDS test the same function so the three sites cannot
     // disagree about when a reconnect is actually required.
-    const bool kbd   = usb_kbd_iface_needed(get_config());
-    const bool mouse = usb_mouse_iface_needed(get_config());
+    const bool kbd   = descriptor_settings.keyboard;
+    const bool mouse = descriptor_settings.mouse;
     descriptor_configuration[7] = wake ? 0xE0 : 0xC0; // bmAttributes (REMOTE_WAKEUP bit)
     // Suffix trim. Blocks are laid out [base][keyboard][mouse], and the mouse
     // implies the keyboard (see usb_kbd_iface_needed), so only three of the four
@@ -1100,7 +1128,7 @@ uint8_t const *tud_hid_descriptor_report_cb(uint8_t itf) {
     // The mouse is always the LAST HID instance, so its index is 2 when the
     // keyboard is present and 1 when it is not. usb_mouse_instance() is the one
     // definition of that; everything else asks it rather than assuming.
-    if (itf != 0 && itf == usb_mouse_instance(get_config())) return desc_hid_report_mouse;
+    if (descriptor_settings.mouse && itf == descriptor_settings.mouse_instance) return desc_hid_report_mouse;
     (void) itf;
     if (ds_mode()) {
         return desc_hid_report_ds;
@@ -1138,7 +1166,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
         string_desc_arr[1] = "Studio OLED";
         string_desc_arr[2] = ds_mode() ? "DualSense Wireless Controller" : "DualSense Edge Wireless Controller";
     } else
-    if (usb_is_idle_pid()) {
+    if (descriptor_settings.idle) {
         string_desc_arr[1] = "DS5Dongle";
         string_desc_arr[2] = "DS5Dongle (controller off)";
     } else if (ds_mode()) {
@@ -1233,7 +1261,7 @@ uint8_t const *tud_descriptor_bos_cb(void) {
     if (usb_xinput_active()) return bos;
     // BOS carries the MS OS 2.0 selective-suspend opt-in, only meaningful for wake.
     // When wake is off the device is USB 2.0 and the host won't ask -- guard anyway.
-    if (!get_config().enable_wake) return nullptr;
+    if (!descriptor_settings.wake) return nullptr;
     return desc_bos;
 }
 

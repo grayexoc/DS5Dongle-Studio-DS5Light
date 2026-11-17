@@ -90,11 +90,17 @@ class SettingsClient(StudioClient):
     def __init__(self,device,sleep=time.sleep,cancel=lambda:False):
         super().__init__(device,sleep);self.cancel=cancel;self.bulk=None;self.deadline=None
         self.lightbar_supported=None;self._lightbar_values={}
+        self._write_tags_confirmed=False
+        self._macro_pause_owner=None
+        self._macro_pause_refresh_at=0
     def check_cancel(self):
         if self.cancel():raise RuntimeError(_ui_tr('Studio 작업 취소됨'))
         if self.deadline is not None and time.monotonic()>=self.deadline:raise RuntimeError(_ui_tr('Studio 조회 제한 시간 초과 · 다른 설정창의 조회를 중지한 뒤 새로 고침을 누르세요.'))
     def command(self,command,payload=b'',report=0x81,echo=b'',echo_offset=3,*,accept=None,attempts=12):
         self.check_cancel()
+        if command!=0x23 and self._macro_pause_owner and time.monotonic()>=self._macro_pause_refresh_at:
+            self._macro_pause_exchange(2)
+            self.check_cancel()
         if len(payload)>61:raise ValueError(_ui_tr('Studio 명령 길이 초과'))
         packet=bytes([0x80,0x66,command])+bytes(payload)
         if self.device.send_feature_report(packet.ljust(64,b'\0'))!=64:raise OSError(_ui_tr('Studio 명령 전송 실패'))
@@ -117,12 +123,65 @@ class SettingsClient(StudioClient):
             # each unsupported field into a timeout (and an unnecessary retry).
             # Accept failure only as failure; callers still validate any data.
             if command==12 and body[2]==1:return body
+            if command==4 and body[2:5]==b'\xff'+bytes(payload)+b'\x01':return body
             if echo and body[echo_offset:echo_offset+len(echo)]!=echo:mismatched=True;continue
             if accept is not None and not accept(body):continue
             return body
         raise TimeoutError(_ui_tr('Studio 응답 충돌 또는 지연 · 브라우저 웹 설정의 장치 연결을 해제한 뒤 새로 고침하세요.') if mismatched else _ui_tr('Studio 응답 대기 시간 초과'))
+
+    def _macro_pause_exchange(self,operation):
+        started=time.monotonic()
+        payload=bytes((1,operation))+self._macro_pause_owner+secrets.token_bytes(4)
+        try:
+            reply=self.command(0x23,payload,0x84,echo=payload)
+        except (OSError,TimeoutError) as exc:
+            if operation==1:
+                raise RuntimeError(_ui_tr('매크로 자동 재개 기능을 확인하지 못했습니다. 연결과 펌웨어를 확인하세요.')) from exc
+            raise RuntimeError(_ui_tr('매크로 일시 정지 상태를 확인할 수 없습니다.')) from exc
+        if reply[2]!=0 or (operation!=3 and time.monotonic()-started>=30):
+            raise RuntimeError(_ui_tr('매크로 일시 정지 상태를 확인할 수 없습니다.'))
+        self._macro_pause_refresh_at=started+5
+
+    def start_macro_pause(self):
+        if self._macro_pause_owner:
+            raise RuntimeError(_ui_tr('매크로 일시 정지 상태를 확인할 수 없습니다.'))
+        self._macro_pause_owner=(secrets.randbelow(0xffffffff)+1).to_bytes(4,'little')
+        self._macro_pause_exchange(1)
+
+    def end_macro_pause(self):
+        if not self._macro_pause_owner:return
+        try:self._macro_pause_exchange(3)
+        finally:self._macro_pause_owner=None
+
+    def require_write_tags(self):
+        if self._write_tags_confirmed:return
+        tag=(secrets.randbelow(0xffffffff)+1).to_bytes(4,'little')
+        try:
+            self.command(0x22,bytes(57)+tag,0x84,echo=tag,echo_offset=59,attempts=3,
+                         accept=lambda r:r[2:4]==b'\x00\x01')
+        except (OSError,TimeoutError) as exc:
+            raise RuntimeError(_ui_tr('Pico 저장 확인 기능을 확인하지 못했습니다. 연결을 확인하고 이 앱과 함께 제공되는 펌웨어를 사용하세요.')) from exc
+        self._write_tags_confirmed=True
+
+    def _tagged_write(self,command,payload=b'',*,accept=None):
+        self.require_write_tags()
+        tag=(secrets.randbelow(0xffffffff)+1).to_bytes(4,'little')
+        return self.command(command,payload.ljust(57,b'\0')+tag,0x84,echo=tag,echo_offset=59,
+                            attempts=40,accept=accept)
+
     def usb_serial_hidden(self, mode=None):
         return self.standby_mode(mode, command=0x21)
+
+    def controller_ready(self):
+        # Optional diagnostic evidence, separate from profile and audio output.
+        from device_diagnostics import decode_status,tagged_command
+        try:
+            state=decode_status(tagged_command(self,0x1e,0))
+            if state['ready'] and not state['connected']:return None
+            return state['ready']
+        except (OSError,ValueError,RuntimeError):
+            if self.cancel():raise
+            return None
 
     def dock_disconnect(self, mode=None):
         return self.standby_mode(mode, command=0x1d)
@@ -131,10 +190,11 @@ class SettingsClient(StudioClient):
         """Read or persist the device-wide policy, independently of profiles."""
         if mode not in (None, 0, 1):
             raise ValueError('Invalid standby mode')
-        payload = bytes([0]) if mode is None else bytes([1, mode])
-        # Optional reads get a short probe window; writes keep full verification.
-        attempts = 3 if mode is None else 12
-        reply = self.command(command, payload, 0x84, attempts=attempts, accept=lambda r: mode is None or len(r)<5 or r[2]!=0 or r[3]!=1 or r[4]==mode)
+        if mode is None:
+            reply=self.command(command,b'\x00',0x84,attempts=3)
+        else:
+            reply=self._tagged_write(command,bytes([1,mode]),
+                                     accept=lambda r:r[3]==1 and r[2] in (0,2) and r[4] in (0,1))
         if len(reply) < 5 or reply[3] != 1 or reply[4] not in (0, 1):
             raise ValueError(_ui_tr('USB 시리얼 설정 응답 오류') if command==0x21 else _ui_tr('충전독 정책 응답 오류') if command==0x1d else _ui_tr('Pico 절전 정책 응답 오류'))
         if reply[2] == 2:
@@ -203,10 +263,22 @@ class SettingsClient(StudioClient):
             r=self.command(13,bytes([slot,fid]),0x84,bytes([slot,fid]))
             if r[2]!=0:raise ValueError(_ui_tr('슬롯 설정 읽기 미지원'))
             return decode(field,r[5:5+struct.calcsize('<'+FORMATS[field[2]])],raw_slot=True)
-        # command 4 echoes fid in the status position, not a status byte.
+        # Successful command 4 replies use the field ID in place of a status byte.
         r=self.command(4,bytes([fid]),echo=bytes([fid]),echo_offset=2)
-        if r[2]!=fid:raise ValueError(_ui_tr('Studio 필드 응답 불일치'))
-        return decode(field,r[3:3+struct.calcsize('<'+FORMATS[field[2]])])
+        if r[2]==0xff:raise ValueError(_ui_tr('Studio 필드 읽기 미지원'))
+        size=struct.calcsize('<'+FORMATS[field[2]])
+        data=r[3:3+size]
+        if self.bulk is not False and data==bytes(size):
+            try:
+                reply=self.command(12,bytes([1,fid]),echo=bytes([1,fid]),attempts=3)
+            except (OSError,TimeoutError):
+                if self.bulk is True:raise
+                return decode(field,data)
+            self.bulk=True
+            if reply[2:4]==b'\x01\x00':raise ValueError(_ui_tr('Studio 필드 읽기 미지원'))
+            if reply[2:6]!=bytes([0,1,fid,size]):raise ValueError(_ui_tr('Studio 필드 응답 불일치'))
+            data=reply[6:6+size]
+        return decode(field,data)
     def read_fields(self,fields=None):
         fields=list(EDITABLE.values() if fields is None else fields)
         if any(f[1] in FIELDS and f[1] not in EDITABLE for f in fields):raise ValueError(_ui_tr('공사 중 또는 제외된 설정은 읽지 않습니다.'))
@@ -244,8 +316,10 @@ class SettingsClient(StudioClient):
                         got[f[1]]=decode(f,r[off:off+size]);off+=size
                     # One unsupported field must not disable bulk reads for
                     # every later group. Retain a validated partial prefix.
-                    self.bulk=True if count or r[2]==0 or self.bulk is True else False
-                except (OSError,ValueError,TimeoutError):self.bulk=False;got={}
+                    self.bulk=True
+                except (OSError,ValueError,TimeoutError):
+                    if self.bulk is not True:self.bulk=False
+                    got={}
             if len(got)!=len(group):
                 for f in group:
                     if f[1] in got:continue
@@ -315,7 +389,7 @@ class SettingsClient(StudioClient):
         if not 0<=index<32:raise ValueError(_ui_tr('슬롯 범위 오류'))
         raw=name.encode('utf-8')
         if len(raw)>16:raise ValueError(_ui_tr('프로필 이름은 UTF-8 16바이트 이내로 입력하세요.'))
-        r=self.command(8,bytes([index])+raw,0x84,bytes([index]))
+        r=self._tagged_write(8,bytes([index])+raw,accept=lambda r:r[3]==index and r[2] in (0,1))
         if r[2]!=0:raise RuntimeError(_ui_tr('슬롯 저장 실패 · 적용 결과를 조회하세요.'))
     def read_effects(self,slot=None):
         raise RuntimeError(_ui_tr('커스텀 트리거는 공사 중이므로 읽지 않습니다.'))
@@ -371,4 +445,4 @@ class SettingsClient(StudioClient):
         r=self.command(24,bytes([index])+bytes(data),0x84,bytes([index]))
         if r[2]!=0:raise RuntimeError(_ui_tr('매크로 적용 실패'))
     def commit_macros(self):
-        if self.command(25,report=0x84)[2]!=0:raise RuntimeError(_ui_tr('매크로 영구 저장 실패'))
+        if self._tagged_write(25,accept=lambda r:r[2] in (0,1))[2]!=0:raise RuntimeError(_ui_tr('매크로 영구 저장 실패'))

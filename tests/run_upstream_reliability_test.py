@@ -1,15 +1,16 @@
 """Exercise extracted production paths with mocked hardware; syntax only on ARM."""
 from pathlib import Path
-import json, os, re, subprocess
+import json, os, re, subprocess, sys
 root=Path(__file__).resolve().parents[1]
-base=root.parent/'DS5Dongle-Studio-build'
+base=Path(os.environ.get('DS5_FIRMWARE_TOOLS',root.parent/'DS5Dongle-Studio-build'))
 out=base/'reports/upstream-reliability-tests';out.mkdir(parents=True,exist_ok=True)
 main=(root/'src/main.cpp').read_text(encoding='utf-8')
 bt=(root/'src/bt.cpp').read_text(encoding='utf-8')
-callback=main[main.index('void tud_hid_set_report_cb('):main.index('\nint main()')]
+callback=main[main.index('void tud_hid_set_report_cb('):main.index('// Scratch 0 is shared')]
 auth=bt[bt.index('        case HCI_EVENT_AUTHENTICATION_COMPLETE:'):bt.index('        case HCI_EVENT_ENCRYPTION_CHANGE:')]
-start=main.index('    if (cyw43_arch_init()) {')
-failure=main[start:main.index('\n    cyw43_arch_gpio_put',start)]
+link_key=bt[bt.index('        case HCI_EVENT_LINK_KEY_REQUEST:'):bt.index('        case HCI_EVENT_USER_CONFIRMATION_REQUEST:')]
+start=main.index('static constexpr uint32_t kCyw43RetryTag')
+failure=main[start:main.index('\nint main()',start)]
 usb_wait=bt[bt.index('bool bt_usb_features_pending() {'):bt.index('\n#else\nbool bt_usb_features_pending()')]
 cmd=(root/'src/cmd.cpp').read_text(encoding='utf-8')
 disconnect=bt[bt.index('bool bt_disconnect()'):bt.index('bool bt_is_connected()')]
@@ -26,6 +27,7 @@ get_report=main[get_start:main.index('bool tud_audio_set_itf_cb(',get_start)]
 reply_start=cmd.index('static void pico_cmd_reply_read(')
 reply=cmd[reply_start:cmd.index('void pico_cmd_set(',reply_start)]
 code=r'''
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -67,10 +69,46 @@ int gap_disconnect(uint16_t handle){assert(handle==acl_handle);++disconnects;ret
 void manual_power_note_activity() {++graces;}
 void gap_inquiry_start(int n) {assert(n==30);++searches;}
 void hci_send_cmd(int*,uint16_t,int) {++encrypts;}
+using bd_addr_t=uint8_t[6];
+using link_key_t=uint8_t[16];
+using link_key_type_t=uint8_t;
+constexpr int HCI_EVENT_LINK_KEY_REQUEST=5;
+int hci_link_key_request_reply, hci_link_key_request_negative_reply;
+bool key_available=true;
+int positive_key_replies=0, negative_key_replies=0, key_logs=0;
+void hci_event_link_key_request_get_bd_addr(uint8_t *packet,uint8_t *addr) {
+ memcpy(addr,packet,sizeof(bd_addr_t));
+}
+bool gap_get_link_key_for_bd_addr(uint8_t*,uint8_t *key,link_key_type_t *type) {
+ if (!key_available) return false;
+ memset(key,0xa5,sizeof(link_key_t));
+ *type=4;
+ return true;
+}
+void hci_send_cmd(int *cmd,uint8_t*,uint8_t *key) {
+ assert(cmd==&hci_link_key_request_reply);
+ for (unsigned i=0;i<sizeof(link_key_t);++i) assert(key[i]==0xa5);
+ ++positive_key_replies;
+}
+void hci_send_cmd(int *cmd,uint8_t*) {
+ assert(cmd==&hci_link_key_request_negative_reply);
+ ++negative_key_replies;
+}
+void link_key_log(const char *format,...) {
+ const char *expected=key_available ? "[HCI] Link key request from %s, reply stored key type=%u\n"
+                                    : "[HCI] Link key request from %s, no key, force re-pair\n";
+ assert(strcmp(format,expected)==0);
+ ++key_logs;
+}
 int init_error=0,slept=0,reboots=0;
+bool halt_probe=false;
 int cyw43_arch_init() {return init_error;}
-void sleep_ms(int n) {slept+=n;}
-void watchdog_reboot(int a,int b,int c) {assert(!a&&!b&&!c);++reboots;throw 1;}
+void sleep_ms(int n) {slept+=n;if(halt_probe)throw 2;}
+bool watchdog_reset=false;
+struct Watchdog { uint32_t scratch[8]{}; } watchdog;
+auto* watchdog_hw=&watchdog;
+bool watchdog_caused_reboot(){return watchdog_reset;}
+void watchdog_reboot(int a,int b,int c) {assert(!a&&!b&&!c);++reboots;watchdog_reset=true;throw 1;}
 void tight_loop_contents() {assert(false);}
 static constexpr uint32_t usb_feature_wait_ms = 120;
 uint32_t usb_feature_started_ms=0;
@@ -122,9 +160,17 @@ start=bt.index('void bt_macro_power_off_task(bool requested)')
 end=bt.index('\n}',bt.index('void init_feature()',start))+2
 code+=bt[start:end]+'\n'
 code+=callback+'\nvoid auth(uint8_t *packet) {switch(6) {\n'+auth+'}}\n'
-code+='void boot() {\n'+failure+'\n}\n'
+code+='\n#define printf link_key_log\nvoid request_link_key(uint8_t *packet) {switch(HCI_EVENT_LINK_KEY_REQUEST) {\n'+link_key+'}}\n#undef printf\n'
+code+=failure+'\n'
 code+=r'''
 int main() {
+ uint8_t address[6]{};
+ request_link_key(address);
+ assert(positive_key_replies==1&&negative_key_replies==0&&key_logs==1);
+ key_available=false;
+ request_link_key(address);
+ assert(positive_key_replies==1&&negative_key_replies==1&&key_logs==2);
+ puts("PASS: link key reply and rejection preserve HCI behavior without dumping keys");
  usb_identity_pending=true;
  usb_feature_started_ms=0xfffffff0u;now=3;
  feature_data[0x05].resize(41);feature_data[0x09].resize(20);feature_data[0x20].resize(63);
@@ -228,8 +274,22 @@ int main() {
  state=WAKE_PENDING_PRESS;
  wake_on_bt_disconnect();assert(state==WAKE_IDLE&&!wake_owns_keyboard());
 
- boot();assert(!slept&&!reboots);init_error=1;try {boot();assert(false);}catch(int) {}
- assert(slept==500&&reboots==1);
+ watchdog.scratch[0]=kCyw43RetryTag|3;assert(cyw43_boot_retries()==0);
+ watchdog_reset=true;watchdog.scratch[0]=0x4d505752;assert(cyw43_boot_retries()==0);
+ initialize_cyw43(0);assert(!slept&&!reboots);
+ init_error=-1;
+ for (uint32_t i=0;i<kCyw43RetryLimit;++i) {
+   uint32_t retries=cyw43_boot_retries();watchdog.scratch[0]=0;
+   assert(retries==i);slept=0;
+   try {initialize_cyw43(retries);assert(false);}catch(int e) {assert(e==1);}
+   assert(slept==int(500u<<i)&&reboots==int(i+1));
+ }
+ assert(cyw43_boot_retries()==kCyw43RetryLimit);
+ watchdog.scratch[0]=0;halt_probe=true;slept=0;
+ try {initialize_cyw43(kCyw43RetryLimit);assert(false);}catch(int e) {assert(e==2);}
+ assert(slept==1000&&reboots==int(kCyw43RetryLimit)&&!watchdog.scratch[0]);
+ halt_probe=false;init_error=0;slept=0;
+ initialize_cyw43(kCyw43RetryLimit);assert(!slept&&!cyw43_boot_retries());
  puts("PASS: USB paths, USB restore on missing detection response, bounded macro power-off retry, suspend and XInput gates, Edge detection, Pico reply isolation, GAP disconnect, neutral input, wake key release, auth and boot recovery");
 }
 '''
@@ -239,6 +299,7 @@ env=dict(os.environ);env['PATH']=str(bin_dir)+os.pathsep+env.get('PATH','')
 subprocess.run([str(bin_dir/'g++.exe'),'-std=c++17',str(out/'test.cpp'),'-o',str(out/'test.exe')],env=env,check=True)
 p=subprocess.run([str(out/'test.exe')],env=env,check=True,capture_output=True,text=True)
 (out/'result.txt').write_text(p.stdout,encoding='utf-8');print(p.stdout)
+if '--host-only' in sys.argv:sys.exit(0)
 from test_support import firmware_build
 build=firmware_build(root)
 entries=json.loads((build/'compile_commands.json').read_text())

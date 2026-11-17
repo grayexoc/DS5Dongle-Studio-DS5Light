@@ -16,6 +16,10 @@ if ($ds5BuildPython) {
     & $ds5BuildPython -m pip install -r requirements-build.txt
     if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
 }
+& $ds5BuildPython -m pip check
+if ($LASTEXITCODE -ne 0) { throw 'Build dependency check failed' }
+& $ds5BuildPython -m pip list --format=json | Set-Content -Encoding utf8 'reports/build-python-dependencies.json'
+if ($LASTEXITCODE -ne 0) { throw 'Failed to record build dependencies' }
 $ds5AppVersion = & $ds5BuildPython -B -c "from app_version import APP_VERSION; print(APP_VERSION)"
 if ($LASTEXITCODE -ne 0 -or $ds5AppVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid app version' }
 $ds5PackageDirectory = Split-Path -Parent $PSScriptRoot

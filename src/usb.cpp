@@ -4,24 +4,59 @@
 
 #include <algorithm>
 
+#include "audio.h"
 #include "bt.h"
 #include "tusb.h"
 #include "bsp/board_api.h"
 #include "config.h"
+#include "macro.h"
 #include "state_mgr.h"
 #include "usb.h"
 #include "wake.h"
+#include "xinput_usb.h"
 #include "pico/time.h"
 
 namespace {
+// The RP TinyUSB driver enables the pull-up in dcd_init(), before the first
+// application detach. tud_mounted() becomes true much later, at SET_CONFIG.
+bool attached = true;
 bool reconnect_pending = false;
 uint32_t reconnect_at_ms = 0;
 }
 
+void usb_attach() {
+    if (reconnect_pending) return;
+    if (attached) {
+        if (usb_identity_refresh_needed()) usb_schedule_reconnect();
+        return;
+    }
+    usb_select_host_mode();
+    tud_connect();
+    attached = true;
+}
+
+void usb_detach() {
+    audio_usb_session_reset();
+    tud_disconnect();
+    attached = false;
+    macro_suspend(false);
+    xinput_disconnect();
+}
+
+extern "C" void tud_umount_cb(void) {
+    macro_suspend(false);
+}
+
+#ifndef ENABLE_WAKE_HID
+extern "C" void tud_mount_cb(void) {
+    macro_suspend(false);
+}
+#endif
+
 void usb_schedule_reconnect() {
     wake_note_usb_reconnect();
     if (usb_xinput_active() != (get_config().usb_gamepad_mode == 1)) state_rumble_reset();
-    tud_disconnect();
+    usb_detach();
     reconnect_at_ms = to_ms_since_boot(get_absolute_time()) + 250;
     reconnect_pending = true;
 }
@@ -33,8 +68,7 @@ void usb_reconnect_task() {
     if (reconnect_pending &&
         static_cast<int32_t>(to_ms_since_boot(get_absolute_time()) - reconnect_at_ms) >= 0) {
         reconnect_pending = false;
-        usb_select_host_mode();
-        tud_connect();
+        usb_attach();
     }
 }
 

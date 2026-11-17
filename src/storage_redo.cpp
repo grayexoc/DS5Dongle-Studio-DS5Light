@@ -6,6 +6,7 @@
 namespace {
 constexpr uint32_t magic = 0x5245444f;
 alignas(4) uint8_t work[FLASH_SECTOR_SIZE];
+bool recovery_blocked = false;
 struct Header { uint32_t tag, target, checksum, header_checksum; };
 const uint8_t *at(uint32_t offset) { return reinterpret_cast<const uint8_t *>(XIP_BASE + offset); }
 bool target_valid(uint32_t offset) {
@@ -14,18 +15,32 @@ bool target_valid(uint32_t offset) {
         if (offset == slot_sector_offset_at(i)) return true;
     return false;
 }
+
+bool metadata_page_erased() {
+    const auto *page = at(STORAGE_REDO_META);
+    for (unsigned i = 0; i < FLASH_PAGE_SIZE; ++i)
+        if (page[i] != 0xff) return false;
+    return true;
+}
 }
 
 bool storage_redo_recover() {
+    if (recovery_blocked) return false;
     Header h;
     memcpy(&h, at(STORAGE_REDO_META), sizeof(h));
     if (h.tag != magic || h.header_checksum != crc32(reinterpret_cast<const uint8_t *>(&h), 12)) return true;
-    if (!target_valid(h.target) || crc32(at(STORAGE_REDO_DATA), FLASH_SECTOR_SIZE) != h.checksum) return false;
+    if (!target_valid(h.target) || crc32(at(STORAGE_REDO_DATA), FLASH_SECTOR_SIZE) != h.checksum) {
+        recovery_blocked = true;
+        return false;
+    }
     if (memcmp(at(h.target), at(STORAGE_REDO_DATA), FLASH_SECTOR_SIZE) != 0) {
         memcpy(work, at(STORAGE_REDO_DATA), sizeof(work));
         flash_range_erase(h.target, FLASH_SECTOR_SIZE);
         flash_range_program(h.target, work, sizeof(work));
-        if (memcmp(at(h.target), work, sizeof(work)) != 0) return false;
+        if (memcmp(at(h.target), work, sizeof(work)) != 0) {
+            recovery_blocked = true;
+            return false;
+        }
     }
     flash_range_erase(STORAGE_REDO_META, FLASH_SECTOR_SIZE);
     return true;
@@ -40,8 +55,8 @@ bool storage_redo_write(uint32_t target, const uint8_t *image, uint32_t bytes) {
     memset(work, 0xff, sizeof(work));
     memcpy(work, image, bytes);
     if (!memcmp(at(target), work, sizeof(work))) return true;
-    // Commit the new image before touching the only live copy.
-    flash_range_erase(STORAGE_REDO_META, FLASH_SECTOR_SIZE);
+    // Only the first page is programmed. Erase stale/torn metadata before reusing it.
+    if (!metadata_page_erased()) flash_range_erase(STORAGE_REDO_META, FLASH_SECTOR_SIZE);
     flash_range_erase(STORAGE_REDO_DATA, FLASH_SECTOR_SIZE);
     flash_range_program(STORAGE_REDO_DATA, work, sizeof(work));
     if (memcmp(at(STORAGE_REDO_DATA), work, sizeof(work))) return false;

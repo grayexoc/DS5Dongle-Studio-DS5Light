@@ -147,13 +147,18 @@ class ProcessCaptureStream:
         self.protocol=None; self.last_read_timing=None; self.discard_before=0.
         self.prefill_discarded_frames=0; self.timestamp_errors=0; self.discontinuities=0
         self._packet_frames=CAPTURE_READ_FRAMES
+        self.reader=threading.Thread(target=self._read,daemon=True)
+        self.err_reader=threading.Thread(target=self._errors,daemon=True)
         self.child=subprocess.Popen([str(HELPER),str(pid),str(channels)],stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,stderr=subprocess.PIPE,bufsize=0,creationflags=0x08000000)
-        self.reader=threading.Thread(target=self._read,daemon=True); start_thread(self.reader)
-        self.err_reader=threading.Thread(target=self._errors,daemon=True); start_thread(self.err_reader)
-        if not self.ready.wait(7) or self.error:
+        try:
+            start_thread(self.reader)
+            start_thread(self.err_reader)
+            if not self.ready.wait(7) or self.error:
+                raise RuntimeError(_ui_tr('게임 캡처 시작 실패: ')+(self.error or _ui_tr('시간 초과'))+' / '+' '.join(self.messages))
+        except Exception:
             self.close()
-            raise RuntimeError(_ui_tr('게임 캡처 시작 실패: ')+(self.error or _ui_tr('시간 초과'))+' / '+' '.join(self.messages))
+            raise
     def _errors(self):
         import locale
         try:
@@ -312,9 +317,13 @@ class ProcessCaptureStream:
             self.child.stdin.close()
             self.child.wait(timeout=1.5)
         except subprocess.TimeoutExpired:
-            self.child.terminate(); self.child.wait(timeout=2)
+            self.child.terminate()
+            try:self.child.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.child.kill();self.child.wait(timeout=2)
         finally:
-            self.reader.join(timeout=1); self.err_reader.join(timeout=1)
+            for reader in (self.reader,self.err_reader):
+                if reader.is_alive():reader.join(timeout=1)
             self.child.stdout.close(); self.child.stderr.close()
         with self.condition:
             self.pending.clear();self.pending_segments.clear();self.queue.clear();self.condition.notify_all()

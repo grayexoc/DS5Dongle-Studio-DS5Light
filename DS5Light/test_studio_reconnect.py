@@ -95,6 +95,14 @@ class RecoveryUITests(unittest.TestCase):
             self.finish(e,'apply',result)
             self.assertEqual(e.doc.baseline['at_l2_strength'],strength)
         c.save_flash.assert_not_called()
+
+    def test_settings_edit_during_preflight_stops_before_any_setting_write(self):
+        e,c,_=self.prepare();e.changed('auto_haptics_gain',100)
+        c.profile.side_effect=[dict(PROFILE,config_token='begin'),dict(PROFILE,config_token='end')]
+        with self.assertRaisesRegex(RuntimeError,'외부에서 설정이 변경'):
+            self.transaction(e,c,fresh(),True)
+        c.write_fields.assert_not_called();c.save_slot.assert_not_called();c.save_flash.assert_not_called()
+        self.assertTrue(e.doc.dirty)
     def test_enabling_existing_macro_refreshes_after_interface_reconnect(self):
         e,c,_=self.prepare(pending=True);e.doc.macros_pending_flash=False
         e.doc.values['macro_disable']=0xfffffffe
@@ -112,6 +120,39 @@ class RecoveryUITests(unittest.TestCase):
         self.finish(e,'apply',answer)
         self.assertTrue(e.uncertain);self.assertFalse(e.write_ready);self.assertFalse(e.doc.save_requested)
         self.assertTrue(e.doc.macro_changes)
+
+    def test_reconnect_rejects_unverified_saved_settings_and_keeps_edits(self):
+        e,c,new=self.prepare()
+        e.changed('auto_haptics_gain',100)
+        for mismatch in ('value','missing','profile','edited'):
+            with self.subTest(mismatch=mismatch):
+                c.profile.return_value=PROFILE
+                reloaded=fresh(new)
+                reloaded['values'].update(e.doc.baseline)
+                reloaded['values']['auto_haptics_gain']=100
+                if mismatch=='value':
+                    reloaded['values']['auto_haptics_gain']=73
+                elif mismatch=='missing':
+                    del reloaded['values']['auto_haptics_gain']
+                elif mismatch=='profile':
+                    reloaded['profile']['index']=1
+                else:
+                    reloaded['profile']['edited']=True
+                with self.assertRaises(RuntimeError):
+                    self.transaction(e,c,reloaded,True)
+        callback=Mock()
+        e.after_profile_save=callback
+        e.doc.save_requested=True
+        e.resume=True
+        with patch.object(self.ui,'start') as start:
+            self.finish(e,'apply',None,'Reconnected settings were not verified.')
+            self.root.update_idletasks()
+            start.assert_not_called()
+        callback.assert_not_called()
+        self.assertTrue(e.uncertain)
+        self.assertFalse(e.write_ready)
+        self.assertFalse(e.doc.save_requested)
+        self.assertEqual(e.doc.changes,{'auto_haptics_gain':100})
 
     def test_uncertain_macro_commit_never_repeats_commit_or_sends_dependent_save(self):
         e,c,new=self.prepare();c.commit_macros.side_effect=TimeoutError('commit response lost')

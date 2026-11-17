@@ -11,7 +11,8 @@ class Client:
         self.values=dict(auto_haptics_enable=1,audio_buffer_length=48,macro_disable=0xfffffffa)
         self.stamp=dict(index=0,name='Existing',edited=False);self.slot=Slot(2,'empty','')
         self.calls=[];self.timeout=False;self.mask_changed=False
-    def profile(self):return dict(self.stamp)
+    def profile(self,*,include_revision=False):return dict(self.stamp)
+    def require_write_tags(self):pass
     def info(self,index):return self.slot
     def read_fields(self,fields):return {f[1]:self.values[f[1]] for f in fields},[]
     def write_fields(self,values,current):

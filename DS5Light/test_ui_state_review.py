@@ -93,7 +93,7 @@ class StateReviewTests(unittest.TestCase):
     def test_duplicate_process_hint_is_empty_and_owned_message_is_removed(self):
         app=self.ui;app.scope.set('process');app.desired_game='Game.exe'
         app.game.set('');app.game_map={};app.game_names={'one':'Game.exe','two':'game.exe'}
-        app._process_hint_base=tr('듀얼센스 연결됨')
+        app._process_hint_base=tr('듀얼센스 연결됨');app.studio.controller_connected=True
         app._process_hint_message='old selection hint';app.status.set('old selection hint')
         app._update_process_selection_status()
         self.assertEqual(app._process_selection_hint(),'')
@@ -104,10 +104,29 @@ class StateReviewTests(unittest.TestCase):
         panel=self.ui.studio;panel.controller_connected=True
         self.ui.status.set(tr('연결된 듀얼센스가 없습니다.'))
         self.assertFalse(panel.connection_missing())
-        panel.controller_connected=False;self.ui.status.set(tr('정지'))
+        panel.mark_pico_absent();self.ui.status.set(tr('정지'))
         self.assertTrue(panel.connection_missing())
         panel._observe_profile(b'ours',dict(index=0,name='Audio',edited=False,auto_haptics_enable=1))
         self.assertFalse(panel.connection_missing())
+        self.assertIsNone(panel.controller_connected)
+
+    def test_profile_response_does_not_claim_dualsense_connected(self):
+        app=self.ui;panel=app.studio
+        app.scope.set('process');app.game.set('');app.game_map={};app.desired_game='Game.exe';app.game_names={}
+        profile=dict(index=0,name='Audio',edited=False,auto_haptics_enable=1)
+        studio_ok=tr('Studio 프로필 조회 완료');connected=tr('듀얼센스 연결됨')
+        panel._observe_profile(b'A',dict(profile,controller_ready=False))
+        self.assertTrue(panel.pico_available);self.assertFalse(panel.controller_connected)
+        self.assertFalse(panel.connection_missing())
+        app._update_process_selection_status(base=studio_ok)
+        self.assertTrue(app.status.get().startswith(studio_ok))
+        panel._observe_profile(b'A',dict(profile,controller_ready=True))
+        app._update_process_selection_status(base=studio_ok)
+        self.assertTrue(app.status.get().startswith(connected))
+        panel._observe_profile(b'B',profile)
+        self.assertIsNone(panel.controller_connected)
+        app._update_process_selection_status(base=studio_ok)
+        self.assertTrue(app.status.get().startswith(studio_ok))
 
     def test_battery_marker_only_with_ready_percentage(self):
         logo=self.ui.brand_wordmark

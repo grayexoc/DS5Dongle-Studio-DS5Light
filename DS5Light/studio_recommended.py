@@ -56,7 +56,9 @@ def save_and_activate(client,fields,name,index,expected_slot,stamp,baseline,prog
     """One transaction: verify, apply, save, activate once, request persistence."""
     if not fields or set(fields)-AUDIO_HAPTIC_FIELDS:
         raise ValueError(_ui_tr('추천 프리셋은 Studio 오디오햅틱 항목만 변경할 수 있습니다.'))
-    if client.profile()!=stamp:raise RuntimeError(_ui_tr('현재 프로필이 바뀌었습니다. 새로 고침으로 확인하세요.'))
+    before=client.profile(include_revision=True)
+    if any(before.get(k)!=stamp[k] for k in ('index','name','edited')):
+        raise RuntimeError(_ui_tr('현재 프로필이 바뀌었습니다. 새로 고침으로 확인하세요.'))
     slot=client.info(index)
     if (slot.state,slot.name)!=expected_slot:raise RuntimeError(_ui_tr('저장 대상 슬롯이 변경되었습니다. 목록을 새로 고침하세요.'))
     required=set(baseline)|set(fields)|{'macro_disable'}
@@ -65,6 +67,9 @@ def save_and_activate(client,fields,name,index,expected_slot,stamp,baseline,prog
     if any(not equal_value(current[k],v) for k,v in baseline.items()):raise RuntimeError(_ui_tr('외부에서 설정이 변경되었습니다. 새로 고침으로 확인하세요.'))
     mask=current['macro_disable'];validate_changes(current,fields)
     changes={k:v for k,v in fields.items() if not equal_value(current[k],v)}
+    client.require_write_tags()
+    if 'config_token' in before and client.profile(include_revision=True)!=before:
+        raise RuntimeError(_ui_tr('외부에서 설정이 변경되었습니다. 다시 읽어 주세요.'))
     progress(_ui_tr('오디오햅틱 추천값 적용 중…'))
     client.write_fields(changes,current)
     expected=dict(current,**fields)

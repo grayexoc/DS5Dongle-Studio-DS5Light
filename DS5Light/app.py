@@ -17,6 +17,7 @@ import sys
 import ctypes
 
 import queue
+from copy import copy
 
 import random
 
@@ -26,7 +27,7 @@ import tkinter.font as tkfont
 
 from tkinter import ttk
 
-from studio_dialogs import messagebox, simpledialog
+from studio_dialogs import messagebox, simpledialog, confirm_hid_shutdown
 
 from pathlib import Path
 
@@ -219,7 +220,7 @@ class TabStrip(tk.Canvas):
 
     def __init__(self,parent,labels,on_select):
 
-        super().__init__(parent,height=44,bg=BG,highlightthickness=0,borderwidth=0,cursor='hand2')
+        super().__init__(parent,height=44,bg=BG,highlightthickness=0,borderwidth=0,cursor='hand2',takefocus=1)
 
         self.labels=list(labels);self.icons=('waveform','gear','sliders'); self.on_select=on_select; self.selected=0; self.hover=-1
 
@@ -232,6 +233,11 @@ class TabStrip(tk.Canvas):
         self.bind('<Configure>',lambda _event:self.draw())
 
         self.bind('<Motion>',self._motion); self.bind('<Leave>',self._leave); self.bind('<Button-1>',self._click)
+        self.bind('<FocusIn>',lambda _event:self.draw());self.bind('<FocusOut>',lambda _event:self.draw())
+        self.bind('<Left>',lambda _event:self._select_from_keyboard((self.selected-1)%len(self.labels)))
+        self.bind('<Right>',lambda _event:self._select_from_keyboard((self.selected+1)%len(self.labels)))
+        self.bind('<Home>',lambda _event:self._select_from_keyboard(0))
+        self.bind('<End>',lambda _event:self._select_from_keyboard(len(self.labels)-1))
 
         watch_scale(self,self._scale_tabs)
         self.draw()
@@ -302,7 +308,13 @@ class TabStrip(tk.Canvas):
 
         index=self._hit(event.x)
 
-        if index>=0: self.on_select(index)
+        if index>=0:
+            self.focus_set()
+            self.on_select(index)
+
+    def _select_from_keyboard(self,index):
+        self.on_select(index)
+        return 'break'
 
     def select(self,index): self.selected=index; self.draw()
 
@@ -315,6 +327,7 @@ class TabStrip(tk.Canvas):
     def draw(self):
 
         self.delete('all'); x=0
+        focused=self.focus_get()==self
 
         for index,label in enumerate(self.labels):
 
@@ -337,6 +350,10 @@ class TabStrip(tk.Canvas):
             left=x+1;right=x+width-1;tag=f'tab-{index}'
 
             self.create_rectangle(left,y,right,bottom,fill=fill,outline=outline,tags=tag)
+            if selected and focused:
+                inset=px(self,3)
+                self.create_rectangle(left+inset,y+inset,right-inset,bottom-inset,
+                                      outline=ACCENT,dash=(2,2),tags='tab-focus')
 
             icon=self.icons[index];icon_width=self.icon_widths[index]
 
@@ -681,6 +698,7 @@ class App:
 
             except (TypeError,ValueError): pass
 
+        gain_notice=self._legacy_gain_notice(self.controls.gain)
         self.controls=replace(self.controls,mode='normal',gain=max(self.controls.gain,HAPTIC_GAIN_MIN))
 
         saved_width=max(860,min(10000,int(prefs.get('window_width',px(root,860)))))
@@ -690,6 +708,10 @@ class App:
         fit_window(root,saved_width,saved_height,min_width=px(root,860),min_height=px(root,860))
 
         self._preferences_ready=False; self._preferences_job=None
+        self._preferences_busy=False;self._preferences_pending=False
+        self._preferences_results=queue.SimpleQueue();self._preferences_flush=None
+        self.file_save_busy=False
+        self._after_file_save=None
 
         self._process_refresh_running=False; self._process_snapshot=[]; self._process_sampler=ProcessSampler()
 
@@ -751,7 +773,7 @@ class App:
 
         self.process_sort_label=tk.StringVar(value=next((k for k,v in PROCESS_SORTS.items() if v==self.process_sort.get()),_ui_tr('오디오 출력')))
 
-        self.slot_name=tk.StringVar(value=_ui_tr('게임 설정')); self.notice=tk.StringVar(value='')
+        self.slot_name=tk.StringVar(value=_ui_tr('게임 설정')); self.notice=tk.StringVar(value=gain_notice)
 
         self.status=tk.StringVar(value=_ui_tr('정지'))
 
@@ -1188,6 +1210,9 @@ class App:
         self.status_label.grid(row=0,column=0,sticky='ew',padx=(0,SPACE_LG))
 
         self.status_label.bind('<Configure>',self._fit_status_text)
+        self.status_label.bind('<Button-1>',self._show_status_details)
+        self.status_label.bind('<Return>',self._show_status_details)
+        self.status_label.bind('<space>',self._show_status_details)
 
         HoverHint(self.status_label,lambda:self.status.get())
 
@@ -1421,6 +1446,15 @@ class App:
             shown=shorten(low) if font.measure('…')<=width else ''
 
         if self._status_display.get()!=shown:self._status_display.set(shown)
+        clipped=shown!=text
+        if str(self.status_label.cget('takefocus'))!=str(int(clipped)):
+            self.status_label.configure(takefocus=int(clipped),cursor='hand2' if clipped else '')
+
+    def _show_status_details(self,_event=None):
+        text=self.status.get()
+        if self._status_display.get()==text.replace('\n',' '):return
+        messagebox.showinfo(_ui_tr('상태 메시지'),text,parent=self.root)
+        return 'break'
 
     def _update_notice_layout(self):
 
@@ -1617,7 +1651,7 @@ class App:
 
     def schedule_preferences_save(self,*_):
 
-        if not self._preferences_ready: return
+        if not self._preferences_ready or self._closing:return
 
         if self._preferences_job:
 
@@ -1649,20 +1683,51 @@ class App:
     def _save_preferences(self):
 
         self._preferences_job=None
-
-        try:
-
-            data=self._preference_snapshot()
-
-            if data!=self._saved_preferences:
-
-                self.preference_store.save(data); self._saved_preferences=data
-
+        if self._preferences_busy:
+            self._preferences_pending=True
+            return
+        try:data=self._preference_snapshot()
         except Exception as exc:
-
             self.notice.set(_ui_tr('설정 저장 실패: ')+tr(str(exc)))
+            self._finish_preferences_flush(str(exc))
+            return
+        if data==self._saved_preferences:
+            self._finish_preferences_flush()
+            return
+        self._preferences_busy=True
 
-    def flush_preferences(self):
+        def write():
+            try:self.preference_store.save(data,update_cache=False)
+            except Exception as exc:self._preferences_results.put((data,str(exc)))
+            else:self._preferences_results.put((data,None))
+
+        try:start_thread(threading.Thread(target=write,name='DS5Light-preferences-save',daemon=True))
+        except Exception as exc:self._preferences_results.put((data,str(exc)))
+        self.root.after(50,self._poll_preferences_save)
+
+    def _poll_preferences_save(self):
+        try:data,error=self._preferences_results.get_nowait()
+        except queue.Empty:
+            self.root.after(50,self._poll_preferences_save)
+            return
+        self._preferences_busy=False
+        if error is not None:self.notice.set(_ui_tr('설정 저장 실패: ')+tr(error))
+        else:self._saved_preferences=data
+        if self._preferences_pending:
+            self._preferences_pending=False
+            if self._preferences_job is not None:
+                self.root.after_cancel(self._preferences_job);self._preferences_job=None
+            self._save_preferences()
+        else:self._finish_preferences_flush(error)
+
+    def _finish_preferences_flush(self,error=None):
+        callback,self._preferences_flush=self._preferences_flush,None
+        if callback:
+            try:
+                if error is not None:messagebox.showerror(_ui_tr('설정 저장 실패'),tr(error),parent=self.root)
+            finally:callback()
+
+    def flush_preferences(self,on_complete):
 
         if self._preferences_job:
 
@@ -1672,6 +1737,7 @@ class App:
 
             self._preferences_job=None
 
+        self._preferences_flush=on_complete
         self._save_preferences()
 
     def game_selected(self,event=None):
@@ -1735,28 +1801,33 @@ class App:
         current=self.status.get();owned=current==getattr(self,'_process_hint_message',None)
 
         hint=self._process_selection_hint()
+        connected=_ui_tr('듀얼센스 연결됨');studio_ok=_ui_tr('Studio 연결 확인 완료')
 
         if not hint:
 
-            if owned:self.status.set(getattr(self,'_process_hint_base',_ui_tr('정지')))
+            if owned:
+                previous=getattr(self,'_process_hint_base',_ui_tr('정지'))
+                self.status.set(studio_ok if previous==connected and self.studio.controller_connected is not True else previous)
 
             self._process_hint_message=None
 
             return
 
-        success=(_ui_tr('Studio 프로필 조회 완료'),_ui_tr('Studio 연결 확인 완료'),_ui_tr('듀얼센스 연결됨'))
+        success=(_ui_tr('Studio 프로필 조회 완료'),studio_ok,connected)
 
         if base is None:
 
             if owned:base=getattr(self,'_process_hint_base',_ui_tr('정지'))
 
-            elif current in success:base=_ui_tr('듀얼센스 연결됨')
+            elif current in success:base=current
 
             elif current==_ui_tr('정지'):base=current
 
             else:return
 
-        elif base in success:base=_ui_tr('듀얼센스 연결됨')
+        if base in success:
+            if self.studio.controller_connected is True:base=connected
+            elif base==connected:base=studio_ok
 
         self._process_hint_base=base
 
@@ -2182,12 +2253,14 @@ class App:
         self._update_binding_display()
 
     def save_prompt(self):
+        if self.file_save_busy or self._close_requested:return
 
         name=simpledialog.askstring(_ui_tr('프리셋 저장'),tr(_ui_tr('{0}번 슬롯 이름\n저장하면 해당 슬롯의 설정을 교체합니다.').format(f'{self.slot.current() + 1:02d}')),initialvalue=self.slot_name.get(),parent=self.root)
 
         if name is not None: self.slot_name.set(name.strip()); self.save_slot()
 
     def save_slot(self):
+        if self.file_save_busy or self._close_requested:return
 
         try:
 
@@ -2195,21 +2268,66 @@ class App:
 
             exe=self.game_names.get(self.game.get()) if self.scope.get()=='process' else None
 
-            self.store.save(i,dict(name=self.slot_name.get(),game_exe=self.game_names.get(self.game.get(),self.desired_game),
+            value=dict(name=self.slot_name.get(),game_exe=self.game_names.get(self.game.get(),self.desired_game),
+                       scope=self.scope.get(),channels=CHANNELS[self.channel.get()],input=canonical_device(self.source.get()),
+                       output=canonical_device(self.destination.get()),controls=asdict(self.controls))
+            auto_apply=self.auto_apply_game.get() if exe else None
+            pending_store=copy(self.store)
 
-                scope=self.scope.get(),channels=CHANNELS[self.channel.get()],input=canonical_device(self.source.get()),output=canonical_device(self.destination.get()),controls=asdict(self.controls)),
+            def saved():
+                self.store.slots=pending_store.slots
+                self.store.bindings=pending_store.bindings
+                self.refresh_slots(self.slot.current());self._update_binding_display()
+                self.notice.set(_ui_tr('{0}번 저장됨 · ').format(f'{i + 1:02d}')+value['name'])
 
-                bind_game=exe,auto_apply=self.auto_apply_game.get() if exe else None)
-
-            self.refresh_slots(i); self._update_binding_display(); self.notice.set(tr(_ui_tr('{0}번 저장됨 · ').format(f'{i + 1:02d}'))+self.slot_name.get())
+            self.save_file(lambda:pending_store.save(i,value,bind_game=exe,auto_apply=auto_apply),
+                           _ui_tr('프리셋 저장 실패'),saved)
 
         except Exception as exc: messagebox.showerror(_ui_tr('프리셋 저장 실패'),tr(str(exc)),parent=self.root)
+
+    def save_file(self,operation,error_title,on_saved=None):
+        if self._close_requested:return
+        if self.file_save_busy:
+            messagebox.showerror(error_title,_ui_tr('이전 파일 저장이 끝난 후 다시 시도하세요.'),parent=self.root)
+            return
+        self.file_save_busy=True
+        self.game_save_button.state(['disabled'])
+        result=queue.SimpleQueue()
+
+        def write():
+            try:operation()
+            except Exception as exc:result.put(str(exc))
+            else:result.put(None)
+
+        def poll():
+            try:error=result.get_nowait()
+            except queue.Empty:
+                self.root.after(50,poll)
+                return
+            try:
+                if error is not None:messagebox.showerror(error_title,tr(error),parent=self.root)
+                elif on_saved:on_saved()
+            finally:
+                self.file_save_busy=False
+                self.game_save_button.state(['!disabled'])
+                done,self._after_file_save=self._after_file_save,None
+                if done:done()
+
+        try:start_thread(threading.Thread(target=write,name='DS5Light-file-save',daemon=True))
+        except Exception as exc:result.put(str(exc))
+        self.root.after(50,poll)
 
     def load_slot(self):
 
         if self.engine: return
 
         self._apply_slot(self.slot.current())
+
+    @staticmethod
+    def _legacy_gain_notice(gain):
+        if gain>=HAPTIC_GAIN_MIN:return ''
+        return _ui_tr('저장된 오디오햅틱 세기 {0}%를 지원 최솟값 {1}%로 적용했습니다.').format(
+            f'{gain*100:g}',f'{HAPTIC_GAIN_MIN*100:g}')
 
     def _apply_slot(self,index,automatic=False):
 
@@ -2251,7 +2369,9 @@ class App:
 
             self.update_controls(); self._update_binding_display()
 
-            self.notice.set((_ui_tr('자동 불러옴 · ') if automatic else _ui_tr('불러옴 · '))+item['name'])
+            notice=(_ui_tr('자동 불러옴 · ') if automatic else _ui_tr('불러옴 · '))+item['name']
+            adjustment=self._legacy_gain_notice(c.gain)
+            self.notice.set(notice+(' · '+adjustment if adjustment else ''))
 
         finally: self._applying_preset=False
 
@@ -2666,7 +2786,7 @@ class App:
 
         if self.idle_presence.tick(self.studio.binding,enabled=idle_enabled) is False:
 
-            self.studio.controller_connected=False
+            self.studio.mark_pico_absent()
 
             self.status.set(_ui_tr('연결된 듀얼센스가 없습니다.'))
 
@@ -2835,6 +2955,9 @@ def smoke(app,report):
     if '--preset-test-path' in sys.argv:
 
         app.slot_name.set(_ui_tr('UI 시험')); app.desired_game='test_game.exe'; app.save_slot()
+        deadline=time.monotonic()+5
+        while app.file_save_busy and time.monotonic()<deadline:
+            app.root.update();time.sleep(.01)
 
         app.filter_on.set(False); app.strength.set(12); app.center.set(False); app.rear.set(False); app.lfe.set(False); app.limiter.set(_ui_tr('부드러운 제한')); app.update_controls(); app.load_slot()
 
@@ -2924,6 +3047,67 @@ def smoke(app,report):
 
 
 
+def make_close_handler(app,lock):
+    root=app.root
+    deadline=None;retry=None;prompting=False
+
+    def recheck():
+        nonlocal retry
+        retry=None
+        close()
+
+    def close():
+        nonlocal deadline,retry,prompting
+        if app._closing or retry is not None or prompting:return
+        if deadline is None:
+            app._close_requested=True
+            app.studio._cancel.set()
+            deadline=time.monotonic()+8
+        editor=app.studio_settings
+        diagnostic=getattr(app,'device_diagnostics',None)
+        if diagnostic is not None and not diagnostic.closing:diagnostic.close()
+        diagnostic=getattr(app,'device_diagnostics',None)
+        if diagnostic is None and editor.recording and not editor.busy and not app.studio.busy:
+            editor.finish_recording_for_close()
+        if editor.busy and not editor.closing_recording:editor.cancel.set()
+        waiting=diagnostic is not None or editor.busy or app.studio.busy or editor.recording
+        force=False
+        if waiting:
+            app.status.set(_ui_tr('장치 작업을 종료하는 중…'))
+            if time.monotonic()>=deadline:
+                prompting=True
+                try:force=confirm_hid_shutdown(diagnostic.window if diagnostic is not None else root)
+                finally:prompting=False
+                deadline=time.monotonic()+8
+            if not force:
+                retry=root.after(100,recheck)
+                return
+
+        app._closing=True
+        if force:
+            diagnostic=getattr(app,'device_diagnostics',None)
+            if diagnostic is not None:diagnostic.close(force=True)
+        app.battery.close()
+        app.controller_presence.close();app.idle_presence.close();app.profile_watch.close()
+        app.mute_shortcut.close()
+        app.studio.close()
+        editor.close()
+        pending={'preferences','audio'}
+        if getattr(app,'file_save_busy',False):pending.add('file')
+        def finish(component):
+            if component not in pending:return
+            pending.remove(component)
+            if pending:return
+            # A daemon may still be in the HID driver. Windows retains the mutex until process exit.
+            if not force:lock.close()
+            root.destroy()
+        if 'file' in pending:app._after_file_save=lambda:finish('file')
+        app.stop(on_complete=lambda:finish('audio'))
+        app.flush_preferences(on_complete=lambda:finish('preferences'))
+
+    return close
+
+
 def main():
 
     enable_dpi_awareness()
@@ -2951,49 +3135,7 @@ def main():
 
         root.destroy(); return
 
-    def close():
-
-        if app._closing: return
-        diagnostic=getattr(app,'device_diagnostics',None)
-        if diagnostic is not None:
-            diagnostic.close()
-            if diagnostic.busy:
-                root.after(100,close);return
-
-        app._close_requested=True
-
-        if app.studio_settings.recording and not app.studio_settings.busy and not app.studio.busy:
-
-            app.studio_settings.finish_recording_for_close();root.after(100,close);return
-
-        if app.studio_settings.busy:
-
-            if not app.studio_settings.closing_recording:app.studio_settings.cancel.set()
-
-            root.after(100,close);return
-
-        if app.studio.busy:
-
-            root.after(100,close);return
-
-        app._closing=True
-
-        app.battery.close()
-
-        app.controller_presence.close();app.idle_presence.close();app.profile_watch.close()
-
-        app.mute_shortcut.close()
-
-        app.studio.close()
-
-        app.studio_settings.close()
-
-        app.flush_preferences()
-
-        def finish(): lock.close(); root.destroy()
-
-        app.stop(on_complete=finish)
-
+    close=make_close_handler(app,lock)
     app.request_close=close
 
     root.protocol('WM_DELETE_WINDOW',close)

@@ -6,6 +6,7 @@ set -e
 cd "$(dirname "$0")"
 SRC=../../src
 cp "$SRC/macro.cpp" stubs/macro.cpp
+cp "$SRC/storage_redo.cpp" stubs/storage_redo.cpp
 cmp -s "$SRC/macro.cpp" stubs/macro.cpp || { echo "copy differs from source"; exit 1; }
-g++ -std=c++17 -Wall -DENABLE_WAKE_HID -I"$SRC" -Istubs -o /tmp/macro-tests macro-tests.cpp stubs/macro.cpp
+g++ -std=c++17 -Wall -DENABLE_WAKE_HID -I"$SRC" -Istubs -o /tmp/macro-tests macro-tests.cpp stubs/macro.cpp stubs/storage_redo.cpp
 /tmp/macro-tests

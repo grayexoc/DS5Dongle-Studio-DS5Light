@@ -2,6 +2,7 @@
 Slot enumeration, profile activation and read-only battery status are exposed.
 """
 from dataclasses import dataclass
+import secrets
 import time
 import threading
 _DEVICE_LOCK=threading.Lock()
@@ -48,11 +49,12 @@ class StudioClient:
             return r
         raise TimeoutError('Studio reply timeout; close the portal and refresh. Activation outcome may be unknown.')
 
-    def metadata(self, command):
+    def metadata(self, command, payload=b''):
         if command not in (103, 5):
             raise ValueError('Invalid metadata command')
         self.check_cancel()
-        if self.device.send_feature_report(bytes([128, 102, command]) + bytes(61)) != 64:
+        packet=bytes([128,102,command])+payload
+        if self.device.send_feature_report(packet.ljust(64,b'\0')) != 64:
             raise RuntimeError('Studio HID read request failed')
         for _ in range(10):
             self.check_cancel()
@@ -64,11 +66,15 @@ class StudioClient:
                 continue
             self.check_cancel()
             if len(raw) >= 22 and raw[:3] == bytes([129, 102, command]):
+                if payload and raw[30:34]==b'REV1' and raw[42:46]!=payload[2:]:continue
                 return raw
         raise TimeoutError('Studio metadata unavailable')
 
-    def profile(self, include_mute=False, include_state=False):
-        raw = self.metadata(103)
+    def profile(self, include_mute=False, include_state=False, *, include_revision=False):
+        if include_revision:
+            tag=(secrets.randbelow(0xffffffff)+1).to_bytes(4,'little')
+            raw=self.metadata(103,b'R1'+tag)
+        else:raw=self.metadata(103)
         if raw[3] != 0 or raw[5] not in (0, 1):
             raise RuntimeError('Invalid active profile response')
         profile = dict(index=None if raw[4] == 255 else raw[4], edited=bool(raw[5]), name=raw[6:22].decode('utf-8', errors='replace').rstrip('\x00').strip())
@@ -80,6 +86,8 @@ class StudioClient:
                 profile['auto_haptics_enable'] = mode
                 if mode == 1:
                     profile.update(mix_native_level=mix_level, ah_dsp_source=dsp_source)
+        if include_revision and len(raw)>=46 and raw[30:34]==b'REV1':
+            profile['config_token']=raw[34:42].hex()
         return profile
 
     def profile_state(self, header=None):
@@ -206,7 +214,10 @@ def run_device(path,index=None,action=None):
             device.open_path(path)
             client=StudioClient(device)
             if action=='read_profile':return client.profile()
-            if action=='read_profile_state':return client.profile_state()
+            if action=='read_profile_state':
+                from studio_settings_protocol import SettingsClient
+                client=SettingsClient(device)
+                return dict(client.profile_state(),controller_ready=client.controller_ready())
             if action=='read_battery':return client.battery()
             if action=='read_usb_mode':
                 from studio_fields import FIELDS

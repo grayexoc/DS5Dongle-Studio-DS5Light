@@ -42,9 +42,9 @@ def snapshot(preferred,cancel=lambda:False,binding=None,deadline=None):
         device=hid.device()
         device.open_path(target['path']);client=SettingsClient(device,cancel=cancel);client.deadline=min(time.monotonic()+8,deadline) if deadline is not None else time.monotonic()+8
         version,cfg=identity_fields(client)
-        before=client.profile()
+        before=client.profile(include_revision=True)
         values,unsupported=client.read_fields()
-        after=client.profile()
+        after=client.profile(include_revision=True)
         if before!=after:raise RuntimeError(_ui_tr('조회 중 프로필이 변경되었습니다. 새로 고침을 누르세요.'))
         profile=dict(after,auto_haptics_enable=values.get('auto_haptics_enable'),device_serial=target.get('serial_number'),device_row=target)
         profile.update({key:values[key] for key in ('mix_native_level','ah_dsp_source') if key in values})
@@ -61,6 +61,8 @@ def snapshot(preferred,cancel=lambda:False,binding=None,deadline=None):
         if client.deadline-time.monotonic()>=1:
             try:usb_serial=client.usb_serial_hidden()
             except (OSError,ValueError,TimeoutError,AttributeError):pass
+        if client.deadline-time.monotonic()>=.5:
+            profile['controller_ready']=client.controller_ready()
         return dict(rows=rows,usb_serial=usb_serial,dock=dock,path=target['path'],standby=standby,values=values,unsupported=unsupported,profile=profile,version=version,cfg=cfg)
     finally:
         try:

@@ -3,7 +3,7 @@ from studio_i18n import text as _ui_tr
 import json
 import os
 from pathlib import Path
-import tempfile
+from file_write import replace_text
 import time
 
 from core import Controls, HAPTIC_GAIN_MAX
@@ -114,22 +114,12 @@ class PreferenceStore:
             return dict(self.data)
         return dict(self.data)
 
-    def save(self, data):
+    def save(self, data, *, update_cache=True):
         wrapped = {'version': 1, 'preferences': data}
         clean = validate(wrapped)
         payload = json.dumps({'version': 1, 'preferences': clean}, ensure_ascii=False, allow_nan=False, indent=2)
         if self._backup_pending:
             self._preserve_corrupt()
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        name = None
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=self.path.parent, delete=False) as f:
-                name = f.name
-                f.write(payload)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(name, self.path)
-            self.data = clean
-        finally:
-            if name and Path(name).exists():
-                Path(name).unlink()
+        replace_text(self.path, payload)
+        if update_cache:self.data = clean

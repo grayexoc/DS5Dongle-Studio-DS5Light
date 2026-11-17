@@ -70,6 +70,8 @@ static uint32_t mute_binding_mask = 0;
 static bool mute_binding_dirty = true;
 static bool       g_loaded    = false;
 static bool       g_suspended = false;
+static uint32_t   g_pause_owner = 0;
+static uint32_t   g_pause_updated_ms = 0;
 static bool g_shifted = false, g_layer_dirty = true;
 static uint32_t g_layer_disabled = 0xffffffffu, g_effective_disable = 0xffffffffu;
 static uint8_t g_action_request = 0;
@@ -218,6 +220,10 @@ static bool     g_pb_busy = false;
 static uint32_t g_pb_next = 0;
 
 static inline uint32_t now_ms() { return to_ms_since_boot(get_absolute_time()); }
+
+static void expire_macro_pause() {
+    if (g_pause_owner && now_ms() - g_pause_updated_ms >= 30000u) macro_suspend(false);
+}
 
 // ============================== storage ====================================
 
@@ -1294,6 +1300,7 @@ void macro_on_input(const uint8_t *report, uint16_t len) {
 }
 
 void macro_task() {
+    expire_macro_pause();
     hold_flush();
     if (wake_host_is_suspended()) return;
     if (g_layer_dirty || g_layer_disabled != get_config().macro_disable) {
@@ -1368,8 +1375,39 @@ void macro_reset() {
 }
 
 void macro_suspend(bool on) {
+    g_pause_owner = 0;
     g_suspended = on;
     if (on) macro_reset();
+}
+
+bool macro_suspend_legacy(bool on) {
+    expire_macro_pause();
+    if (g_pause_owner) return false;
+    macro_suspend(on);
+    return true;
+}
+
+bool macro_pause_lease(uint8_t operation, uint32_t owner) {
+    expire_macro_pause();
+    if (!owner) return false;
+    switch (operation) {
+        case 1: // Acquire only when no other client has paused macros.
+            if (g_suspended) return false;
+            macro_suspend(true);
+            g_pause_owner = owner;
+            break;
+        case 2: // Renew cannot reacquire an expired or disconnected session.
+            if (g_pause_owner != owner) return false;
+            break;
+        case 3:
+            if (!g_suspended) return true;
+            if (g_pause_owner != owner) return false;
+            macro_suspend(false);
+            return true;
+        default: return false;
+    }
+    g_pause_updated_ms = now_ms();
+    return true;
 }
 
 bool macro_motion_capturing() { return g_mot_active; }

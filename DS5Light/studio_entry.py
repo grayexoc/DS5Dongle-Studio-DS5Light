@@ -60,7 +60,7 @@ class EntryQueries:
         self.device_rows=result['rows'];self.device_choice.configure(values=[d.get('product_string','DualSense')+f' · {i+1:02d}' for i,d in enumerate(self.device_rows)])
         self.pico_recognized=not result.get('choose',False)
         if result.get('choose'):
-            if not result['rows']:self.app.studio.controller_connected=False
+            if not result['rows']:self.app.studio.mark_pico_absent()
             self.progress.configure(text=_ui_tr('Pico 장치를 연결하거나 목록에서 선택하세요.'));return
         self._policy_save_errors={}
         self.standby_policy=(result['path'],result.get('standby'))

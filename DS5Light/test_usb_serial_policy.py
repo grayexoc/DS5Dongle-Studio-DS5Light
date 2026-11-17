@@ -10,13 +10,13 @@ import test_studio_settings as fixture
 class ProtocolTests(unittest.TestCase):
     def test_policy_save_verifies_reply_and_failure_keeps_actual_value(self):
         client=SettingsClient(None)
-        with patch.object(client,'command',return_value=bytes((0x66,0x21,0,1,1))) as command:
+        with patch.object(client,'_tagged_write',return_value=bytes((0x66,0x21,0,1,1))) as command:
             self.assertEqual(client.usb_serial_hidden(1),1)
-            self.assertEqual(command.call_args.args,(0x21,b'\x01\x01',0x84))
+            self.assertEqual(command.call_args.args,(0x21,b'\x01\x01'))
         for reply in (bytes((0x66,0x21,0,2,1)),bytes((0x66,0x21,0,1,0))):
-            with patch.object(client,'command',return_value=reply):
+            with patch.object(client,'_tagged_write',return_value=reply):
                 with self.assertRaises(ValueError):client.usb_serial_hidden(1)
-        with patch.object(client,'command',return_value=bytes((0x66,0x21,2,1,0))):
+        with patch.object(client,'_tagged_write',return_value=bytes((0x66,0x21,2,1,0))):
             with self.assertRaises(PolicySaveError) as error:client.usb_serial_hidden(1)
             self.assertEqual(error.exception.current,0)
 

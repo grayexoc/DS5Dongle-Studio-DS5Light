@@ -21,10 +21,9 @@
 #include "usb.h"
 #include "state_mgr.h"
 
-// spk_active (main.cpp) + audio_mic_active() (audio.cpp) are surfaced in the
+// spk_active and audio_mic_active() are surfaced in the
 // 0xf9 command response so the config UI can display the real gated mic/speaker
 // state, reflecting the disable_mic / disable_speaker settings.
-extern bool spk_active;
 static std::vector<uint8_t> pico_portal_reply;
 static std::vector<uint8_t> pico_settings_reply;
 
@@ -658,6 +657,10 @@ uint16_t pico_cmd_get_reply(uint8_t report_id, uint8_t *buffer, uint16_t reqlen)
     return n;
 }
 
+static void echo_settings_write_tag(uint8_t *reply, const uint8_t *payload, uint16_t length) {
+    if (length >= 61) memcpy(reply + 59, payload + 57, 4);
+}
+
 void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
     // Writes, capture sessions and deliberate reconnects extend awake time.
     // Read-only polling must not prevent standby forever.
@@ -731,6 +734,9 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 const uint8_t field_id = buffer[0];
                 buf[2] = field_id;
                 if (!get_config_field(field_id, buf + 3, sizeof(buf) - 3)) {
+                    buf[2] = 0xff;
+                    buf[3] = field_id;
+                    buf[4] = 1; // Unsupported field (distinct from a missing ID).
                     printf("[CMD] Config get failed, field id: 0x%02X\n", field_id);
                 }
             }
@@ -787,6 +793,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             printf("[CMD] save profile slot\n");
             { uint8_t pend[63]{}; pend[0]=0x66; pend[1]=0x08; pend[2]=0xFE;
               if (bufsize >= 1) pend[3] = buffer[0];
+              echo_settings_write_tag(pend, buffer, bufsize);
               pico_settings_reply.assign(pend, pend + sizeof(pend)); }
             uint8_t buf[63]{};
             buf[0] = 0x66; buf[1] = 0x08; buf[2] = 0x01; // default: fail
@@ -796,6 +803,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 if (slot_save(idx, buffer + 1, nlen)) buf[2] = 0x00;
                 buf[3] = idx;
             }
+            echo_settings_write_tag(buf, buffer, bufsize);
             pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
@@ -1048,6 +1056,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             // COMMIT the RAM image to the macro sector.
             uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x19;
             buf[2] = macro_commit() ? 0x00 : 0x01;
+            echo_settings_write_tag(buf, buffer, bufsize);
             pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
         }
@@ -1058,7 +1067,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             // types its combo into the portal while the user is capturing it.
             uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x1a; buf[2] = 0x00;
             const bool on = (bufsize >= 1) && (buffer[0] != 0);
-            macro_suspend(on);
+            if (!macro_suspend_legacy(on)) buf[2] = 1;
             buf[3] = on ? 1 : 0;
             pico_settings_reply.assign(buf, buf + sizeof(buf));
             break;
@@ -1076,6 +1085,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             else if (bufsize >= 2 && buffer[0] == 1 && buffer[1] <= 1) {
                 reply[2] = device_set_auto_dormant(buffer[1] != 0) ? 0 : 2;
                 if (reply[2] == 0) manual_power_note_activity();
+                echo_settings_write_tag(reply, buffer, bufsize);
             }
             reply[4] = device_auto_dormant();
             pico_settings_reply.assign(reply, reply + sizeof(reply));
@@ -1162,6 +1172,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             else if (bufsize >= 2 && buffer[0] == 1 && buffer[1] <= 1) {
                 reply[2] = device_set_usb_serial_hidden(buffer[1] != 0) ? 0 : 2;
                 if (reply[2] == 0) manual_power_note_activity(60000);
+                echo_settings_write_tag(reply, buffer, bufsize);
             }
             reply[4] = device_usb_serial_hidden();
             pico_settings_reply.assign(reply, reply + sizeof(reply));
@@ -1173,8 +1184,33 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             if (bufsize >= 1 && buffer[0] == 0) reply[2] = 0;
             else if (bufsize >= 2 && buffer[0] == 1 && buffer[1] <= 1) {
                 reply[2] = device_set_disconnect_on_dock(buffer[1] != 0) ? 0 : 2;
+                echo_settings_write_tag(reply, buffer, bufsize);
             }
             reply[4] = device_disconnect_on_dock();
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
+            break;
+        }
+
+        case 0x22: {
+            // Read-only probe for the write-tag layout version.
+            uint8_t reply[63]{0x66, 0x22, 0, 1};
+            echo_settings_write_tag(reply, buffer, bufsize);
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
+            break;
+        }
+
+        case 0x23: {
+            // Version, operation, owner (LE32), per-request tag (4 bytes).
+            uint8_t reply[63]{0x66, 0x23, 1};
+            if (bufsize >= 10 && buffer[0] == 1) {
+                memcpy(reply + 3, buffer, 10);
+                const uint32_t owner = uint32_t(buffer[2]) | (uint32_t(buffer[3]) << 8) |
+                                       (uint32_t(buffer[4]) << 16) | (uint32_t(buffer[5]) << 24);
+                if (macro_pause_lease(buffer[1], owner)) {
+                    reply[2] = 0;
+                    if (buffer[1] != 3) manual_power_note_activity(60000);
+                }
+            }
             pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;
         }
@@ -1196,6 +1232,14 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             buf[26] = cfg.auto_haptics_enable;
             buf[27] = cfg.mix_native_level;
             buf[28] = cfg.ah_dsp_source;
+            memcpy(buf + 29, "REV1", 4); // Advertise support even without a token request.
+            if (bufsize >= 6 && buffer[0] == 'R' && buffer[1] == '1') {
+                const uint32_t revision = config_revision();
+                const uint32_t checksum = config_checksum();
+                memcpy(buf + 33, &revision, sizeof(revision));
+                memcpy(buf + 37, &checksum, sizeof(checksum));
+                memcpy(buf + 41, buffer + 2, 4);
+            }
             // Keep metadata replies on 0x81; 0x84 carries slot commands.
             pico_portal_reply.assign(buf, buf + sizeof(buf));
             break;
@@ -1231,24 +1275,26 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             // All entries land in ONE config copy followed by ONE live apply - a
             // full-profile apply drops from ~60 feature-report round-trips (each a
             // USB transaction + portal-side settle) to a handful of packed chunks.
-            // Reply: 0x66 0x0b status applied_count (0x00 = every entry applied).
+            // Reply: 0x66 0x0b status applied_count (zero entries on failure).
             uint8_t buf[63]{}; buf[0] = 0x66; buf[1] = 0x0b; buf[2] = 0x01;
             if (bufsize >= 1) {
                 Config_body nc = get_config();
                 const uint8_t n = buffer[0];
-                uint8_t applied = 0; uint16_t off = 1; bool ok = true;
+                uint16_t off = 1; bool ok = true;
                 for (uint8_t i2 = 0; i2 < n && ok; ++i2) {
                     if ((uint16_t)(off + 2) > bufsize) { ok = false; break; }
                     const uint8_t fid = buffer[off];
                     const uint8_t len = buffer[off + 1];
-                    if (len == 0 || (uint16_t)(off + 2 + len) > bufsize) { ok = false; break; }
-                    if (set_field_in(nc, fid, buffer + off + 2, len)) applied++;
-                    else ok = false;
+                    // The LED test has an immediate side effect and stays scalar-only.
+                    if (fid == 0x9e || len == 0 || (uint16_t)(off + 2 + len) > bufsize ||
+                        !set_field_in(nc, fid, buffer + off + 2, len)) { ok = false; break; }
                     off += 2 + len;
                 }
-                if (ok && applied == n) buf[2] = 0x00;
-                buf[3] = applied;
-                if (applied) set_config(reinterpret_cast<const uint8_t *>(&nc), sizeof(nc));
+                if (ok) {
+                    if (n) set_config(reinterpret_cast<const uint8_t *>(&nc), sizeof(nc));
+                    buf[2] = 0x00;
+                    buf[3] = n;
+                }
             }
             pico_portal_reply.assign(buf, buf + sizeof(buf));
             break;

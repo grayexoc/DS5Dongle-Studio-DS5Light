@@ -515,6 +515,8 @@ bool active_profile_restore(uint8_t slot, uint32_t fingerprint);
 Config_body& get_config();
 void set_config(const uint8_t *new_config, const uint16_t len);
 void config_valid();
+uint32_t config_revision();
+uint32_t config_checksum();
 void set_config(const Config_body &new_config);
 void set_gain(uint8_t value);
 extern bool is_dse;

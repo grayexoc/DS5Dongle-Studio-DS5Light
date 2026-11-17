@@ -1,9 +1,30 @@
 import threading,time,unittest
+from subprocess import TimeoutExpired
+from unittest.mock import Mock,patch
 from collections import deque
 from types import SimpleNamespace
 from process_audio import ProcessCaptureStream
 
 class ProcessPolicyTests(unittest.TestCase):
+    def test_start_failure_reaps_helper_and_closes_all_pipes(self):
+        for start_fails in (0,1):
+            with self.subTest(reader=start_fails):
+                child=Mock()
+                child.wait.side_effect=[TimeoutExpired('helper',1.5),TimeoutExpired('helper',2),0]
+                readers=[Mock(),Mock()]
+                readers[0].is_alive.return_value=bool(start_fails)
+                readers[1].is_alive.return_value=False
+                starts=[None]*start_fails+[RuntimeError('thread start failed')]
+                with patch('process_audio.subprocess.Popen',return_value=child), \
+                     patch('process_audio.threading.Thread',side_effect=readers), \
+                     patch('process_audio.start_thread',side_effect=starts):
+                    with self.assertRaisesRegex(RuntimeError,'thread start failed'):ProcessCaptureStream(123)
+                child.terminate.assert_called_once();child.kill.assert_called_once()
+                self.assertEqual(child.wait.call_count,3)
+                for pipe in (child.stdin,child.stdout,child.stderr):pipe.close.assert_called_once()
+                self.assertEqual(readers[0].join.call_count,start_fails)
+                readers[1].join.assert_not_called()
+
     def stream(self):
         s=ProcessCaptureStream.__new__(ProcessCaptureStream)
         s.error=None; s.child=SimpleNamespace(poll=lambda:None)

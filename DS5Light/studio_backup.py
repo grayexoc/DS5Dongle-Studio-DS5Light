@@ -1,4 +1,7 @@
 """Explicit slot backup/restore jobs. Excluded experimental fields are never written."""
+import json
+import os
+from pathlib import Path
 from studio_i18n import text as _ui_tr
 from studio_scope import EDITABLE
 
@@ -50,7 +53,7 @@ def _slot_value(field,value):
         return _SLOT_DEFAULTS[key]
     return value
 
-def backup_all(client,progress=lambda text:None):
+def backup_all(client,progress=lambda text:None,*,indices=None):
     slots=[]
     lightbar=bool(getattr(client,'read_lightbar',lambda:{})())
     rumble=bool(getattr(client,'read_rumble',lambda:{})())
@@ -59,7 +62,10 @@ def backup_all(client,progress=lambda text:None):
     except USBModeUnsupported:available.pop('usb_gamepad_mode',None)
     try:client.read_one(FIELDS['rumble_mode'])
     except RumbleModeUnsupported:available.pop('rumble_mode',None)
-    for slot in client.slots():
+    targets=client.slots() if indices is None else (client.info(index) for index in indices)
+    for slot in targets:
+        if slot.state not in ('saved','empty'):
+            raise RuntimeError(_ui_tr('슬롯 {0}의 원래 상태를 확인하지 못했습니다.').format(f'{slot.index + 1:02d}'))
         if slot.state!='saved':slots.append(dict(index=slot.index,valid=False));continue
         progress(_ui_tr('슬롯 {0} 백업 중').format(f'{slot.index + 1:02d}'))
         fields={}
@@ -75,13 +81,18 @@ def backup_all(client,progress=lambda text:None):
 
 def validate_backup(data):
     if not isinstance(data,dict) or not isinstance(data.get('slots'),list) or len(data['slots'])>32:raise ValueError(_ui_tr('슬롯 백업 형식 오류'))
+    if ('format' in data or 'version' in data or 'scope' in data) and not (
+        data.get('format')=='ds5dongle-slots' and type(data.get('version')) is int
+        and (data['version'],data.get('scope')) in ((2,'native-editor-fields-only'),(3,None))
+    ):raise ValueError(_ui_tr('지원하지 않는 슬롯 백업 형식입니다.'))
     rows=[];seen=set();macros=macro_records(data.get('macros',{}))
     for slot in data['slots']:
         if not isinstance(slot,dict):raise ValueError(_ui_tr('슬롯 항목 오류'))
         index=slot.get('index')
         if type(index)is not int or not 0<=index<32 or index in seen:raise ValueError(_ui_tr('슬롯 번호 중복/범위 오류'))
         seen.add(index)
-        if not slot.get('valid'):continue
+        if type(slot.get('valid')) is not bool:raise ValueError(_ui_tr('슬롯 유효 상태 형식 오류'))
+        if not slot['valid']:continue
         raw=slot.get('fields',{});name=slot.get('name','')
         if not isinstance(raw,dict) or not isinstance(name,str) or len(name.encode('utf-8'))>16:raise ValueError(_ui_tr('슬롯 이름/필드 형식 오류'))
         values={k:v for k,v in raw.items() if k in FIELDS};validate_changes({},values,profile_snapshot=True)
@@ -96,11 +107,12 @@ def validate_backup(data):
     if not rows:raise ValueError(_ui_tr('복원할 유효 슬롯이 없습니다.'))
     return rows,macros
 
-def restore_all(client,rows,macros,progress=lambda text:None):
+def restore_all(client,rows,macros,progress=lambda text:None,*,recovery_path):
+    if rows or macros:client.require_write_tags()
     from studio_shift import extended
     if any(extended(row) for row in macros.values()):
         client.require_macro_features(list(macros.values()))
-    original,missing=client.read_fields();effects={};original_macros=client.read_macros()
+    original,missing=client.read_fields()
     if set(missing)-OPTIONAL_FIELDS:raise RuntimeError(_ui_tr('현재 설정을 완전히 읽지 못해 복원을 시작하지 않습니다.'))
     if not LIGHTBAR_FIELDS.issubset(original):
         if any('lightbar_rgb' in row['fields'] or row['fields'].get('lightbar_fixed',0) for row in rows):
@@ -122,30 +134,60 @@ def restore_all(client,rows,macros,progress=lambda text:None):
         raise RuntimeError(_ui_tr('일반 진동 모드 지원을 확인하지 못했습니다.'))
     else:
         rows=[dict(row,fields={k:v for k,v in row['fields'].items() if k not in RUMBLE_MODE_FIELDS}) for row in rows]
-    if any(original_macros.get(key,[0]*35)[4]&16 for key in macros):raise RuntimeError(_ui_tr('복원 대상 번호에 제외된 모션 매크로가 있습니다. 원본 Studio에서 관리하세요.'))
-    # Prevent enabled controller macros from firing while a different mask is
-    # transiently live. This is an explicit operation, never background polling.
-    if client.command(26,b'\1',0x84)[2]!=0:raise RuntimeError(_ui_tr('매크로 일시 정지 실패'))
-    done=[]
+    recovery=backup_all(client,progress,indices=[row['index'] for row in rows])
+    if any(recovery['macros'].get(key,[0]*35)[4]&16 for key in macros):raise RuntimeError(_ui_tr('복원 대상 번호에 제외된 모션 매크로가 있습니다. 원본 Studio에서 관리하세요.'))
+    with Path(recovery_path).open('x',encoding='utf-8') as file:
+        json.dump(recovery,file,ensure_ascii=False,indent=2)
+        file.flush()
+        os.fsync(file.fileno())
+
+    client.check_cancel()
+    done=[];pending_slot=None;live_changed=False;errors=[]
+    macro_state=_ui_tr('변경 시도 없음')
     try:
-        for key,data in macros.items():client.write_macro(int(key),data)
-        if macros:client.commit_macros()
+        client.start_macro_pause()
+        if macros:
+            macro_state=_ui_tr('변경 결과 미확인')
+            for key,data in macros.items():client.write_macro(int(key),data)
+            observed=client.read_macros()
+            if any(observed.get(key)!=data for key,data in macros.items()):
+                raise RuntimeError(_ui_tr('공유 매크로 적용값 불일치 · 새로 고침으로 확인하세요.'))
+            client.commit_macros()
+            macro_state=_ui_tr('저장 확인')
         for row in rows:
             progress(_ui_tr('슬롯 {0} 복원 중').format(f"{row['index'] + 1:02d}"))
-            current,_=client.read_fields();client.write_fields(dict(original,**row['fields']),current,profile_snapshot=True)
+            current,_=client.read_fields()
+            live_changed=True
+            client.write_fields(dict(original,**row['fields']),current,profile_snapshot=True)
             for trig,states in row['effects'].items():
                 for index,state in enumerate(states):client.write_effect(int(trig),index,state)
-            client.save_slot(row['index'],row['name']);done.append(row['index'])
+            pending_slot=row['index']
+            client.save_slot(pending_slot,row['name'])
+            done.append(pending_slot);pending_slot=None
+    except Exception as exc:
+        errors.append(str(exc))
     finally:
-        # Restore the pre-operation LIVE settings; active slot flash is not
-        # blindly rewritten. Failures are surfaced, not hidden by a success UI.
+        # Use the same open handle for best-effort cleanup after cancellation.
         cancelled=client.cancel;client.cancel=lambda:False
         try:
-            current,_=client.read_fields();client.write_fields(original,current,profile_snapshot=True)
-            for trig,states in effects.items():
-                for index,state in enumerate(states):client.write_effect(int(trig),index,state)
+            if live_changed:
+                try:
+                    current,_=client.read_fields();client.write_fields(original,current,profile_snapshot=True)
+                except Exception as exc:
+                    errors.append(_ui_tr('복원 전 임시 설정을 되돌리지 못했습니다.')+' '+str(exc))
+            try:
+                client.end_macro_pause()
+            except Exception as exc:
+                errors.append(_ui_tr('매크로 재개를 확인하지 못했습니다.')+' '+str(exc))
         finally:
-            try:client.command(26,b'\0',0x84)
-            finally:client.cancel=cancelled
-    if macros:client.reconnect_usb()
+            client.cancel=cancelled
+    if not errors and macros:
+        try:client.reconnect_usb()
+        except Exception as exc:errors.append(str(exc))
+    if errors:
+        confirmed=', '.join(f'{index+1:02d}' for index in done) or '—'
+        pending=f'{pending_slot+1:02d}' if pending_slot is not None else '—'
+        status=_ui_tr('저장 확인 슬롯 {0} · 저장 미확인 슬롯 {1} · 공유 매크로 {2}').format(confirmed,pending,macro_state)
+        recovery_hint=_ui_tr('같은 Pico의 현재 상태를 새로 고침하세요. 복원 전 백업 파일')
+        raise RuntimeError('\n'.join((status,*errors,recovery_hint,str(recovery_path))))
     return done

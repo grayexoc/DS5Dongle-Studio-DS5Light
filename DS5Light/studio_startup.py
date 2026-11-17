@@ -37,6 +37,8 @@ def initial_profile(binding,cancel,deadline):
         client.deadline=min(deadline,time.monotonic()+1.5)
         profile=client.profile_state()
         if profile.get('auto_haptics_enable') not in (0,1,2):return None
+        if client.deadline-time.monotonic()>=.5:
+            profile=dict(profile,controller_ready=client.controller_ready())
         # A duplicated serial is not safe for persistent list reuse.
         cache_ok=bool(target.get('serial_number')) and sum(r.get('serial_number')==target['serial_number'] for r in rows)==1
         return target,profile,cache_ok

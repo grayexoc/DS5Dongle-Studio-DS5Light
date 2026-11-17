@@ -5,6 +5,7 @@ import copy,json,queue,threading,tkinter as tk
 from tkinter import ttk,filedialog
 from studio_dialogs import messagebox
 from pathlib import Path
+from file_write import replace_text
 from studio_fields import SECTIONS,FIELDS
 from studio_scope import EDITABLE,CONSTRUCTION,FAST_TRIGGER_FIELDS,TRIGGER_FIELDS,trigger_display,trigger_raw
 from studio_range import RangeSlider
@@ -22,7 +23,7 @@ from localization import LANGUAGE
 def ui_text(ko,en):return en if LANGUAGE=='en' else ko
 from studio_document import SettingsDocument
 from studio_save_flow import SaveFlow
-from studio_recommended import RecommendedPresets
+from studio_recommended import RecommendedPresets,equal_value
 from studio_settings_protocol import SettingsClient,needs_reconnect,validate_changes
 from studio_slots import devices,_DEVICE_LOCK
 from studio_power import blocked as power_blocked
@@ -746,7 +747,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.task('read',lambda:snapshot(preferred,self.cancel.is_set,binding=selected_binding))
     def task(self,kind,operation):
         if power_blocked(self.app):return
-        if self.closed or self.busy:return
+        if self.closed or self.busy or self.app._close_requested:return
         if self.app.studio.busy:
             if self.built:self.progress.configure(text=_ui_tr('프로필 조회가 끝난 후 다시 시도하세요.'))
             return
@@ -857,7 +858,10 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         reconnect_serial=next((d.get("serial_number") for d in self.device_rows if d["path"]==self.path),None) or self.app.studio.device_serials.get(self.path)
         reconnect=needs_reconnect(baseline,dict(baseline,**changes),self.doc.macro_baseline)
         def op(client):
-            if profile_stamp is not None and client.profile()!=profile_stamp:raise RuntimeError(_ui_tr('현재 프로필이 바뀌었습니다. 다시 읽어 주세요.'))
+            if persist:client.require_write_tags()
+            before=client.profile(include_revision=True) if profile_stamp is not None else None
+            if before is not None and any(before.get(k)!=profile_stamp[k] for k in ('index','name','edited')):
+                raise RuntimeError(_ui_tr('현재 프로필이 바뀌었습니다. 다시 읽어 주세요.'))
             current,missing=client.read_fields([FIELDS[k] for k in baseline])
             for key in baseline:
                 if key not in current or current[key]!=baseline[key]:raise RuntimeError(_ui_tr('외부에서 설정이 변경되었습니다. 다시 읽어 주세요.'))
@@ -870,6 +874,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 actual=client.read_effects()
                 for (trig,index) in effects:
                     if actual[str(trig)][index]!=effect_baseline[str(trig)][index]:raise RuntimeError(_ui_tr('효과가 외부에서 변경되었습니다. 새로 고침을 누르세요.'))
+            if before is not None and 'config_token' in before and client.profile(include_revision=True)!=before:
+                raise RuntimeError(_ui_tr('외부에서 설정이 변경되었습니다. 다시 읽어 주세요.'))
             checked=client.write_fields(changes,current)
             volume_warning=None
             if 'speaker_volume' in changes:
@@ -926,6 +932,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                     else:
                         result['reloaded']=wait_for_macros(reconnect_path,reconnect_serial,self.cancel)
                 except Exception as exc:
+                    result['saved']=False
                     result['reload_error']=str(exc)
                     if result['edge_serial_reconnect']:
                         try:
@@ -933,6 +940,22 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                             result['reconnect_rows']=devices()
                         except (OSError,ImportError):
                             pass
+                else:
+                    fresh=result['reloaded']
+                    fresh_profile=fresh.get('profile') or {}
+                    if any(key not in fresh_profile or fresh_profile[key]!=result['profile'][key]
+                           for key in ('index','name','edited')):
+                        raise RuntimeError(ui_text(
+                            '재연결 후 프로필이 달라 적용 또는 저장 결과를 확인할 수 없습니다. 새로 고침하세요.',
+                            'The profile changed after reconnect. Refresh to verify whether the settings were applied or saved.'))
+                    for key,expected in changes.items():
+                        actual=fresh['values'].get(key)
+                        if not equal_value(actual,expected):
+                            observed=actual if actual is not None else ui_text('조회 불가','unavailable')
+                            raise RuntimeError(ui_text(
+                                '재연결 후 설정값이 일치하지 않습니다. 새로 고침하세요.',
+                                'A setting differs after reconnect. Refresh to verify it.')
+                                +f' {key} ({expected} → {observed})')
             return result
         if reconnect or refresh_macros or persist:self.app.studio.binding.expect_reconnect()
         self.stopped_task('apply',operation)
@@ -956,6 +979,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             edge_row_present='disable_usb_sn' in self.field_views
             self.read_view_unlock();self._read_view_kind=None
         if error:
+            if kind=='apply':self.doc.save_requested=False
             if kind in ('read','entry_read'):
                 self.entry_failed=True;self.close_entry_queries()
             self.progress.configure(text=_ui_tr('작업 실패 · ')+error,kind='error')
@@ -968,6 +992,12 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             if kind=='macros':self._discard_macro_mask_on_read=False
             if kind in ('read','entry_read'):self.pico_recognized=False
             if kind in ('apply','shared_save','recommended','restore','slot_save'):self.resume=False;self.loaded=False;self.write_ready=False;self.uncertain=True
+            if kind=='restore':
+                self.update_state()
+                messagebox.showerror(_ui_tr('Pico 슬롯 복원 실패'),error,parent=self.parent)
+            if kind in ('read_file','read_mapping_file') and not self.app._close_requested:
+                title=_ui_tr('매핑 파일') if kind=='read_mapping_file' else _ui_tr('프로필 파일')
+                messagebox.showerror(title,error,parent=self.parent)
             if kind=='read':self.write_ready=False
         elif kind=='usb_serial_policy':
             self.resume=False
@@ -996,7 +1026,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             self.lightbar_supported=all(k in result.get('values',{}) for k in ('lightbar_fixed','lightbar_rgb'))
             self.unsupported_fields=set(result.get('unsupported',()))
             self.pico_recognized=not result.get('choose',False)
-            if result.get('choose') and not result['rows']:self.app.studio.controller_connected=False
+            if result.get('choose') and not result['rows']:self.app.studio.mark_pico_absent()
             self.device_rows=result['rows'];self.device_choice.configure(values=[d.get('product_string','DualSense')+f' · {i+1:02d}' for i,d in enumerate(self.device_rows)])
             if result.get('choose'):self.progress.configure(text=_ui_tr('연결 장치를 선택한 뒤 새로 고침을 누르세요.'));self.loaded=False
             else:
@@ -1122,11 +1152,15 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             self.external_stale=True;self.write_ready=False
             self.entry_attempts.discard('fields')
             self.progress.configure(text=_ui_tr('프로필 {0}개 복원 응답 확인').format(f'{len(result)}'));self.app.studio.last_read=-1e9;self.loaded=False
-        elif kind=='backup':
+        elif kind=='backup' and not self.app._close_requested:
             name=filedialog.asksaveasfilename(parent=self.parent,defaultextension='.json',initialfile='ds5dongle-slots.json',filetypes=[('JSON','*.json')])
-            if name:
-                try:Path(name).write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
-                except OSError as exc:self.progress.configure(text=_ui_tr('작업 실패 · ')+str(exc),kind='error')
+            if name:self.write_export(name,lambda:json.dumps(result,ensure_ascii=False,indent=2))
+        elif kind in ('read_file','read_mapping_file'):
+            path,data,callback=result
+            def use_file():
+                if not self.closed and not self.app._close_requested and not self.busy and self.loaded and self.path==path:
+                    callback(data)
+            self.parent.after_idle(use_file)
         if kind=='macro_live':
             if not error:self.show_live_result(result)
             else:self.stop_live()
@@ -1189,18 +1223,36 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         if not self.doc.macros:self.load_profile_data(self.import_file);return
         name=filedialog.askopenfilename(parent=self.parent,filetypes=[('JSON','*.json')])
         if not name:return
+        self.read_json_file(name,self.apply_import)
+    def read_json_file(self,name,callback,validate=lambda data:data,*,kind='read_file'):
+        path=self.path
+        try:self.task(kind,lambda:(path,validate(json.loads(Path(name).read_text(encoding='utf-8-sig'))),callback))
+        except Exception as exc:
+            title=_ui_tr('매핑 파일') if kind=='read_mapping_file' else _ui_tr('프로필 파일')
+            messagebox.showerror(title,str(exc),parent=self.parent)
+    def apply_import(self,data):
+        path=self.path
         try:
-            data=json.loads(Path(name).read_text(encoding='utf-8-sig'))
             raw=data.get('fields',data.get('settings',data));take=False
             if isinstance(raw,dict) and 'macro_disable' in raw and self.doc.macro_baseline:
                 take=messagebox.askyesno(_ui_tr('매크로 선택'),_ui_tr('파일의 매크로 활성 선택도 편집에 반영할까요? 정의를 확인한 경우에만 선택하세요.'),parent=self.parent)
+            if self.closed or self.app._close_requested or self.busy or not self.loaded or self.path!=path:return
             n,skip=self.doc.import_json(data,take_macro_mask=take);self.invalid.clear();self.progress.configure(text=_ui_tr('{0}개 편집에 반영 · {1}개 제외 · 아직 장치에 적용되지 않음').format(f'{n}',f'{skip}'),kind='edit');self.render_fields()
         except Exception as exc:messagebox.showerror(_ui_tr('프로필 파일'),str(exc),parent=self.parent)
     def export_file(self):
         if self.busy or not self.loaded:return
         if not self.doc.macros:self.load_profile_data(self.export_file);return
         name=filedialog.asksaveasfilename(parent=self.parent,defaultextension='.json',initialfile='ds5light-studio-profile.json',filetypes=[('JSON','*.json')])
-        if name:Path(name).write_text(json.dumps(self.doc.export_json(),ensure_ascii=False,indent=2),encoding='utf-8')
+        if name:
+            data=copy.deepcopy(self.doc.export_json())
+            self.write_export(name,lambda:json.dumps(data,ensure_ascii=False,indent=2))
+
+    def write_export(self,name,serialize,message=None):
+        def saved():
+            if not self.closed:
+                self.progress.configure(text=message or _ui_tr('파일 내보내기 완료'),kind='action')
+                self.update_state()
+        self.app.save_file(lambda:replace_text(name,serialize()),_ui_tr('파일 내보내기 실패'),saved)
     def load_profile_data(self,callback):
         self.after_records=callback
         self.task('profile_data',lambda:self.with_client(lambda c:dict(effects={},macros=c.read_macros())))
@@ -1588,13 +1640,20 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.task('backup',lambda:self.with_client(lambda c:backup_all(c,lambda t:self.results.put(('progress',t,None)))))
     def restore_backup(self):
         if self.busy or not self.loaded or not self.write_ready:return
-        from studio_backup import validate_backup,restore_all
+        from studio_backup import validate_backup
         name=filedialog.askopenfilename(parent=self.parent,filetypes=[(_ui_tr('슬롯 백업 JSON'),'*.json')])
         if not name:return
-        try:rows,macros=validate_backup(json.loads(Path(name).read_text(encoding='utf-8-sig')))
-        except Exception as exc:messagebox.showerror(_ui_tr('백업 확인'),str(exc),parent=self.parent);return
+        self.read_json_file(name,self.confirm_restore,validate_backup)
+    def confirm_restore(self,result):
+        if not self.write_ready:return
+        from studio_backup import restore_all
+        rows,macros=result;path=self.path
         if not messagebox.askyesno(_ui_tr('Pico 슬롯 덮어쓰기'),_ui_tr('{0}개 유효 슬롯과 포함된 일반 매크로 정의를 덮어씁니다.\n\n지원 필드만 복원합니다. 제외된 트리거 등은 현재 연결의 값으로 슬롯에 저장됩니다. 전체 설정을 보존하려면 원본 Studio 백업을 사용하세요.\n\n빈 슬롯은 삭제하지 않습니다. 계속할까요?').format(f'{len(rows)}'),parent=self.parent):return
-        self.stopped_task('restore',lambda:self.with_client(lambda c:restore_all(c,rows,macros,lambda t:self.results.put(('progress',t,None)))))
+        recovery_path=filedialog.asksaveasfilename(parent=self.parent,title=_ui_tr('복원 전 백업 저장'),
+            defaultextension='.json',initialfile='ds5dongle-before-restore.json',filetypes=[(_ui_tr('슬롯 백업 JSON'),'*.json')])
+        if not recovery_path or self.closed or self.app._close_requested or self.busy or not self.write_ready or self.path!=path:return
+        self.stopped_task('restore',lambda:self.with_client(lambda c:restore_all(c,rows,macros,
+            lambda t:self.results.put(('progress',t,None)),recovery_path=recovery_path)))
     def close(self):
         self.close_entry_queries();self.stop_live();self.closed=True;self.cancel.set()
         if self.return_list_job:

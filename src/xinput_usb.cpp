@@ -2,11 +2,13 @@
 // https://github.com/OpenStickCommunity/GP2040-CE/tree/main/src/drivers/xinput
 #include "xinput_usb.h"
 #include "xinput_report.h"
+#include "audio.h"
 #include "state_mgr.h"
 #include "utils.h"
 #include "bt.h"
 #include "tusb.h"
 #include "device/usbd_pvt.h"
+#include "pico/time.h"
 #include <cstring>
 
 namespace {
@@ -28,6 +30,8 @@ static_assert(sizeof(gamepad) == 40 && gamepad[21] == 0x13 && gamepad[22] == out
 alignas(4) uint8_t input[20]{};
 alignas(4) uint8_t output[32]{};
 bool endpoints_open = false;
+bool output_retry_pending = false;
+uint32_t output_retry_started_ms = 0;
 bool host_rumble = false;
 uint8_t usb_port = 0;
 
@@ -46,6 +50,7 @@ void send_rumble(uint8_t left, uint8_t right) {
 void init() {}
 void reset(uint8_t) {
     endpoints_open = false;
+    output_retry_pending = false;
     if (host_rumble) {
         state_rumble_reset();
         send_rumble(0, 0);
@@ -53,6 +58,12 @@ void reset(uint8_t) {
     }
 }
 bool deinit() { reset(usb_port); return true; }
+
+void bus_reset(uint8_t port) {
+    // TinyUSB resets every registered driver, even when XInput is inactive.
+    audio_usb_session_reset();
+    reset(port);
+}
 
 uint16_t open(uint8_t port, const tusb_desc_interface_t *itf, uint16_t remaining) {
     if (itf->bInterfaceClass != TUSB_CLASS_VENDOR_SPECIFIC || itf->bInterfaceNumber != xusb_interface ||
@@ -69,17 +80,18 @@ uint16_t open(uint8_t port, const tusb_desc_interface_t *itf, uint16_t remaining
 bool control(uint8_t, uint8_t, const tusb_control_request_t *) { return false; }
 
 bool transfer(uint8_t port, uint8_t ep, xfer_result_t result, uint32_t length) {
-    if (ep == output_ep) {
+    if (ep == output_ep && endpoints_open && port == usb_port) {
         uint8_t left, right;
         if (result == XFER_RESULT_SUCCESS && xinput_decode_rumble(output, length, left, right))
             send_rumble(left, right);
-        usbd_edpt_xfer(port, output_ep, output, sizeof(output));
+        output_retry_pending = !usbd_edpt_xfer(port, output_ep, output, sizeof(output));
+        if (output_retry_pending) output_retry_started_ms = to_ms_since_boot(get_absolute_time());
     }
     return true;
 }
 
 const usbd_class_driver_t driver = {
-    "XUSB", init, deinit, reset, open, control, transfer, nullptr, nullptr,
+    "XUSB", init, deinit, bus_reset, open, control, transfer, nullptr, nullptr,
 };
 }
 
@@ -125,8 +137,18 @@ const uint8_t *xinput_configuration_descriptor(const uint8_t *base, uint16_t siz
 }
 
 bool xinput_report_ready() {
-    return endpoints_open && tud_ready() && !usbd_edpt_busy(usb_port, input_ep);
+    if (!endpoints_open || !tud_ready()) return false;
+    if (output_retry_pending) {
+        const auto now = to_ms_since_boot(get_absolute_time());
+        if (now - output_retry_started_ms >= 8 && !usbd_edpt_busy(usb_port, output_ep)) {
+            output_retry_started_ms = now;
+            output_retry_pending = !usbd_edpt_xfer(usb_port, output_ep, output, sizeof(output));
+        }
+    }
+    return !usbd_edpt_busy(usb_port, input_ep);
 }
+
+void xinput_disconnect() { reset(usb_port); }
 
 void xinput_send_report(const uint8_t *dualsense_report) {
     xinput_encode_report(input, dualsense_report);

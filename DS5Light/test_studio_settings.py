@@ -1,5 +1,8 @@
 """Studio tests: local edits, strict wire parsing, native layouts."""
 import copy,struct,time,unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+import json
 from unittest.mock import patch
 from studio_fields import FIELDS,SECTIONS
 from studio_scope import EDITABLE,CONSTRUCTION,REMOVED,trigger_display,trigger_raw
@@ -55,7 +58,7 @@ class SchemaTests(unittest.TestCase):
         with patch.object(client,'command',return_value=bytes((0x66,0x21,0,1,1))) as command:
             self.assertEqual(client.usb_serial_hidden(),1)
             self.assertEqual(command.call_args.args,(0x21,b'\0',0x84))
-        with patch.object(client,'command',return_value=bytes((0x66,0x21,1,1,0))):
+        with patch.object(client,'_tagged_write',return_value=bytes((0x66,0x21,1,1,0))):
             with self.assertRaises(ValueError):client.usb_serial_hidden(1)
         self.assertFalse(needs_reconnect({'disable_usb_sn':0},{'disable_usb_sn':1}))
 
@@ -63,6 +66,8 @@ class SchemaTests(unittest.TestCase):
         from studio_backup import restore_all
         class Client:
             cancel=staticmethod(lambda:False)
+            def require_write_tags(self):pass
+            def check_cancel(self):pass
             def __init__(self):self.stored=1;self.saved=[]
             def read_fields(self):return {},[]
             def read_one(self,field):
@@ -71,7 +76,8 @@ class SchemaTests(unittest.TestCase):
             def assert_storage(self,field):
                 if field[0]!=0xc8:raise AssertionError(field)
             def read_macros(self):return {}
-            def command(self,*args):return bytes((0x66,26,0))
+            def start_macro_pause(self):pass
+            def end_macro_pause(self):pass
             def write_fields(self,values,baseline,*,profile_snapshot):
                 if not profile_snapshot:raise AssertionError('expected profile snapshot')
                 if 'disable_usb_sn' in values:raise AssertionError('common policy written by profile restore')
@@ -79,7 +85,9 @@ class SchemaTests(unittest.TestCase):
         client=Client()
         rows=[dict(index=0,name='Edge',fields={'disable_usb_sn':1},effects={}),
               dict(index=1,name='Legacy',fields={},effects={})]
-        self.assertEqual(restore_all(client,rows,{}),[0,1])
+        path=Path(self.enterContext(TemporaryDirectory()))/'recovery.json'
+        with patch('studio_backup.backup_all',return_value={'macros':{}}):
+            self.assertEqual(restore_all(client,rows,{},recovery_path=path),[0,1])
         self.assertEqual(client.saved,[(0,1),(1,1)])
         self.assertEqual(client.stored,1)
 
@@ -151,6 +159,14 @@ class SchemaTests(unittest.TestCase):
         row['fields']['macro_disable']=0
         with self.assertRaises(ValueError):validate_backup(dict(slots=[row]))
 
+    def test_backup_accepts_portal_and_rejects_unknown_metadata_and_string_validity(self):
+        portal=dict(format='ds5dongle-slots',version=3,slots=[dict(index=0,valid=True,name='A',fields={'auto_haptics_gain':100})])
+        self.assertEqual(validate_backup(portal)[0][0]['name'],'A')
+        for variant in (dict(version=42),dict(format='other'),dict(scope='all')):
+            with self.subTest(variant=variant),self.assertRaises(ValueError):validate_backup(dict(portal,**variant))
+        portal['slots'][0]['valid']='false'
+        with self.assertRaises(ValueError):validate_backup(portal)
+
 class ProtocolTests(unittest.TestCase):
     def test_bulk_roundtrip_and_only_changed_fields(self):
         dev=Device();c=SettingsClient(dev,sleep=lambda _:None);values,missing=c.read_fields();self.assertFalse(missing);self.assertEqual(len(values),len(EDITABLE))
@@ -200,24 +216,65 @@ class NativeUITests(unittest.TestCase):
 
 
 class RestoreSafetyTests(unittest.TestCase):
+    class Client:
+        def __init__(self,path):
+            self.path=path;self.values={'auto_haptics_gain':100};self.saves=[];self.suspended=False
+            self.cancel=lambda:False;self.events=[];self.resume_fails=False;self.commit_fails=False
+            self.macros={'0':[0]*35}
+        def require_write_tags(self):pass
+        def check_cancel(self):pass
+        def read_fields(self):return dict(self.values),[]
+        def read_one(self,field,slot=None):return defaults()[field[1]]
+        def info(self,index):return Slot(index,'saved','Original') if index==0 else Slot(index,'empty')
+        def read_macros(self):return copy.deepcopy(self.macros)
+        def write_macro(self,index,data):self.macros[str(index)]=data
+        def commit_macros(self):
+            if self.commit_fails:raise TimeoutError('commit ACK lost')
+        def start_macro_pause(self):
+            self.events.append(b'\1')
+            assert json.loads(self.path.read_text(encoding='utf-8'))['slots'][0]['name']=='Original'
+            self.suspended=True
+        def end_macro_pause(self):
+            self.events.append(b'\0')
+            if self.resume_fails:raise OSError('resume disconnected')
+            self.suspended=False
+        def write_fields(self,values,current,**kwargs):self.values=dict(values)
+        def save_slot(self,index,name):
+            if index==1:raise TimeoutError('save ACK lost')
+            self.saves.append(index)
+
+    def setUp(self):
+        self.path=Path(self.enterContext(TemporaryDirectory()))/'recovery.json'
+        self.rows=[dict(index=0,name='A',fields={'auto_haptics_gain':50},effects={}),dict(index=1,name='B',fields={'auto_haptics_gain':80},effects={})]
+
     def test_restore_keeps_live_config_and_resumes_macros_after_failure(self):
         from studio_backup import restore_all
-        class Client:
-            def __init__(self):self.values={'auto_haptics_gain':100};self.saves=[];self.suspended=False;self.cancel=lambda:False
-            def read_fields(self):return dict(self.values),[]
-            def read_one(self,field):
-                from studio_settings_protocol import EdgeSerialUnsupported
-                raise EdgeSerialUnsupported('Unsupported')
-            def read_effects(self):return {'0':[],'1':[]}
-            def read_macros(self):return {}
-            def command(self,cmd,payload,report):self.suspended=bool(payload[0]);return bytes([102,cmd,0,0])
-            def write_fields(self,values,current,**kwargs):self.values=dict(values)
-            def save_slot(self,index,name):
-                if index==1:raise RuntimeError('save failed')
-                self.saves.append(index)
-        c=Client();rows=[dict(index=0,name='A',fields={'auto_haptics_gain':50},effects={}),dict(index=1,name='B',fields={'auto_haptics_gain':80},effects={})]
-        with self.assertRaises(RuntimeError):restore_all(c,rows,{})
+        c=self.Client(self.path)
+        with self.assertRaisesRegex(RuntimeError,r'저장 확인 슬롯 01.*저장 미확인 슬롯 02') as failure:
+            restore_all(c,self.rows,{},recovery_path=self.path)
+        self.assertIn(str(self.path),str(failure.exception))
+        original=json.loads(self.path.read_text(encoding='utf-8'))
+        self.assertEqual(validate_backup(original)[0][0]['name'],'Original')
+        self.assertEqual(original['slots'][1],{'index':1,'valid':False})
         self.assertEqual(c.values,{'auto_haptics_gain':100});self.assertFalse(c.suspended);self.assertEqual(c.saves,[0])
+
+    def test_recovery_file_cannot_overwrite_existing_backup(self):
+        from studio_backup import restore_all
+        self.path.write_text('existing',encoding='utf-8')
+        c=self.Client(self.path)
+        with self.assertRaises(FileExistsError):restore_all(c,self.rows,{},recovery_path=self.path)
+        self.assertEqual(c.events,[]);self.assertEqual(c.saves,[])
+        self.assertEqual(self.path.read_text(encoding='utf-8'),'existing')
+
+    def test_macro_ack_loss_and_resume_failure_are_both_reported(self):
+        from studio_backup import restore_all
+        c=self.Client(self.path);c.commit_fails=True;c.resume_fails=True
+        macros={'0':[1]+[0]*34}
+        with self.assertRaisesRegex(RuntimeError,r'공유 매크로 변경 결과 미확인') as failure:
+            restore_all(c,self.rows,macros,recovery_path=self.path)
+        self.assertIn('commit ACK lost',str(failure.exception));self.assertIn('resume disconnected',str(failure.exception))
+        self.assertEqual(json.loads(self.path.read_text(encoding='utf-8'))['macros'],{'0':[0]*35})
+        self.assertEqual(c.events,[b'\1',b'\0']);self.assertEqual(c.saves,[])
     def test_cancel_blocks_flash_and_reconnect(self):
         d=Device();c=SettingsClient(d,sleep=lambda _:None,cancel=lambda:True)
         with self.assertRaises(RuntimeError):c.save_flash()

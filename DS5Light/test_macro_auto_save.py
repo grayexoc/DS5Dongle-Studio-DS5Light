@@ -1,5 +1,5 @@
 """All shared-table edit entry points auto-save; failed saves remain exportable."""
-import copy,json,tempfile,unittest,tkinter as tk
+import copy,json,tempfile,time,unittest,tkinter as tk
 from pathlib import Path
 from unittest.mock import patch
 import test_studio_settings as fixture
@@ -9,6 +9,13 @@ from test_studio_macro_flow import record
 class AutoSaveTests(unittest.TestCase):
     setUp=fixture.NativeUITests.setUp
     tearDown=fixture.NativeUITests.tearDown
+    wait_for_file_save=fixture.fixtures.ModifiedUITests.wait_for_file_save
+
+    def wait_for_import(self,ui):
+        deadline=time.monotonic()+2
+        while ui.busy and time.monotonic()<deadline:
+            self.root.update();time.sleep(.01)
+        self.assertFalse(ui.busy)
 
     def editor(self):
         ui=fixture.NativeUITests.editor(self)
@@ -49,7 +56,7 @@ class AutoSaveTests(unittest.TestCase):
             name=Path(tmp)/'mapping.json'
             name.write_text(json.dumps({'macros':[dict(index=0,chord=2,keys=[5])]}),encoding='utf-8')
             with patch('studio_macro_tools.filedialog.askopenfilename',return_value=str(name)),patch('studio_macro_tools.messagebox.askyesno',return_value=True),patch.object(ui,'save_macro_edits') as save:
-                ui.import_macros();save.assert_called_once_with(ui.profile_stamp)
+                ui.import_macros();self.wait_for_import(ui);save.assert_called_once_with(ui.profile_stamp)
         self.assertEqual(ui.doc.values['macro_disable'],mask)
         self.assertEqual(ui.doc.macros['2'],motion)
         self.assertEqual(ui.doc.macros['0'][0],2)
@@ -65,7 +72,21 @@ class AutoSaveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             name=Path(tmp)/'settings.json';name.write_text('{"fields":{}}',encoding='utf-8')
             with patch('studio_macro_tools.filedialog.askopenfilename',return_value=str(name)),patch('studio_macro_tools.messagebox.showerror') as error,patch.object(ui,'save_macro_edits') as save:
-                ui.import_macros();error.assert_called_once();save.assert_not_called()
+                ui.import_macros();self.wait_for_import(ui);error.assert_called_once();save.assert_not_called()
+        self.assertEqual(ui.doc.macros,before)
+
+    def test_mapping_read_does_not_replace_macros_after_profile_switch(self):
+        ui=self.editor();before=copy.deepcopy(ui.doc.macros)
+        name=Path(self.temp.name)/'mapping.json'
+        name.write_text(json.dumps({'macros':[dict(index=0,chord=2,keys=[5])]}),encoding='utf-8')
+        queued=[]
+        with patch('studio_macro_tools.filedialog.askopenfilename',return_value=str(name)), \
+             patch('studio_settings_ui.start_thread',side_effect=queued.append), \
+             patch('studio_macro_tools.messagebox.askyesno') as confirm,patch.object(ui,'save_macro_edits') as save:
+            ui.import_macros()
+            ui.profile_stamp=dict(index=1,name='Other',edited=False)
+            queued[0].start();self.wait_for_import(ui)
+            confirm.assert_not_called();save.assert_not_called()
         self.assertEqual(ui.doc.macros,before)
 
     def test_manual_save_removed_and_unsaved_export_survives_error(self):
@@ -82,9 +103,26 @@ class AutoSaveTests(unittest.TestCase):
 
     def test_export_failure_reports_error_without_discarding_edits(self):
         ui=self.editor();before=copy.deepcopy(ui.doc.macros)
-        with patch('studio_macro_tools.filedialog.asksaveasfilename',return_value='blocked.json'),patch('studio_macro_tools.Path.write_text',side_effect=OSError('access denied')):
-            ui.export_macros()
-        self.assertIn('내보내기 실패',ui.progress.cget('text'));self.assertEqual(ui.doc.macros,before)
+        target=Path(self.temp.name)/'blocked.json'
+        target.write_text('previous export',encoding='utf-8')
+        with patch('studio_macro_tools.filedialog.asksaveasfilename',return_value=str(target)), \
+             patch('file_write.os.replace',side_effect=OSError('access denied')),patch('app.messagebox.showerror') as error:
+            ui.export_macros();self.wait_for_file_save()
+        self.assertIn('access denied',error.call_args.args[1])
+        self.assertEqual(target.read_text(encoding='utf-8'),'previous export')
+        self.assertEqual(ui.doc.macros,before)
+
+    def test_profile_export_uses_snapshot_from_dialog_completion(self):
+        ui=self.editor();ui.doc.macros['0'][7]=4
+        target=Path(self.temp.name)/'profile.json'
+        queued=[]
+        with patch('studio_settings_ui.filedialog.asksaveasfilename',return_value=str(target)), \
+             patch('app.start_thread',side_effect=queued.append):
+            ui.export_file()
+        self.assertFalse(target.exists())
+        ui.doc.macros['0'][7]=7
+        queued[0].start();self.wait_for_file_save()
+        self.assertEqual(json.loads(target.read_text(encoding='utf-8'))['macros']['0'][7],4)
 
     def test_auto_save_note_is_single_line_and_profile_heading_removed(self):
         ui=self.editor();ui.select_category(4)

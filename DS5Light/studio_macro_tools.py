@@ -3,7 +3,6 @@ from thread_start import start_thread
 from studio_i18n import text as _ui_tr
 from ui_controls import widget_trace
 import copy,json,threading,time,queue,tkinter as tk
-from pathlib import Path
 from tkinter import ttk,filedialog
 from studio_dialogs import messagebox
 from studio_records import macro_records
@@ -216,7 +215,9 @@ class MacroTools:
         if not self.loaded:return
         from studio_html_export import profile_html
         name=filedialog.asksaveasfilename(parent=self.parent,defaultextension='.html',initialfile='DS5Light-profile.html',filetypes=[('HTML','*.html')])
-        if name:Path(name).write_text(profile_html(self.doc.export_json()),encoding='utf-8')
+        if name:
+            data=copy.deepcopy(self.doc.export_json())
+            self.write_export(name,lambda:profile_html(data))
     def range_row(self,parent,row,f,value,valid,default=None):
         from studio_range import RangeSlider
         from studio_help import label,help_text,reference_point
@@ -289,16 +290,20 @@ class MacroTools:
         stamp=copy.deepcopy(self.profile_stamp);path=self.path
         name=filedialog.askopenfilename(parent=self.parent,filetypes=[(_ui_tr('매핑·매크로 JSON'),'*.json')])
         if not name:return
-        try:
-            data=json.loads(Path(name).read_text(encoding='utf-8-sig'))
+        def validate(data):
             if not isinstance(data,dict) or 'macros' not in data:raise ValueError(_ui_tr('매핑 목록이 없는 파일입니다. 매핑 내보내기로 만든 파일을 선택하세요.'))
             records=macro_records(data['macros'])
             for record in records.values():normalize_macro(record)
+            return records
+        self.read_json_file(name,lambda records:self.apply_imported_macros(records,stamp,path),validate,kind='read_mapping_file')
+    def apply_imported_macros(self,records,stamp,path):
+        try:
+            if not self.macro_edit_ready() or self.profile_stamp!=stamp or self.path!=path:return
             if not messagebox.askyesno(_ui_tr('공유 매핑 교체'),_ui_tr('모든 프로필이 공유하는 매핑을 파일 내용으로 전체 교체하고 Pico에 자동 저장합니다. 미저장 공용 매핑 편집은 파일 내용으로 대체됩니다. 프로필별 사용 체크는 바꾸지 않습니다. 계속할까요?'),parent=self.parent):return
+            if self.closed or self.app._close_requested:return
             if not self.macro_edit_ready() or self.profile_stamp!=stamp or self.path!=path:
                 self.progress.configure(text=_ui_tr('현재 프로필이 바뀌었습니다. 다시 읽어 주세요.'),kind='warning');return
             # Motion definitions are excluded and remain untouched.
-            records=copy.deepcopy(records)
             for key,old in self.doc.macro_baseline.items():
                 if old[4]&16:records[key]=old
                 else:records.setdefault(key,[0]*35)
@@ -312,10 +317,9 @@ class MacroTools:
         if not self.doc.macros:self.progress.configure(text=_ui_tr('매크로 정의를 먼저 읽으세요.'));return
         name=filedialog.asksaveasfilename(parent=self.parent,defaultextension='.json',initialfile='ds5dongle-macros.json',filetypes=[('JSON','*.json')])
         if name:
-            try:Path(name).write_text(json.dumps(dict(format='ds5dongle-macros',version=1,macros=structured_macros(self.doc.macros)),ensure_ascii=False,indent=2),encoding='utf-8')
-            except OSError as exc:
-                self.progress.configure(text=_ui_tr('매핑 내보내기 실패 · ')+str(exc),kind='error');self.update_state();return
-            self.progress.configure(text=_ui_tr('매핑 편집을 파일로 보관했습니다. 새로 고침 후 다시 가져올 수 있습니다.'),kind='action');self.update_state()
+            records=copy.deepcopy(self.doc.macros)
+            self.write_export(name,lambda:json.dumps(dict(format='ds5dongle-macros',version=1,macros=structured_macros(records)),
+                ensure_ascii=False,indent=2),_ui_tr('매핑 편집을 파일로 보관했습니다. 새로 고침 후 다시 가져올 수 있습니다.'))
     def toggle_live(self):
         from studio_power import blocked
         if blocked(self.app):return

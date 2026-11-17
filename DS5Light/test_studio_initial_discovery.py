@@ -65,11 +65,12 @@ class InitialDiscoveryTests(unittest.TestCase):
     def test_live_profile_is_read_before_using_saved_slot_list(self):
         row={'path':b'new','serial_number':'PICO-A'};binding=DeviceBinding()
         device=Mock();client=Mock();client.profile_state.return_value={'index':0,'name':'Live','auto_haptics_enable':0}
+        client.controller_ready.return_value=False
         lock=Mock();lock.acquire.return_value=True
         with patch('studio_startup.devices',return_value=[row]),patch('hid.device',return_value=device),\
              patch('studio_settings_protocol.SettingsClient',return_value=client),patch('studio_startup._DEVICE_LOCK',lock):
             result=initial_profile(binding,lambda:False,10**15)
-        self.assertEqual(result,(row,client.profile_state.return_value,True))
+        self.assertEqual(result,(row,dict(client.profile_state.return_value,controller_ready=False),True))
         client.profile_state.assert_called_once();client.slots.assert_not_called()
         device.close.assert_called_once();lock.release.assert_called_once()
 

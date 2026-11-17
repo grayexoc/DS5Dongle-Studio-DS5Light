@@ -80,7 +80,7 @@ class PersistenceTests(unittest.TestCase):
             self.assertEqual(loaded.slots[0]['controls']['gain'],1.25)
             self.assertEqual(path.with_name('presets.v4.backup.json').read_bytes(),original)
             before=path.read_bytes()
-            with patch('presets.os.replace',side_effect=OSError('disk full')):
+            with patch('file_write.os.replace',side_effect=OSError('disk full')):
                 with self.assertRaises(OSError): loaded.save(0,value,bind_game='Game.exe',auto_apply=False)
             self.assertEqual(path.read_bytes(),before); self.assertEqual(loaded.bound_slot('Game.exe'),0)
             loaded.save(0,value,bind_game='Game.exe',auto_apply=False)

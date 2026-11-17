@@ -2,10 +2,9 @@
 from studio_i18n import text as _ui_tr
 import json
 import math
-import os
-import tempfile
 from pathlib import Path
 from core import HAPTIC_GAIN_MAX
+from file_write import replace_text
 
 SLOT_COUNT = 12
 
@@ -100,16 +99,6 @@ class PresetStore:
             backup=self.path.with_name(self.path.stem+f'.v{old_version}.backup.json')
             if not backup.exists():
                 with backup.open('xb') as f: f.write(self.path.read_bytes())
-        name = None
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=self.path.parent, delete=False) as f:
-                name = f.name
-                f.write(payload)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(name, self.path)
-            self.slots = slots
-            self.bindings = bindings
-        finally:
-            if name and Path(name).exists():
-                Path(name).unlink()
+        replace_text(self.path, payload)
+        self.slots = slots
+        self.bindings = bindings

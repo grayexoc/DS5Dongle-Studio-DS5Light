@@ -89,6 +89,7 @@ queue_t send_fifo;
 static bool link_encrypted = false;
 static bool hid_control_open = false;
 static bool hid_interrupt_open = false;
+static bool hid_channels_failed = false;
 
 struct send_element {
     uint8_t data[512];
@@ -152,6 +153,14 @@ struct ControlSend { uint8_t data[MTU_CONTROL]; uint16_t len; uint8_t retries; }
 static queue_t control_fifo;
 static bool macro_power_off_pending = false;
 
+static bool control_error_log_due() {
+    static uint32_t last_ms = uint32_t{0} - 1000;
+    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+    if (now_ms - last_ms < 1000) return false;
+    last_ms = now_ms;
+    return true;
+}
+
 static void bt_control_send_ready() {
     static ControlSend item;
     if (queue_try_remove(&control_fifo, &item)) {
@@ -165,7 +174,9 @@ static void bt_control_send_ready() {
             for (uint i=1; i<count; ++i) {
                 ControlSend next; queue_try_remove(&control_fifo, &next); queue_try_add(&control_fifo, &next);
             }
-        } else printf("[L2CAP] Control send failed: %u\n", status);
+        } else if (control_error_log_due()) {
+            printf("[L2CAP] Control send failed: %u\n", status);
+        }
     }
     if (!queue_is_empty(&control_fifo)) l2cap_request_can_send_now_event(hid_control_cid);
 }
@@ -204,6 +215,13 @@ bool bt_is_connected() {
 bool bt_is_ready() {
     return bt_is_connected() && link_encrypted &&
            hid_control_open && hid_interrupt_open;
+}
+
+static void reset_disconnected_hid() {
+    controller_input_on_disconnect();
+    feature_data.clear();
+    wake_on_bt_disconnect();
+    state_rumble_reset();
 }
 
 bool bt_edge_connected() {
@@ -479,12 +497,7 @@ void bt_inquiring_led() {
 // direction, otherwise the host may miss the change entirely.
 static void restore_full_usb_identity(void) {
     usb_set_idle_pid(false);
-    if (usb_served_idle_pid() || (tud_mounted() && usb_edge_serial_refresh_needed())) {
-        usb_schedule_reconnect();
-    } else if (!usb_reconnect_pending()) {
-        if (!tud_mounted()) usb_select_host_mode();
-        tud_connect();
-    }
+    usb_attach();
 }
 
 bool bt_usb_features_pending() {
@@ -637,6 +650,7 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
                 acl_handle = handle;
                 link_encrypted = false;
                 hid_control_open = hid_interrupt_open = false;
+                hid_channels_failed = false;
                 bt_rssi = 0;
                 bt_rssi_valid = false;
                 bd_addr_copy(current_device_addr, conn_addr);
@@ -658,11 +672,6 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             link_key_t link_key;
             link_key_type_t link_key_type;
             bool link = gap_get_link_key_for_bd_addr(addr, link_key, &link_key_type);
-            printf("[HCI] Link key: ");
-            for (int i = 0; i < sizeof(link_key_t); i++) {
-                printf("%02X", link_key[i]);
-            }
-            printf("\n");
             if (link) {
                 printf("[HCI] Link key request from %s, reply stored key type=%u\n", bd_addr_to_str(addr),
                        (unsigned int) link_key_type);
@@ -756,9 +765,7 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
             if (acl_handle == HCI_CON_HANDLE_INVALID ||
                 hci_event_disconnection_complete_get_connection_handle(packet) != acl_handle ||
                 hci_event_disconnection_complete_get_status(packet) != ERROR_CODE_SUCCESS) break;
-            controller_input_on_disconnect();
-            wake_on_bt_disconnect();
-            state_rumble_reset();
+            if (!hid_channels_failed) reset_disconnected_hid();
 #if !ENABLE_SERIAL
             // Hide the USB device when no controller is paired, whenever the host is awake --
             // even with wake on -- so it leaves DS4Windows/the host cleanly. Keep it on the bus
@@ -787,7 +794,7 @@ static void __not_in_flash_func(hci_packet_handler)(uint8_t packet_type, uint16_
                     usb_schedule_reconnect();
                 } else {
                     usb_cancel_reconnect();
-                    tud_disconnect();     // wake off: leave the bus entirely
+                    usb_detach();         // wake off: leave the bus entirely
                 }
             }
 #endif
@@ -842,7 +849,7 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
     (void) channel;
 
     if (packet_type == L2CAP_DATA_PACKET) {
-        if (packet == nullptr || size == 0) return;
+        if (hid_channels_failed || packet == nullptr || size == 0) return;
         if (channel == hid_interrupt_cid) {
             if (size < 2) return;
             // printf("[L2CAP] HID Interrupt data len=%u\n", size);
@@ -904,6 +911,8 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
     const uint8_t event_type = hci_event_packet_get_type(packet);
     switch (event_type) {
         case L2CAP_EVENT_CHANNEL_OPENED: {
+            if (hid_channels_failed || !bt_is_connected() ||
+                l2cap_event_channel_opened_get_handle(packet) != acl_handle) break;
             const uint8_t status = l2cap_event_channel_opened_get_status(packet);
             const uint16_t local_cid = l2cap_event_channel_opened_get_local_cid(packet);
             if (status == 0) {
@@ -1006,21 +1015,13 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
 
         case L2CAP_EVENT_CHANNEL_CLOSED: {
             const uint16_t local_cid = l2cap_event_channel_closed_get_local_cid(packet);
-            if (local_cid == hid_control_cid) {
-                hid_control_cid = 0;
-                while (queue_try_remove(&control_fifo, nullptr)) {}
-                hid_control_open = false;
-                printf("[L2CAP] HID Control closed cid=0x%04X\n", local_cid);
-            } else if (local_cid == hid_interrupt_cid) {
-                hid_interrupt_cid = 0;
-                hid_interrupt_open = false;
-                printf("[L2CAP] HID Interrupt closed cid=0x%04X\n", local_cid);
-            } else {
-                printf("[L2CAP] Channel closed cid=0x%04X\n", local_cid);
-            }
-            if (hid_control_cid == 0 && hid_interrupt_cid == 0) {
-                bt_disconnect();
-            }
+            if (!local_cid || (local_cid != hid_control_cid && local_cid != hid_interrupt_cid)) break;
+            printf("[L2CAP] Required HID channel closed cid=0x%04X\n", local_cid);
+            hid_channels_failed = true;
+            hid_control_open = hid_interrupt_open = false;
+            hid_control_cid = hid_interrupt_cid = 0;
+            reset_disconnected_hid();
+            bt_disconnect();
             break;
         }
 
@@ -1130,7 +1131,7 @@ bool bt_control_send(const uint8_t *data, uint16_t len) {
     ControlSend item{};
     memcpy(item.data, data, len); item.len = len;
     if (!queue_try_add(&control_fifo, &item)) {
-        printf("[L2CAP] Control queue full; command rejected\n");
+        if (control_error_log_due()) printf("[L2CAP] Control queue full; command rejected\n");
         return false;
     }
     l2cap_request_can_send_now_event(hid_control_cid);

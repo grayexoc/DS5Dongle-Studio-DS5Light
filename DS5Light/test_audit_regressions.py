@@ -68,7 +68,7 @@ class AuditRegressionTests(unittest.TestCase):
     def test_dock_save_error_names_dock_policy(self):
         from studio_settings_protocol import PolicySaveError
         client = SettingsClient(None)
-        with patch.object(client, 'command', return_value=bytes([102, 29, 2, 1, 0])):
+        with patch.object(client, '_tagged_write', return_value=bytes([102, 29, 2, 1, 0])):
             with self.assertRaisesRegex(PolicySaveError, '충전독') as caught:
                 client.dock_disconnect(1)
         self.assertEqual(caught.exception.current, 0)

@@ -31,8 +31,9 @@ class ReadTests(unittest.TestCase):
                 return super().send_feature_report(p)
         d=Device();c=SettingsClient(d,sleep=lambda _:None);c.bulk=True
         values,missing=c.read_fields(fields)
-        self.assertEqual(len(values),len(fields));self.assertFalse(missing)
-        self.assertEqual(sum(p[2]==12 for p in d.sent),3)
+        self.assertEqual(set(values),{f[1] for f in fields if f[0]!=bad})
+        self.assertEqual(missing,[fields[3][1]])
+        self.assertEqual(sum(p[2]==12 and p[3]>1 for p in d.sent),3)
         self.assertEqual(sum(p[2]==4 for p in d.sent),9)
     def test_enumeration_and_lock_wait_do_not_consume_active_read_budget(self):
         import studio_snapshot as module
@@ -44,15 +45,28 @@ class ReadTests(unittest.TestCase):
         def rows():clock[0]+=2.;return [dict(path=b'fake')]
         class Client:
             def __init__(self,*args,**kw):self.deadline=None
-            def profile(self):return dict(index=0,name='Current',edited=False)
+            def profile(self,*,include_revision=False):return dict(index=0,name='Current',edited=False)
             def read_fields(self):
                 clock[0]+=3.;self.check_cancel();return {'auto_haptics_enable':1},[]
             def standby_mode(self):return 0
+            def controller_ready(self):return False
             def check_cancel(self):
                 if clock[0]>=self.deadline:raise RuntimeError('read timeout')
         with patch.object(module.time,'monotonic',now),patch.object(module,'devices',side_effect=rows),patch.object(module,'_DEVICE_LOCK',lock),patch.object(module,'SettingsClient',Client),patch.object(module,'identity_fields',return_value=('v1.42.0',19)),patch('hid.device',return_value=Mock()):
             result=snapshot(b'fake')
-        self.assertEqual(result['cfg'],19);lock.release.assert_called_once()
+        self.assertEqual(result['cfg'],19);self.assertIs(result['profile']['controller_ready'],False)
+        lock.release.assert_called_once()
+
+    def test_snapshot_rejects_changed_config_with_same_already_edited_profile(self):
+        client=Mock()
+        header=dict(index=3,name='Mix',edited=True,config_token='begin')
+        client.profile.side_effect=[header,dict(header,config_token='end')]
+        client.read_fields.return_value=({'auto_haptics_enable':1,'auto_haptics_gain':95},[])
+        with patch('studio_snapshot.devices',return_value=[dict(path=b'Pico')]), \
+             patch('studio_snapshot.identity_fields',return_value=('v47',22)), \
+             patch('studio_snapshot.SettingsClient',return_value=client),patch('hid.device',return_value=Mock()):
+            with self.assertRaisesRegex(RuntimeError,'조회 중'):snapshot(b'Pico')
+        self.assertEqual([call.kwargs for call in client.profile.call_args_list],[dict(include_revision=True)]*2)
 
 class EntryTests(unittest.TestCase):
     setUp=fixture.NativeUITests.setUp

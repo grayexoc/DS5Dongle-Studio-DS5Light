@@ -100,6 +100,7 @@ class SaveFlow:
         serial=next((d.get('serial_number') for d in self.device_rows if d['path']==path),None) or self.app.studio.device_serials.get(path)
         self.after_shared_save=after
         def send(client):
+            client.require_write_tags()
             self.results.put(('progress',_ui_tr('Pico 매핑 저장 전 상태 확인 중…'),None))
             if stamp is not None and client.profile()!=stamp:raise RuntimeError(_ui_tr('현재 프로필이 바뀌었습니다. 새로 고침으로 확인하세요.'))
             actual=client.read_macros()

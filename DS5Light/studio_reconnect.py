@@ -38,10 +38,11 @@ def wait_for_macros(path,serial,cancel,timeout=30,*,edge_binding=None,serial_hid
                 device=hid.device();device.open_path(target['path'])
                 client=SettingsClient(device,cancel=cancel.is_set)
                 client.deadline=min(deadline,time.monotonic()+6)
-                before=client.profile()
+                before=client.profile(include_revision=True)
                 macros=client.read_macros()
-                after=client.profile()
+                after=client.profile(include_revision=True)
                 expected={k:result['profile'][k] for k in ('index','name','edited')}
+                if 'config_token' in result['profile']:expected['config_token']=result['profile']['config_token']
                 if before!=after or after!=expected:
                     raise RuntimeError(_ui_tr('재연결 조회 중 프로필이 변경되었습니다.'))
                 client.check_cancel()

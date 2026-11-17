@@ -150,7 +150,7 @@ void enter_dormant() {
     }
     oled_status_prepare_sleep();
     usb_cancel_reconnect();
-    tud_disconnect();
+    usb_detach();
     // Core1 can otherwise access flash or encode while clocks are changed.
     multicore_reset_core1();
 #ifndef CYW43_WL_GPIO_SMPS_PIN

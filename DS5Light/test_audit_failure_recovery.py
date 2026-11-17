@@ -57,6 +57,7 @@ class WorkerRecoveryTests(unittest.TestCase):
         dialog.window = Mock(); dialog.results = queue.SimpleQueue()
         dialog.test_results = []; dialog.update_test_buttons = Mock()
         dialog.closing = True; dialog.last_test = None
+        dialog.close_job = None
         with patch('threading.Thread.start', side_effect=RuntimeError('start failed')):
             dialog.start('test', Mock())
         dialog.window.after.assert_called_once()
@@ -68,7 +69,7 @@ class WorkerRecoveryTests(unittest.TestCase):
 
     def test_profile_failure_posts_result_and_schedules_poll(self):
         panel = StudioPanel.__new__(StudioPanel)
-        panel.app = NS(_closing=False, engine=None, render=Mock(), root=Mock(),
+        panel.app = NS(_closing=False, _close_requested=False, engine=None, render=Mock(), root=Mock(),
                        studio_settings=NS(busy=False), studio_power=NS(blocked=False))
         panel.closed = False; panel.busy = False
         panel.render = Mock(); panel.results = queue.SimpleQueue(); panel.poll = Mock()
@@ -125,6 +126,82 @@ class WorkerRecoveryTests(unittest.TestCase):
         self.assertFalse(power.supported)
         self.assertEqual(gc.isenabled(), enabled)
         operation.assert_not_called()
+
+
+class ShutdownTests(unittest.TestCase):
+    def setUp(self):
+        from app import make_close_handler
+        self.root=Mock()
+        self.panel=NS(busy=False,_cancel=threading.Event(),close=Mock())
+        self.editor=NS(busy=False,recording=False,closing_recording=False,cancel=threading.Event(),close=Mock())
+        self.app=NS(root=self.root,_closing=False,_close_requested=False,studio=self.panel,studio_settings=self.editor,
+                    status=Mock(),battery=Mock(),controller_presence=Mock(),idle_presence=Mock(),profile_watch=Mock(),
+                    mute_shortcut=Mock(),flush_preferences=Mock(side_effect=lambda on_complete:on_complete()),
+                    stop=Mock(side_effect=lambda on_complete:on_complete()))
+        self.lock=Mock();self.close=make_close_handler(self.app,self.lock)
+        self.now=self.enterContext(patch('app.time.monotonic',return_value=100.))
+        self.prompt=self.enterContext(patch('app.confirm_hid_shutdown'))
+
+    def recheck(self,now):
+        self.now.return_value=now
+        self.root.after.call_args.args[1]()
+
+    def test_cooperative_shutdown_does_not_prompt_or_wait_past_completion(self):
+        self.editor.busy=True
+        self.close();self.close()
+        self.assertTrue(self.app._close_requested)
+        self.assertTrue(self.panel._cancel.is_set());self.assertTrue(self.editor.cancel.is_set())
+        self.root.after.assert_called_once();self.root.destroy.assert_not_called()
+        self.editor.busy=False
+        self.recheck(100.1)
+        self.prompt.assert_not_called();self.lock.close.assert_called_once();self.root.destroy.assert_called_once()
+
+    def test_shutdown_waits_for_final_preferences_save_after_audio_stops(self):
+        self.app.flush_preferences.side_effect=None
+        self.close()
+        self.app.stop.assert_called_once()
+        self.root.destroy.assert_not_called()
+        self.lock.close.assert_not_called()
+
+        self.app.flush_preferences.call_args.kwargs['on_complete']()
+        self.lock.close.assert_called_once()
+        self.root.destroy.assert_called_once()
+
+    def test_shutdown_waits_for_file_save_after_audio_and_preferences(self):
+        self.app.file_save_busy=True
+        self.close()
+        self.app.stop.assert_called_once();self.app.flush_preferences.assert_called_once()
+        self.root.destroy.assert_not_called();self.lock.close.assert_not_called()
+        self.app._after_file_save()
+        self.root.destroy.assert_called_once();self.lock.close.assert_called_once()
+
+    def test_hung_setting_can_wait_or_close_without_releasing_mutex_early(self):
+        self.editor.busy=True
+        self.prompt.side_effect=[False,True]
+        self.close();self.recheck(107.9)
+        self.prompt.assert_not_called()
+        self.recheck(108.)
+        self.prompt.assert_called_once_with(self.root);self.root.destroy.assert_not_called()
+        self.recheck(115.9);self.assertEqual(self.prompt.call_count,1)
+        self.recheck(116.)
+        self.assertEqual(self.prompt.call_count,2)
+        self.editor.close.assert_called_once();self.app.flush_preferences.assert_called_once()
+        self.app.stop.assert_called_once();self.root.destroy.assert_called_once();self.lock.close.assert_not_called()
+
+    def test_pending_diagnostic_is_closed_once_before_timeout(self):
+        diagnostic=NS(window=Mock(),closing=False)
+        def close_diagnostic(force=False):
+            diagnostic.closing=True
+            if force:self.app.device_diagnostics=None
+        diagnostic.close=Mock(side_effect=close_diagnostic)
+        self.app.device_diagnostics=diagnostic
+        self.prompt.return_value=True
+        self.close();self.recheck(104.)
+        diagnostic.close.assert_called_once_with()
+        self.recheck(108.)
+        self.prompt.assert_called_once_with(diagnostic.window)
+        self.assertEqual([call.kwargs for call in diagnostic.close.call_args_list],[{},dict(force=True)])
+        self.root.destroy.assert_called_once()
 
 
 if __name__ == '__main__':

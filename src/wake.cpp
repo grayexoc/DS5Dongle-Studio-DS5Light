@@ -253,6 +253,7 @@ extern "C" void tud_resume_cb(void) {
 
 extern "C" void tud_mount_cb(void) {
     WAKE_DBG("tud_mount_cb state=%s", wake_state_name(state));
+    macro_suspend(false);
     host_suspended = false;
     host_resumed_event = true;
     suspend_at_us = 0;

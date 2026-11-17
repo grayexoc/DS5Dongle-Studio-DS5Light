@@ -32,6 +32,7 @@ class DeviceDiagnosticsDialog:
         self.report = None
         self.timing = None
         self.job = None
+        self.close_job = None
         self.test_results = []
         self.last_test = None
         self.input_monitor=None
@@ -523,10 +524,15 @@ class DeviceDiagnosticsDialog:
         path = filedialog.asksaveasfilename(parent=self.window, defaultextension='.json',
                     initialfile='ds5light-device-diagnostics.json', filetypes=[('JSON', '*.json')])
         if not path:return
+        def shareable(report):
+            if report is None or 'device' not in report:return report
+            identity=report['device']
+            return dict(report,device={key:identity[key] for key in
+                ('edge_serial_present','require_output_identity','expected_edge_serial') if key in identity})
         try:
-            Path(path).write_text(json.dumps(dict(snapshot=self.report, input_timing=self.timing, output_tests=self.test_results),
+            Path(path).write_text(json.dumps(dict(snapshot=shareable(self.report), input_timing=shareable(self.timing), output_tests=self.test_results),
                 ensure_ascii=False, indent=2, default=self.json_value), encoding='utf-8')
-            self.status.set(tr('진단 파일 저장 완료 · 장치 식별 정보 포함'))
+            self.status.set(tr('진단 파일 저장 완료 · 장치 식별 필드 제외'))
         except (OSError, TypeError) as exc:self.status.set(str(exc))
 
     def start_input_monitor(self):
@@ -542,14 +548,15 @@ class DeviceDiagnosticsDialog:
         self.input_monitor.start()
         self.input_job=self.window.after(80,self.poll_input)
 
-    def stop_input_monitor(self):
+    def stop_input_monitor(self,*,wait=True):
         if self.input_job:
             self.window.after_cancel(self.input_job);self.input_job=None
         monitor=self.input_monitor
         if monitor:
             monitor.stop.set()
-            if monitor.thread:monitor.thread.join(timeout=.2)
-            if monitor.thread and monitor.thread.is_alive():return False
+            if wait and monitor.thread:
+                monitor.thread.join(timeout=.2)
+                if monitor.thread.is_alive():return False
         self.input_monitor=None
         self.input_state=None
         return True
@@ -578,12 +585,14 @@ class DeviceDiagnosticsDialog:
         self.input_state=None
         self.draw_controller()
 
-    def close(self):
-        if not self.stop_input_monitor():
-            self.window.after(100,self.close);return
+    def close(self,*,force=False):
+        if self.close_job:
+            self.window.after_cancel(self.close_job);self.close_job=None
         self.cancel.set()
         self.closing = True
-        if self.busy:
+        if not self.stop_input_monitor(wait=not force):
+            self.close_job=self.window.after(100,self.close);return
+        if self.busy and not force:
             self.status.set(tr('시험 종료와 장치 정리를 기다리는 중…'))
             return
         if self.job:self.window.after_cancel(self.job)

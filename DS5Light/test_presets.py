@@ -37,7 +37,7 @@ class PresetTests(unittest.TestCase):
     def test_failed_replace_keeps_previous(self):
         store = PresetStore(self.path); store.save(0, self.value)
         original = self.path.read_bytes()
-        with patch('presets.os.replace', side_effect=PermissionError('locked')):
+        with patch('file_write.os.replace', side_effect=PermissionError('locked')):
             with self.assertRaises(PermissionError): store.save(1, self.value)
         self.assertEqual(self.path.read_bytes(), original)
         self.assertIsNone(store.slots[1])

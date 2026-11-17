@@ -105,6 +105,16 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(len(device.sent),1)
         self.assertEqual(c.profile(),dict(index=3,edited=True,name='Audio Haptics'))
 
+    def test_revision_extension_accepts_only_the_matching_tag_and_keeps_legacy_reply(self):
+        from unittest.mock import patch
+        packet=self.reply()[:30]+b'REV1'+bytes.fromhex('01000000aabbccdd')
+        d=Fake([packet+bytes(4),packet+b'OLD!',packet+b'NEW!',self.reply()])
+        c=StudioClient(d,sleep=lambda _:None)
+        with patch('studio_slots.secrets.randbelow',return_value=int.from_bytes(b'NEW!','little')-1):
+            self.assertEqual(c.profile(include_revision=True)['config_token'],'01000000aabbccdd')
+            self.assertNotIn('config_token',c.profile(include_revision=True))
+        self.assertEqual(d.sent[0][:9],b'\x80\x66\x67R1NEW!')
+
     def test_legacy_profile_state_reuses_supplied_header(self):
         device=Fake([bytes((129,102,4,0x12,0)),self.reply()])
         c=StudioClient(device,sleep=lambda _:None)

@@ -41,7 +41,8 @@ void flash_range_program(unsigned off,const uint8_t*p,unsigned n){for(unsigned i
 int flash_safe_execute(void(*fn)(void*),void*p,unsigned){if(write_failure)return -1;fn(p);return PICO_OK;}
 const Config*flash_config(){return reinterpret_cast<const Config*>(flashmem+8192);}
 void config_valid(){config.body.config_version=CONFIG_VERSION;if(config.body.disable_usb_sn>1)config.body.disable_usb_sn=0;}
-void migrate_legacy_storage(){}
+unsigned migrations=0;
+void migrate_legacy_storage(){++migrations;}
 void active_profile_restore(uint8_t,uint32_t){}
 bool active_profile_resume_state(uint8_t&slot,uint32_t&fp){slot=3;fp=0xabcd;return true;}
 void recover_storage(void*){}static bool recovery_ok=true;
@@ -67,6 +68,12 @@ void seed(bool legacy){
 }
 ConfigProfileIdentity stored(){uint32_t off;ConfigProfileIdentity id{};assert(config_journal_device_identity(id));return id;}
 int main(){
+ seed(true);migrations=0;recovery_ok=false;
+ uint8_t original[sizeof flashmem];memcpy(original,flashmem,sizeof original);
+ config_load();assert(config.body.config_version==22&&usb_serial_hidden_policy);
+ assert(!migrations&&!memcmp(original,flashmem,sizeof original));
+ recovery_ok=true;config_load();assert(migrations==1);
+ puts("PASS: boot loads valid settings after redo failure without changing flash or migrating slots");
  for(bool legacy:{false,true}){
   seed(legacy);config_load();assert(usb_serial_hidden_policy==legacy&&activation_save_pending);
   assert(config_save_impl(10));auto id=stored();assert(id.tagged_slot&USB_SERIAL_INITIALIZED_BIT);

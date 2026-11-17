@@ -9,7 +9,7 @@ import tkinter as tk
 from types import SimpleNamespace
 import unittest
 from dataclasses import asdict
-from unittest.mock import patch
+from unittest.mock import Mock,patch
 
 import app as ui
 from process_audio import ProcessSampler
@@ -32,6 +32,16 @@ class TargetLifetimeTests(unittest.TestCase):
 
 
 class ModifiedUITests(unittest.TestCase):
+    def test_tab_strip_keyboard_selection_uses_existing_page_guard(self):
+        tabs=self.ui.tabs
+        self.assertEqual(int(tabs.cget('takefocus')),1)
+        for key in ('Left','Right','Home','End'):self.assertTrue(tabs.bind(f'<{key}>'))
+        self.assertEqual(tabs._select_from_keyboard(1),'break')
+        self.assertEqual((self.ui.selected_tab,tabs.selected),(1,1))
+        with patch.object(type(self.ui.studio_settings),'transfer_locked',True):
+            tabs._select_from_keyboard(2)
+        self.assertEqual((self.ui.selected_tab,tabs.selected),(1,1))
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.root=tk.Tk(); self.root.withdraw()
@@ -50,6 +60,12 @@ class ModifiedUITests(unittest.TestCase):
         for job in self.root.tk.call('after','info'): self.root.after_cancel(job)
         self.root.update_idletasks()
         self.root.destroy(); self.temp.cleanup()
+
+    def wait_for_file_save(self):
+        deadline=time.monotonic()+2
+        while self.ui.file_save_busy and time.monotonic()<deadline:
+            self.root.update();time.sleep(.01)
+        self.assertFalse(self.ui.file_save_busy)
 
     def engine(self,alive=True,delay=0):
         result=SimpleNamespace(status='오류: simulated initialization failure',capture_channels=None,
@@ -196,7 +212,55 @@ class ModifiedUITests(unittest.TestCase):
         self.ui._saved_preferences=None
         with patch.object(self.ui.preference_store,'save',side_effect=PermissionError('read only')):
             self.ui._save_preferences()
+            end=time.monotonic()+2
+            while self.ui._preferences_busy and time.monotonic()<end:self.root.update();time.sleep(.01)
         self.assertIn('read only',self.ui.notice.get())
+
+    def test_preferences_write_coalesces_newer_edits_and_finishes_final_flush(self):
+        app=self.ui;started=threading.Event();release=threading.Event();snapshots=[]
+        app.remember_last.set(True);app.gain.set(100)
+        def save(data,*,update_cache):
+            self.assertFalse(update_cache)
+            snapshots.append(data['controls']['gain'])
+            if len(snapshots)==1:
+                started.set();release.wait(2)
+        finished=Mock()
+        with patch.object(app.preference_store,'save',side_effect=save):
+            try:
+                app._save_preferences()
+                self.assertTrue(started.wait(1))
+                app.gain.set(110);app._save_preferences()
+                app.gain.set(125);app.flush_preferences(on_complete=finished)
+                self.root.update();finished.assert_not_called()
+            finally:release.set()
+            end=time.monotonic()+2
+            while not finished.called and time.monotonic()<end:self.root.update();time.sleep(.01)
+        finished.assert_called_once_with()
+        self.assertEqual(snapshots,[1.,1.25]);self.assertEqual(app._saved_preferences['controls']['gain'],1.25)
+
+    def test_status_details_open_full_clipped_message_by_key_or_click(self):
+        app=self.ui;original='Device error: '+('settings read failed '*5)+'field 0x12 '+('wait for Pico '*6)
+        with patch.object(app.status_label,'winfo_width',return_value=186),patch.object(ui.messagebox,'showinfo') as details:
+            app.status.set(original)
+            self.assertNotEqual(app._status_display.get(),original)
+            self.assertEqual(str(app.status_label.cget('takefocus')),'1')
+            self.assertTrue(app.status_label.bind('<Return>'));self.assertTrue(app.status_label.bind('<Button-1>'))
+            self.assertEqual(app._show_status_details(),'break')
+            self.assertEqual(details.call_args.args[1],original)
+            app.status.set('Ready');self.assertIsNone(app._show_status_details())
+            self.assertEqual(details.call_count,1)
+
+    def test_old_slot_gain_is_explicitly_clamped_and_other_bounds_are_preserved(self):
+        app=self.ui
+        for requested,actual in ((0,.5),(.49,.5),(.50,.50),(2.,2.)):
+            with self.subTest(gain=requested):
+                app.store.slots[0]=dict(name='Saved',game_exe='',scope='device',channels=0,input='',output='',
+                                        controls=dict(asdict(app.controls),gain=requested))
+                app._apply_slot(0)
+                self.assertEqual(app.gain.get(),actual*100)
+                self.assertEqual(app.controls.gain,actual)
+                self.assertEqual(app.store.slots[0]['controls']['gain'],requested)
+                self.assertEqual('지원 최솟값' in app.notice.get(),requested<.5)
 
     def test_footer_height_is_reserved_for_all_statuses(self):
         self.root.update_idletasks()
@@ -286,10 +350,27 @@ class ModifiedUITests(unittest.TestCase):
         self.ui._process_snapshot=[dict(name='Game.exe',pid=123,started=1.,cpu=1.)]
         self.ui.render_games(); self.ui.auto_apply_game.set(True)
         self.assertIsNone(self.ui.store.bound_slot('Game.exe'))
-        self.ui.slot_name.set('Game'); self.ui.gain.set(200); self.ui.save_slot()
+        self.ui.slot_name.set('Game'); self.ui.gain.set(200)
+        started=threading.Event();release=threading.Event()
+        from presets import replace_text
+        def write(path,payload):
+            started.set()
+            if not release.wait(2):raise TimeoutError('test did not release writer')
+            replace_text(path,payload)
+        with patch('presets.replace_text',side_effect=write):
+            try:
+                self.ui.save_slot()
+                self.assertTrue(started.wait(1))
+                self.ui.slot.current(1);self.ui.slot_selected();self.root.update()
+                self.assertIsNone(self.ui.store.bound_slot('Game.exe'))
+                self.assertIn('disabled',self.ui.game_save_button.state())
+            finally:release.set()
+            self.wait_for_file_save()
+        self.assertEqual(self.ui.slot.current(),1)
         self.assertEqual(self.ui.store.bound_slot('Game.exe'),0)
         self.assertEqual(self.ui.store.slots[0]['controls']['gain'],2.)
-        self.ui.auto_apply_game.set(False); self.ui.save_slot()
+        self.ui.slot.current(0);self.ui.slot_selected()
+        self.ui.auto_apply_game.set(False); self.ui.save_slot();self.wait_for_file_save()
         self.assertIsNone(self.ui.store.bound_slot('Game.exe'))
 
 

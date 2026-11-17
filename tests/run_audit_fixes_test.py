@@ -2,7 +2,7 @@
 from pathlib import Path
 import os, subprocess, re
 root=Path(__file__).resolve().parents[1]
-base=root.parent/'DS5Dongle-Studio-build'
+base=Path(os.environ.get('DS5_FIRMWARE_TOOLS',root.parent/'DS5Dongle-Studio-build'))
 out=base/'reports/audit-fixes';out.mkdir(parents=True,exist_ok=True)
 bin=base/'source/toolchain/mingw64/mingw64/bin'
 env=dict(os.environ);env['PATH']=str(bin)+os.pathsep+env.get('PATH','')
@@ -30,16 +30,22 @@ uint32_t slot_sector_offset_at(unsigned i){return i*4096;}
 uint8_t flashmem[20480];
 #define XIP_BASE reinterpret_cast<uintptr_t>(flashmem)
 int operation=0,cut=0;
+unsigned meta_erases=0;
+uint32_t blocked_program=UINT32_MAX;
 uint32_t crc32(const uint8_t*p,unsigned n){uint32_t c=~0u;while(n--){c^=*p++;for(int i=0;i<8;i++)c=(c>>1)^(0xedb88320u&-(c&1));}return ~c;}
 void step(){if(++operation==cut)throw 1;}
-void flash_range_erase(uint32_t off,uint32_t n){for(unsigned i=0;i<n;i+=256){memset(flashmem+off+i,255,256);step();}}
-void flash_range_program(uint32_t off,const uint8_t*p,uint32_t n){for(unsigned i=0;i<n;i+=4){for(unsigned j=0;j<4;j++)flashmem[off+i+j]&=p[i+j];step();}}
+void flash_range_erase(uint32_t off,uint32_t n){if(off==STORAGE_REDO_META)++meta_erases;for(unsigned i=0;i<n;i+=256){memset(flashmem+off+i,255,256);step();}}
+void flash_range_program(uint32_t off,const uint8_t*p,uint32_t n){if(off==blocked_program)return;for(unsigned i=0;i<n;i+=4){for(unsigned j=0;j<4;j++)flashmem[off+i+j]&=p[i+j];step();}}
 """+s+r"""
 int main(){
  uint8_t before[20480],old[4096],fresh[4096];
  memset(flashmem,255,sizeof flashmem);memset(old,0x12,sizeof old);memset(fresh,0x34,sizeof fresh);
  memcpy(flashmem,old,4096);memcpy(flashmem+4096,old,4096);memcpy(before,flashmem,sizeof before);
- assert(storage_redo_write(0,fresh,4096));int total=operation;
+ assert(storage_redo_write(0,fresh,4096));int total=operation;assert(meta_erases==1);
+ assert(storage_redo_write(0,fresh,4096)&&meta_erases==1&&operation==total);
+ // An incomplete header may have programmed bits anywhere on the metadata page.
+ memcpy(flashmem,before,sizeof before);flashmem[STORAGE_REDO_META+FLASH_PAGE_SIZE-1]=0;
+ meta_erases=0;assert(storage_redo_write(0,fresh,4096)&&meta_erases==2);
  for(int at=1;at<=total;at++){
   memcpy(flashmem,before,sizeof before);operation=0;cut=at;
   try{storage_redo_write(0,fresh,4096);}catch(int){}
@@ -48,7 +54,8 @@ int main(){
   assert(!memcmp(flashmem+4096,old,4096));
  }
  // Power can fail again during boot recovery. Keep the committed redo until verified.
- memcpy(flashmem,before,sizeof before);operation=0;cut=16+16+1024+64;
+ memcpy(flashmem,before,sizeof before);operation=0;
+ cut=FLASH_SECTOR_SIZE/FLASH_PAGE_SIZE+FLASH_SECTOR_SIZE/4+FLASH_PAGE_SIZE/4;
  try{storage_redo_write(0,fresh,4096);}catch(int){}
  uint8_t pending[20480];memcpy(pending,flashmem,sizeof pending);
  cut=0;operation=0;assert(storage_redo_recover());int recovery_steps=operation;
@@ -58,6 +65,26 @@ int main(){
   cut=0;assert(storage_redo_recover());assert(!memcmp(flashmem,fresh,4096));
  }
  printf("PASS: %d interrupted boot recoveries\n",recovery_steps);
+ puts("PASS: one metadata erase on a clean save; a reused dirty page is erased first; no-op does not erase");
+ // A corrupt committed redo must never write its target or permit another slot/macro write.
+ memcpy(flashmem,pending,sizeof pending);flashmem[STORAGE_REDO_DATA]^=1;
+ uint8_t damaged[20480];memcpy(damaged,flashmem,sizeof damaged);
+ operation=0;assert(!storage_redo_recover());assert(recovery_blocked);
+ assert(!storage_redo_write(4096,fresh,4096)&&!storage_redo_write(MACRO_FLASH_OFFSET,fresh,256));
+ assert(operation==0&&!memcmp(damaged,flashmem,sizeof damaged));
+ // A verified-looking header must not target any non-slot or non-macro sector.
+ recovery_blocked=false;memcpy(flashmem,pending,sizeof pending);
+ Header invalid{magic,STORAGE_REDO_META,crc32(flashmem+STORAGE_REDO_DATA,4096),0};
+ invalid.header_checksum=crc32(reinterpret_cast<const uint8_t*>(&invalid),12);
+ memcpy(flashmem+STORAGE_REDO_META,&invalid,sizeof invalid);memcpy(damaged,flashmem,sizeof damaged);
+ assert(!storage_redo_recover()&&recovery_blocked&&!memcmp(damaged,flashmem,sizeof damaged));
+ // If writing the target fails verification, keep both redo sections for a later boot.
+ recovery_blocked=false;memcpy(flashmem,pending,sizeof pending);blocked_program=0;
+ assert(!storage_redo_recover()&&recovery_blocked);
+ assert(!memcmp(flashmem+STORAGE_REDO_DATA,pending+STORAGE_REDO_DATA,8192));
+ blocked_program=UINT32_MAX;assert(!storage_redo_write(0,fresh,4096));
+ recovery_blocked=false;assert(storage_redo_recover());assert(!memcmp(flashmem,fresh,4096));
+ puts("PASS: corrupt redo and invalid target preserve all bytes; failed replay keeps redo until reboot");
  cut=0;assert(!storage_redo_write(STORAGE_REDO_META,fresh,4096));
  assert(storage_redo_write(MACRO_FLASH_OFFSET,fresh,256));
  assert(!memcmp(flashmem+MACRO_FLASH_OFFSET,fresh,256));
@@ -227,6 +254,206 @@ const uint16_t *check(uint8_t index){size_t chr_count;
 int main(){for(int mode=0;mode<2;mode++){active=mode;assert(check(2));assert(check(0xee)==nullptr);assert(check(255)==nullptr);assert((check(5)!=nullptr)==active);}puts("PASS: actual string resolver, invalid index, XInput audio name");}
 """)
 
+usb=(root/'src/usb.cpp').read_text(encoding='utf-8')
+bt=(root/'src/bt.cpp').read_text(encoding='utf-8')
+descriptor_types=s[s.index('enum {'):s.index('// Number of HID interfaces')]
+string_indices=s[s.index('enum {\n    STRID_LANGID'):s.index('// Device Descriptors')]
+descriptor_state=s[s.index('static volatile bool s_idle_pid'):
+                   s.index('// Configuration Descriptor')].replace('#include "xinput_usb.h"', '')
+configuration=s[s.index('uint8_t descriptor_configuration[]'):
+                s.index('// HID Report Descriptor')]
+xinput=(root/'src/xinput_usb.cpp').read_text(encoding='utf-8')
+xinput_gamepad=xinput[xinput.index('constexpr uint8_t input_ep'):
+                       xinput.index('static_assert(sizeof(gamepad)')]
+run('usb-enumeration',r"""
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#define ENABLE_WAKE_HID
+#define U16_TO_U8S_LE(x) uint8_t(x),uint8_t((x)>>8)
+#define TUD_BOS_DESCRIPTOR(...) 0x11
+#define TUD_BOS_MS_OS_20_DESCRIPTOR(...) 0x22
+#define TUSB_DESC_STRING 3
+#define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX 4
+constexpr uint8_t TUSB_DESC_INTERFACE_ASSOCIATION=11,TUSB_DESC_INTERFACE=4;
+struct Config_body {
+ uint8_t controller_mode=2, usb_gamepad_mode=0, enable_wake=0, polling_rate_mode=0;
+ bool keyboard=false, mouse=false;
+} cfg;
+Config_body &get_config(){return cfg;}
+bool is_dse=false, hide_serial=false;
+bool device_usb_serial_hidden(){return hide_serial;}
+bool bt_edge_connected(){return is_dse;}
+bool usb_mouse_iface_needed(const Config_body &c){return c.mouse;}
+bool usb_kbd_iface_needed(const Config_body &c){return c.enable_wake || c.keyboard || c.mouse;}
+uint8_t usb_mouse_instance(const Config_body &){return 2;}
+struct DeviceDescriptor {uint16_t idVendor,idProduct,bcdUSB;uint8_t iSerialNumber;} desc_device{};
+const uint8_t xinput_device[]{18,1};
+const uint8_t *xinput_device_descriptor(){return xinput_device;}
+const uint8_t *xinput_configuration_descriptor(const uint8_t *,uint16_t,uint8_t);
+bool usb_edge_serial_hidden(const Config_body &);
+void usb_schedule_reconnect();
+void state_rumble_reset(){}
+void wake_note_usb_reconnect(){}
+bool macros_suspended=false;
+void macro_suspend(bool on){macros_suspended=on;}
+void xinput_disconnect(){}
+unsigned audio_session_resets=0;
+void audio_usb_session_reset(){++audio_session_resets;}
+uint32_t now=0;
+unsigned connects=0, disconnects=0;
+uint32_t get_absolute_time(){return now;}
+uint32_t to_ms_since_boot(uint32_t value){return value;}
+void tud_connect(){++connects;}
+void tud_disconnect(){++disconnects;}
+uint8_t board_usb_get_serial(uint16_t *,uint8_t){return 0;}
+const uint8_t desc_hid_report_ds[316]{},desc_hid_report_dse[432]{};
+const uint8_t desc_hid_report_kbd[]{1},desc_hid_report_mouse[]{2},desc_bos[]{3};
+"""+descriptor_types+string_indices+extract(s,'static bool desired_ds_mode(')+'\n'+descriptor_state+configuration+
+    extract(s,'uint8_t const *tud_hid_descriptor_report_cb(')+'\n'+
+    s[s.index('static char const *string_desc_arr'):s.index('#ifdef ENABLE_WAKE_HID\n//--------------------------------------------------------------------+',s.index('static char const *string_desc_arr'))]+
+    extract(s,'uint8_t const *tud_descriptor_bos_cb(')+'\n'+xinput_gamepad+
+    extract(xinput,'const uint8_t *xinput_configuration_descriptor(')+'\n'+
+    usb[usb.index('namespace {'):usb.index('uint8_t mute[2]')]+
+    extract(bt,'static void restore_full_usb_identity(')+r"""
+std::u16string product() {
+ auto text=tud_descriptor_string_cb(2,0);
+ return std::u16string(text+1,text+(text[0]&255)/2);
+}
+uint16_t report_length(const uint8_t *descriptor) {
+ for(unsigned off=0,total=descriptor[2]+256u*descriptor[3];off<total;off+=descriptor[off]) {
+  assert(descriptor[off]>=2);
+  if(descriptor[off+1]==0x21 && descriptor[off]==9)
+   return descriptor[off+7]+256u*descriptor[off+8];
+ }
+ return 0;
+}
+int main() {
+ macros_suspended=true;
+ usb_detach();
+ assert(!macros_suspended&&audio_session_resets==1);
+ restore_full_usb_identity();
+ assert(connects==1&&disconnects==1);
+ macros_suspended=true;
+ tud_umount_cb();
+ assert(!macros_suspended);
+ tud_descriptor_device_cb();
+ assert(desc_device.idVendor==0x054c&&desc_device.idProduct==0x0ce6&&desc_device.iSerialNumber==3&&desc_device.bcdUSB==0x0200);
+ const auto *descriptor=tud_descriptor_configuration_cb(0);
+ assert(descriptor[4]==4&&descriptor[CONFIG_DESC_LEN_BASE-1]==4&&report_length(descriptor)==316);
+
+ // These changes occur before the host finishes its first enumeration.
+ is_dse=true;hide_serial=true;cfg.enable_wake=1;cfg.mouse=true;cfg.polling_rate_mode=1;
+ restore_full_usb_identity();
+ restore_full_usb_identity();
+ assert(usb_reconnect_pending()&&disconnects==2&&connects==1);
+ tud_descriptor_device_cb();
+ assert(desc_device.idProduct==0x0ce6&&desc_device.iSerialNumber==3&&desc_device.bcdUSB==0x0200);
+ assert(product()==u"DualSense Wireless Controller"&&!tud_descriptor_bos_cb());
+ descriptor=tud_descriptor_configuration_cb(0);
+ assert(report_length(descriptor)==316&&descriptor[4]==4&&descriptor[CONFIG_DESC_LEN_BASE-1]==4);
+ assert(tud_hid_descriptor_report_cb(0)==desc_hid_report_ds);
+ now=249;usb_reconnect_task();assert(connects==1);
+ now=250;usb_reconnect_task();assert(connects==2&&!usb_reconnect_pending());
+ tud_descriptor_device_cb();
+ assert(desc_device.idProduct==0x0df2&&desc_device.iSerialNumber==0&&desc_device.bcdUSB==0x0210);
+ assert(product()==u"DualSense Edge Wireless Controller"&&tud_descriptor_bos_cb());
+ descriptor=tud_descriptor_configuration_cb(0);
+ assert(report_length(descriptor)==432&&descriptor[4]==6&&descriptor[CONFIG_DESC_LEN_BASE-1]==2);
+ assert(tud_hid_descriptor_report_cb(0)==desc_hid_report_dse);
+ assert(tud_hid_descriptor_report_cb(1)==desc_hid_report_kbd&&tud_hid_descriptor_report_cb(2)==desc_hid_report_mouse);
+
+ usb_set_idle_pid(true);usb_schedule_reconnect();
+ now=500;usb_reconnect_task();tud_descriptor_device_cb();
+ assert(usb_served_idle_pid()&&desc_device.idVendor==0x2e8a&&desc_device.idProduct==0x0de0);
+ assert(product()==u"DS5Dongle (controller off)");
+ is_dse=false;cfg.usb_gamepad_mode=1;
+ restore_full_usb_identity();assert(usb_reconnect_pending());
+ now=750;usb_reconnect_task();assert(tud_descriptor_device_cb()==xinput_device);
+ assert(!usb_served_idle_pid()&&report_length(tud_descriptor_configuration_cb(0))==sizeof(xinput_settings_report));
+ assert(tud_hid_descriptor_report_cb(0)==xinput_settings_report);
+ is_dse=true;restore_full_usb_identity();
+ assert(!usb_reconnect_pending()&&product()==u"DualSense Wireless Controller");
+ puts("PASS: descriptors remain consistent before SET_CONFIG, late DS/Edge upgrade, idle wake and XInput");
+}
+""")
+
+channel_close=bt.index('        case L2CAP_EVENT_CHANNEL_CLOSED: {')
+run('required-hid-channel-loss',r"""
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <map>
+constexpr int L2CAP_EVENT_CHANNEL_CLOSED=1;
+uint16_t hid_control_cid, hid_interrupt_cid;
+bool hid_control_open, hid_interrupt_open, hid_channels_failed;
+unsigned neutral, wake_resets, rumble_resets, disconnects;
+std::map<unsigned,unsigned> feature_data;
+uint16_t l2cap_event_channel_closed_get_local_cid(const uint16_t *p){return *p;}
+void controller_input_on_disconnect(){++neutral;}
+void wake_on_bt_disconnect(){++wake_resets;}
+void state_rumble_reset(){++rumble_resets;}
+bool bt_disconnect(){++disconnects;return true;}
+"""+extract(bt,'static void reset_disconnected_hid(')+r"""
+void closed(uint16_t cid){const auto *packet=&cid;switch(1){
+"""+bt[channel_close:bt.index('        case L2CAP_EVENT_CAN_SEND_NOW:',channel_close)]+r"""
+}}
+int main(){
+ for(uint16_t lost:{10,11}){
+  hid_control_cid=10;hid_interrupt_cid=11;hid_control_open=hid_interrupt_open=true;
+  hid_channels_failed=false;feature_data[0x81]=42;
+  unsigned before=neutral;
+  closed(99);assert(neutral==before&&hid_control_open&&hid_interrupt_open&&!feature_data.empty());
+  closed(lost);closed(lost);closed(lost==10?11:10);
+  assert(neutral==before+1&&wake_resets==neutral&&rumble_resets==neutral&&disconnects==neutral);
+  assert(hid_channels_failed&&!hid_control_open&&!hid_interrupt_open);
+  assert(!hid_control_cid&&!hid_interrupt_cid&&feature_data.empty());
+ }
+ puts("PASS: either required channel closes the session once; unrelated or duplicate close leaves it alone");
+}
+""")
+
+xinput_state=xinput[xinput.index('alignas(4) uint8_t input'):xinput.index('void send_rumble(')]
+run('xinput-out-rearm',r"""
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+constexpr uint8_t input_ep=0x89,output_ep=0x09;
+using xfer_result_t=uint8_t;
+constexpr uint8_t XFER_RESULT_SUCCESS=0;
+uint32_t now=0;
+unsigned submits=0, rumble=0;
+bool accept=false,ready=true,busy=false;
+uint32_t get_absolute_time(){return now;}
+uint32_t to_ms_since_boot(uint32_t time){return time;}
+bool tud_ready(){return ready;}
+bool usbd_edpt_busy(uint8_t,uint8_t ep){return ep==output_ep&&busy;}
+bool usbd_edpt_xfer(uint8_t,uint8_t ep,uint8_t*,uint16_t){assert(ep==output_ep);++submits;return accept;}
+bool xinput_decode_rumble(uint8_t*,uint32_t,uint8_t &left,uint8_t &right){left=1;right=2;return true;}
+void send_rumble(uint8_t,uint8_t){++rumble;}
+void state_rumble_reset(){}
+unsigned audio_session_resets=0;
+void audio_usb_session_reset(){++audio_session_resets;}
+"""+xinput_state+extract(xinput,'void reset(')+'\n'+extract(xinput,'void bus_reset(')+'\n'+extract(xinput,'bool transfer(')+'\n'+
+extract(xinput,'bool xinput_report_ready(')+r"""
+int main(){
+ endpoints_open=true;
+ transfer(0,output_ep,XFER_RESULT_SUCCESS,8);assert(submits==1&&rumble==1);
+ now=7;assert(xinput_report_ready()&&submits==1);
+ now=8;busy=true;assert(xinput_report_ready()&&submits==1);
+ busy=false;assert(xinput_report_ready()&&submits==2);
+ now=16;ready=false;assert(!xinput_report_ready()&&submits==2);
+ ready=accept=true;assert(xinput_report_ready()&&submits==3&&rumble==1);
+ now=24;assert(xinput_report_ready()&&submits==3);
+ accept=false;transfer(0,output_ep,1,0);assert(submits==4);
+ bus_reset(0);now=32;transfer(0,output_ep,XFER_RESULT_SUCCESS,8);
+ assert(!xinput_report_ready()&&submits==4&&rumble==1&&!output_retry_pending&&audio_session_resets==1);
+ puts("PASS: OUT retry obeys interval/backpressure and stops at reset without replaying rumble");
+}
+""")
+
 s=(root/'src/audio.cpp').read_text(encoding='utf-8')
 a=s.index('    static mic_decode_element mic_pb{};');b=s.index('    // 1.',a)
 run('mic-mute',r"""
@@ -323,13 +550,18 @@ Config&get_config(){return config;}
 #include "profile_chime.h"
 ProfileChime profile_chime;
 std::atomic<bool> audio_link_active{false};
-bool link=true,audio_input_seen=false,stream_reset_requested=false,speaker_filters_reset=false;
-uint32_t now=0,last_audio_input_ms=0;int resets=0,clears=0,discards=0;
+bool link=true,audio_input_seen=false,speaker_filters_reset=false;
+bool mic_active=false;
+uint32_t now=0,last_audio_input_ms=0,mic_generation=0;
+int resets=0,clears=0,discards=0,usb_frames=0;
 uint16_t g_diag_rear_left_peak=0,g_diag_rear_right_peak=0;
 struct Resampler{void Reset(){resets++;}}resampler;
 void __sev(){} bool bt_is_ready(){return link;}
 uint32_t get_absolute_time(){return now;}uint32_t to_ms_since_boot(uint32_t x){return x;}
-void tud_audio_clear_ep_out_ff(){clears++;}void bt_discard_audio(){discards++;}
+void tud_audio_clear_ep_out_ff(){clears++;usb_frames=0;}void bt_discard_audio(){discards++;}
+void set_mic_active(bool active){if(mic_active!=active)++mic_generation;mic_active=active;}
+"""+s[s.index('bool spk_active = false;'):s.index('static_assert(std::atomic<bool>::is_always_lock_free)')]+
+extract(s,'void audio_usb_session_reset(')+r"""
 struct Positions{uint speaker;int haptic;uint remainder;};
 Positions tick(bool seed){
 """+s[a:b]+r"""
@@ -338,7 +570,7 @@ Positions tick(bool seed){
 }
 int main(){
  tick(true);now=10;auto p=tick(false);assert(p.speaker==300&&p.haptic==20);
- stream_reset_requested=true;audio_input_seen=false;p=tick(false);
+ audio_reset_stream();p=tick(false);
  assert(!p.speaker&&!p.haptic&&!p.remainder&&speaker_filters_reset);
  int n=resets;tick(false);assert(resets==n);
  tick(true);now+=60;p=tick(false);assert(!p.speaker&&!p.haptic&&!audio_input_seen);
@@ -347,10 +579,18 @@ int main(){
  assert(resets==discards&&clears==4);
  for(int i=0;i<100;i++){
   tick(true);config.auto_haptics_enable^=1;p=tick(false);assert(!p.haptic&&!p.speaker&&!p.remainder);
-  tick(true);stream_reset_requested=true;p=tick(false);assert(!p.haptic&&!p.speaker&&!p.remainder);
+  tick(true);audio_reset_stream();p=tick(false);assert(!p.haptic&&!p.speaker&&!p.remainder);
   tick(true);link=false;p=tick(false);assert(!p.haptic);link=true;p=tick(false);assert(!p.haptic);
  } // timeout and mode switch preserve queued fresh USB PCM
- puts("PASS: actual partial buffers reset on close, timeout, mode and link change; steady stream preserved");
+ tick(true);spk_active=mic_active=true;usb_frames=2;
+ const auto before=discards;
+ audio_usb_session_reset();assert(!spk_active&&!mic_active&&!audio_input_seen&&!usb_frames&&mic_generation==1&&discards==before+1);
+ audio_usb_session_reset();assert(mic_generation==1&&discards==before+1);
+ spk_active=true;set_mic_active(true);usb_frames=3;
+ const int after_close=clears;
+ p=tick(false);assert(!p.haptic&&!p.speaker&&!p.remainder&&usb_frames==3&&clears==after_close);
+ assert(spk_active&&mic_active&&mic_generation==2);
+ puts("PASS: actual partial buffers reset; USB session end drops old audio and preserves the new alt setting and PCM");
 }
 """)
 a=s.index('    if (speaker_filters_reset) {');b=s.index('    const bool dsp_rear',a)
@@ -393,7 +633,10 @@ uint16_t l2cap_get_remote_mtu_for_local_cid(int){return 672;}
 void l2cap_request_can_send_now_event(int){events++;}
 int l2cap_send(int,uint8_t*p,uint16_t){last=p[1];return status;}
 void dse_on_profile_write(uint8_t){writes++;}
-"""+extract(s,'bool bt_control_send(')+'\n'+extract(s,'static void bt_control_send_ready()')+r"""
+uint32_t now_ms=0;
+uint32_t get_absolute_time(){return now_ms;}
+uint32_t to_ms_since_boot(uint32_t t){return t;}
+"""+extract(s,'static bool control_error_log_due()')+'\n'+extract(s,'bool bt_control_send(')+'\n'+extract(s,'static void bt_control_send_ready()')+r"""
 int main(){
  uint8_t a[]{0x53,0x60},b[]{0x43,0x70};
  assert(bt_control_send(a,2)&&bt_control_send(b,2));
@@ -401,8 +644,61 @@ int main(){
  status=0;bt_control_send_ready();assert(last==0x60&&writes==1);bt_control_send_ready();assert(last==0x70&&writes==1);
  status=1;assert(bt_control_send(a,2));for(int i=0;i<3;i++)bt_control_send_ready();assert(control_fifo.empty()&&writes==1);
  for(int i=0;i<8;i++)assert(bt_control_send(b,2));assert(!bt_control_send(a,2));
+ now_ms=999;assert(!control_error_log_due());now_ms=1000;assert(control_error_log_due());
+ now_ms=0xfffffff0u;assert(control_error_log_due());now_ms=0x100;assert(!control_error_log_due());
+ now_ms=0x400;assert(control_error_log_due());
  control_fifo.clear();hid_control_open=false;assert(!bt_control_send(a,2));
  puts("PASS: ordered retry, successful-send notification, retry limit, queue admission");
+}
+""")
+
+macro=(root/'src/macro.cpp').read_text(encoding='utf-8')
+cmd=(root/'src/cmd.cpp').read_text(encoding='utf-8')
+legacy=cmd[cmd.index('        case 0x1a: {\n'):cmd.index('        case 0x1b: {\n')]
+lease=cmd[cmd.index('        case 0x23: {\n'):cmd.index('        case 0x67: {\n')]
+run('macro-pause-lease',r"""
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <vector>
+static bool g_suspended=false;
+static uint32_t g_pause_owner=0,g_pause_updated_ms=0,clock_ms=0;
+static uint32_t now_ms(){return clock_ms;}
+void macro_suspend(bool);
+int resets=0,activity=0;
+void macro_reset(){++resets;}
+void manual_power_note_activity(uint32_t){++activity;}
+std::vector<uint8_t> pico_settings_reply;
+"""+extract(macro,'static void expire_macro_pause()')+'\n'+extract(macro,'void macro_suspend(bool on)')+'\n'+
+extract(macro,'bool macro_suspend_legacy(bool on)')+'\n'+extract(macro,'bool macro_pause_lease(')+r"""
+void command(int id,uint8_t const* buffer,uint16_t bufsize){switch(id){
+"""+legacy+lease+r"""
+}}
+int main(){
+ uint8_t req[10]{1,1,1,2,3,4,5,6,7,8};
+ constexpr uint32_t owner=0x04030201, stranger=42;
+ uint8_t on=1,off=0;
+ command(0x1a,&on,1);assert(g_suspended&&pico_settings_reply[2]==0);
+ command(0x23,req,10);assert(pico_settings_reply[2]==1&&!g_pause_owner);
+ command(0x1a,&off,1);assert(!g_suspended&&pico_settings_reply[2]==0);
+ command(0x23,req,9);assert(pico_settings_reply[2]==1&&!g_suspended);
+ command(0x23,req,10);assert(pico_settings_reply[2]==0&&g_pause_owner==owner&&activity==1);
+ assert(!memcmp(req,pico_settings_reply.data()+3,10));
+ command(0x1a,&off,1);assert(pico_settings_reply[2]==1&&g_suspended);
+ assert(!macro_pause_lease(1,stranger)&&!macro_pause_lease(2,stranger)&&!macro_pause_lease(3,stranger));
+ clock_ms=29999;expire_macro_pause();assert(g_suspended);
+ req[1]=2;req[9]=10;command(0x23,req,10);assert(pico_settings_reply[2]==0&&activity==2&&resets==2);
+ clock_ms=59998;expire_macro_pause();assert(g_suspended);
+ clock_ms=59999;expire_macro_pause();assert(!g_suspended&&!g_pause_owner);
+ assert(!macro_pause_lease(2,owner)&&macro_pause_lease(3,owner));
+ clock_ms=0xfffffff0u;assert(macro_pause_lease(1,stranger));
+ clock_ms+=30000u;expire_macro_pause();assert(!g_suspended);
+ assert(macro_pause_lease(1,stranger));macro_suspend(false); // USB session ended
+ assert(!macro_pause_lease(2,stranger));
+ assert(macro_pause_lease(1,owner)&&!macro_pause_lease(3,stranger));
+ assert(g_suspended&&macro_pause_lease(3,owner)&&!g_suspended);
+ puts("PASS: legacy compatibility, exact echo, exclusive session, timed renewal, expiration, timer wrap and disconnect");
 }
 """)
 s=(root/'src/dse.cpp').read_text(encoding='utf-8')
@@ -727,6 +1023,105 @@ int main(){
 
 # Actual legacy save command publishes pending/completion with an echoed request tag.
 s=(root/'src/cmd.cpp').read_text(encoding='utf-8')
+dispatcher=s[s.index('void pico_cmd_set('):]
+a=dispatcher.index('        case 0x67: {');b=dispatcher.index('        case 0x15:',a)
+live=(root/'src/config.cpp').read_text(encoding='utf-8')
+run('settings-read-revision',r"""
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <vector>
+#include "config.h"
+Config config{};
+std::vector<uint8_t> pico_portal_reply;
+constexpr int CYW43_WL_GPIO_LED_PIN=1;
+void cyw43_arch_gpio_put(int,bool){}
+void config_valid(){}
+void audio_mic_policy_changed(){}
+void set_volume(uint8_t,uint8_t){}
+void set_gain(uint8_t){}
+uint32_t calc_config_crc(const Config &c){return c.body.speaker_volume;}
+Config_body& get_config(){return config.body;}
+bool active_profile_get(uint8_t &slot,bool &edited,uint8_t *name){slot=3;edited=true;memset(name,0,SLOT_NAME_LEN);return true;}
+bool macro_uses_mute_button(){return false;}
+"""+live[live.index('static uint32_t live_config_revision'):live.index('// ============================ Profile slots')]+r"""
+void query(const uint8_t *buffer,uint16_t bufsize){switch(0x67){
+"""+dispatcher[a:b]+r"""
+}}
+uint32_t word(unsigned offset){uint32_t value;memcpy(&value,pico_portal_reply.data()+offset,4);return value;}
+int main(){
+ uint8_t request[]{'R','1',0x12,0x34,0x56,0x78};
+ config.body.speaker_volume=55;
+ query(nullptr,0);assert(!memcmp(pico_portal_reply.data()+29,"REV1",4)&&word(41)==0);
+ query(request,sizeof(request));assert(word(33)==0&&word(37)==55);
+ assert(!memcmp(pico_portal_reply.data()+41,request+2,4));
+ assert(pico_portal_reply[3]==3&&pico_portal_reply[4]==1&&!memcmp(pico_portal_reply.data()+22,"SLP2",4));
+ Config_body next=config.body;next.speaker_volume=70;
+ set_config(reinterpret_cast<const uint8_t *>(&next),sizeof(next));
+ next.speaker_volume=55;set_config(reinterpret_cast<const uint8_t *>(&next),sizeof(next));
+ query(request,sizeof(request));assert(word(33)==2&&word(37)==55);
+ config.body.speaker_volume=40;query(request,sizeof(request));assert(word(33)==2&&word(37)==40);
+ puts("PASS: profile header preserved; settings A-B-A advances revision; direct volume updates alter checksum");
+}
+""")
+a=dispatcher.index('        case 0x04: {');b=dispatcher.index('        case 0x05:',a)
+run('scalar-unsupported-field',r"""
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <vector>
+std::vector<uint8_t> pico_portal_reply;
+bool get_config_field(uint8_t fid,uint8_t *data,uint16_t){
+ if(fid!=0x12)return false;
+ *data=0;return true;
+}
+void query(const uint8_t *buffer,uint16_t bufsize){switch(4){
+"""+dispatcher[a:b]+r"""
+}}
+int main(){
+ uint8_t fid=0x12;
+ query(&fid,1);assert(pico_portal_reply[2]==fid&&pico_portal_reply[3]==0&&pico_portal_reply[4]==0);
+ fid=0xab;query(&fid,1);assert(pico_portal_reply[2]==0xff&&pico_portal_reply[3]==fid&&pico_portal_reply[4]==1);
+ query(nullptr,0);assert(pico_portal_reply[2]==0xff&&pico_portal_reply[3]==0&&pico_portal_reply[4]==0);
+ puts("PASS: valid scalar zero, explicitly unsupported field, and missing field ID have distinct responses");
+}
+""")
+a=dispatcher.index('        case 0x0b: {');b=dispatcher.index('        case 0x0c:',a)
+run('bulk-write-transaction',r"""
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+#include <cstring>
+#include <cstdio>
+#include <vector>
+#include "config.h"
+Config_body live{};
+std::vector<uint8_t> pico_portal_reply;
+unsigned applies=0, led_tests=0;
+Config_body& get_config(){return live;}
+void set_config(const uint8_t *data,const uint16_t size){++applies;memcpy(&live,data,size);}
+void battery_notify_test(uint8_t){++led_tests;}
+"""+s[s.index('template<typename T>'):s.index('static uint8_t g_last_field_len')]+
+extract(s,'static bool set_field_in(')+r"""
+void write(const uint8_t *buffer,uint16_t bufsize){switch(0x0b){
+"""+dispatcher[a:b]+r"""
+}}
+int main(){
+ live.speaker_volume=100;live.headset_volume=70;
+ const uint8_t invalid[]{2,2,1,55,0xfd,1,1}, truncated[]{2,2,1,55,3,1}, led[]{2,2,1,55,0x9e,1,0};
+ for(auto request: {std::pair{invalid,sizeof(invalid)},std::pair{truncated,sizeof(truncated)},std::pair{led,sizeof(led)}}){
+    write(request.first,request.second);
+    assert(pico_portal_reply[2]==1&&pico_portal_reply[3]==0);
+    assert(!applies&&!led_tests&&live.speaker_volume==100&&live.headset_volume==70);
+ }
+ const uint8_t valid[]{2,2,1,55,3,1,35};
+ write(valid,sizeof(valid));assert(applies==1&&live.speaker_volume==55&&live.headset_volume==35);
+ assert(pico_portal_reply[2]==0&&pico_portal_reply[3]==2);
+ const uint8_t empty[]{0};write(empty,sizeof(empty));assert(applies==1&&pico_portal_reply[2]==0&&pico_portal_reply[3]==0);
+ puts("PASS: a rejected chunk leaves RAM and LED state unchanged; a valid chunk applies once");
+}
+""")
 a=s.index('        case 0x02: {',s.index('void pico_cmd_set('));b=s.index('        case 0x03:',a)
 run('config-save-reply',r"""
 #include <cstdint>
@@ -745,4 +1140,64 @@ int main(){uint8_t tag[]{0x12,0x34,0x56,0x78};
  for(bool ok:{true,false}){save_ok=ok;command(tag,4);const auto &r=pico_settings_reply;assert(r[2]==(ok?0:2)&&r[3]==1&&!memcmp(r.data()+4,tag,4));}
  command(nullptr,0);for(int i=4;i<8;i++)assert(pico_settings_reply[i]==0);assert(saves==3);
  puts("PASS: pending before flash, success/failure, request-tag echo and legacy empty payload");}
+""")
+
+cases=[]
+for command in ('08','19','1c','1d','21','22'):
+ start=dispatcher.index(f'        case 0x{command}: {{')
+ cases.append(dispatcher[start:dispatcher.index('\n        }',start)+10])
+run('settings-write-replies',r"""
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <vector>
+constexpr unsigned SLOT_NAME_LEN=16, SLOT_COUNT=32;
+std::vector<uint8_t> pico_settings_reply;
+bool ok=true, policy=false;
+int writes=0;
+bool slot_save(uint8_t idx,const uint8_t *name,uint8_t len){
+    ++writes;assert(idx==4&&len==16&&!memcmp(name,"0123456789ABCDEF",16));
+    assert(pico_settings_reply[2]==0xfe);return ok;
+}
+bool macro_commit(){++writes;return ok;}
+bool set_policy(bool value){++writes;if(ok)policy=value;return ok;}
+bool device_set_auto_dormant(bool v){return set_policy(v);}
+bool device_set_disconnect_on_dock(bool v){return set_policy(v);}
+bool device_set_usb_serial_hidden(bool v){return set_policy(v);}
+bool device_auto_dormant(){return policy;}
+bool device_disconnect_on_dock(){return policy;}
+bool device_usb_serial_hidden(){return policy;}
+void manual_power_note_activity(unsigned=0){}
+"""+extract(s,'static void echo_settings_write_tag(')+r"""
+void command(uint8_t cmd,const uint8_t *buffer,uint16_t bufsize){switch(cmd){
+"""+'\n'.join(cases)+r"""
+}}
+int main(){
+    uint8_t p[61]{}, tag[]{0x89,0x67,0x45,0x23};
+    memcpy(p+57,tag,4);
+    command(0x22,p,61);
+    assert(pico_settings_reply[2]==0&&pico_settings_reply[3]==1&&writes==0);
+    assert(!memcmp(pico_settings_reply.data()+59,tag,4));
+    p[0]=4;memcpy(p+1,"0123456789ABCDEF",16);
+    command(8,p,61);assert(pico_settings_reply[2]==0&&pico_settings_reply[3]==4);
+    assert(!memcmp(pico_settings_reply.data()+59,tag,4));
+    command(8,p,17);assert(pico_settings_reply[2]==0&&pico_settings_reply[59]==0);
+    ok=false;command(0x19,p,61);assert(pico_settings_reply[2]==1);
+    assert(!memcmp(pico_settings_reply.data()+59,tag,4));
+    ok=true;command(0x19,nullptr,0);assert(pico_settings_reply[2]==0&&pico_settings_reply[59]==0);
+    for(uint8_t id:{0x1c,0x1d,0x21}){
+        policy=false;p[0]=1;p[1]=1;ok=true;command(id,p,61);
+        assert(policy&&pico_settings_reply[2]==0&&pico_settings_reply[4]==1);
+        assert(!memcmp(pico_settings_reply.data()+59,tag,4));
+        p[1]=0;ok=false;command(id,p,61);
+        assert(policy&&pico_settings_reply[2]==2&&pico_settings_reply[4]==1);
+        assert(!memcmp(pico_settings_reply.data()+59,tag,4));
+        p[0]=0;command(id,p,61);
+        assert(pico_settings_reply[2]==0&&pico_settings_reply[4]==1&&pico_settings_reply[59]==0);
+    }
+    assert(writes==10);
+    puts("PASS: actual dispatch cases, tagged outcomes, legacy slot/macro, policy reads and failure");
+}
 """)

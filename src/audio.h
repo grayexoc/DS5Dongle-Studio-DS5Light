@@ -10,7 +10,9 @@
 void audio_init();
 bool audio_profile_chime();
 void audio_loop();
+extern bool spk_active;
 void audio_reset_stream();
+void audio_usb_session_reset();
 bool audio_strip_speaker_payload(uint8_t *report, uint16_t length, bool native);
 bool audio_prepare_sleep();
 bool audio_processing_active();

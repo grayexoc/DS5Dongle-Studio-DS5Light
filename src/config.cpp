@@ -451,7 +451,7 @@ static void recover_storage(void *) {
 void config_load() {
     // Boot only: core1 is not launched until audio_init(), after config_load().
     recover_storage(nullptr);
-    if (!recovery_ok) panic("Profile storage recovery failed");
+    if (!recovery_ok) printf("[Config] Profile storage recovery failed; slot and macro writes disabled until reboot\n");
     auto adopt = [](const Config *record) {
         // Old layouts CRC the original stored body span, not today's tail.
         const uint16_t bytes = record->size;
@@ -482,7 +482,7 @@ void config_load() {
     }
     config_valid();
     if (!journal) boot_config_body = config.body;
-    migrate_legacy_storage();
+    if (recovery_ok) migrate_legacy_storage();
     ConfigProfileIdentity identity{};
     const bool identity_valid = config_journal_identity(journal, identity);
     ConfigProfileIdentity device_identity{};
@@ -684,11 +684,16 @@ bool config_flush_pending_activation() {
 
 bool config_activation_save_pending() { return activation_save_pending; }
 
+static uint32_t live_config_revision = 0;
+uint32_t config_revision() { return live_config_revision; }
+uint32_t config_checksum() { return calc_config_crc(config); }
+
 void set_config(const uint8_t *new_config, const uint16_t len) {
     const auto copy_len = len < sizeof(Config_body) ? len : sizeof(Config_body);
     const bool mic_was_disabled = config.body.disable_mic;
     memmove(&config.body, new_config, copy_len);
     config_valid();
+    ++live_config_revision;
     if (mic_was_disabled != bool(config.body.disable_mic)) audio_mic_policy_changed();
     if (config.body.disable_pico_led) {
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, false);

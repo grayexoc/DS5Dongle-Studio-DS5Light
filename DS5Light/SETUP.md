@@ -5,11 +5,14 @@
 ## Package and firmware
 
 
-Use the complete `DS5Light-win-x64-v1.0.18.zip` package on Windows 10/11 x64. Extract it into a writable folder, keep `_internal` beside `DS5Light.exe`, and run the executable. Python is not required for the packaged app.
+Use the complete `DS5Light-win-x64-v1.0.19.zip` package on Windows 10/11 x64. Extract it into a writable folder, keep `_internal` beside `DS5Light.exe`, and run the executable. Python is not required for the packaged app.
 
-This app build is v1.0.18 and supports Studio firmware v47. Firmware is a separate release attachment: `ds5-studio-light_v47.uf2`. That attachment is for Raspberry Pi Pico 2 W; it is not for RP2040 Pico W or Waveshare boards. The app does not flash firmware automatically.
+This app build is v1.0.19 and supports Studio firmware v48. Firmware is a separate release attachment: `ds5-studio-light_v48.uf2`. That attachment is for Raspberry Pi Pico 2 W; it is not for RP2040 Pico W or Waveshare boards. The app does not flash firmware automatically.
 
 Back up current settings and slots before changing firmware or saving profiles. This fork's additional settings and diagnostics require corresponding firmware support. An existing compatible Studio installation may support basic audio forwarding without all of these additions. A flash_nuke reset is not part of the routine setup.
+
+- **PC backup and removal.** Close the app before copying `preferences.json` beside `DS5Light.exe` and `presets.json` from `%LOCALAPPDATA%\DS5Light`, if present. Keep these files before removing the extracted app folder. The files can be restored to the same locations with the app closed.
+- **Pico backup and recovery.** Export the Studio slots and keep a separate backup for settings the app's export excludes. For a failed firmware update, unplug the Pico 2 W, hold BOOTSEL while reconnecting it, and copy a known-good Pico 2 W UF2 onto the drive that appears. Reopen Studio to check the active profile and settings before saving anything.
 
 ## Set up Studio inside the app
 

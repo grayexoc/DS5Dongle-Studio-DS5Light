@@ -115,6 +115,11 @@ def _message(parent,title,heading,message,accept=_ui_tr('확인'),cancel=False,c
 def _confirm(parent,title,heading,message,accept):
     return _message(parent,title,heading,message,accept,cancel=True)
 
+def confirm_hid_shutdown(parent):
+    return _message(parent,_ui_tr('DS5Light 종료'),_ui_tr('Pico 응답을 기다리는 중입니다.'),
+        _ui_tr('지금 종료하면 진행 중인 장치 작업의 결과를 확인할 수 없습니다. 저장이나 복원 중이었다면 다음 실행에서 같은 Pico의 상태를 확인하세요.'),
+        _ui_tr('앱 종료'),cancel=True,cancel_label=_ui_tr('계속 기다리기'))
+
 def confirm_macro_profile(parent,target,other_changes):
     name=target[1] or _ui_tr('이름 없음')
     message=_ui_tr('매핑 동작은 Pico에 저장되었습니다.\n현재 프로필: {0:02d} · {1}\n현재 프로필의 사용 체크와 설정을 저장하시겠습니까?').format(target[0]+1,name)

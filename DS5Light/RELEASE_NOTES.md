@@ -1,3 +1,60 @@
+# v1.0.19 — Studio reliability and restore recovery / Studio 안정성과 복원 복구
+
+DS5Light-win-x64-v1.0.19.zip · ds5-studio-light_v48.uf2 (Pico 2 W)
+
+- With matching firmware, macros automatically resume if DS5Light stops renewing the pause during a Studio slot restore.
+- 지원 펌웨어에서는 Studio 슬롯 복원 도중 DS5Light가 종료되어 일시정지 갱신이 끊겨도 매크로가 자동으로 재개됩니다.
+
+- Studio now limits automatic restarts after repeated wireless initialization failures and logs the error and recovery steps over UART. Repeated Bluetooth control errors are logged at most once per second.
+- Studio에서 무선 초기화가 연이어 실패하면 자동 재부팅 횟수를 제한하고 UART에 오류와 복구 절차를 기록합니다. 반복되는 Bluetooth 제어 오류는 초당 한 번까지만 기록합니다.
+
+- Save game presets and export Studio profiles, mappings, and slot backups in the background. Update the preset list only after a successful write, and keep the existing export if it cannot be replaced.
+- 게임 프리셋 저장과 Studio 프로필·매핑·슬롯 백업 내보내기를 백그라운드로 옮겼습니다. 저장에 성공한 후 프리셋 목록을 갱신하며, 파일 교체에 실패하면 기존 내보내기 파일을 보존합니다.
+
+- Save last-used settings and read Studio JSON in the background. Open clipped status messages in full, and see when an older preset's audio haptics strength is adjusted to 50%.
+- 마지막 사용 설정 저장과 Studio JSON 읽기를 백그라운드로 옮겼습니다. 잘린 상태 메시지는 전체 내용을 열 수 있으며, 예전 프리셋의 오디오햅틱 세기를 50%로 보정하면 안내합니다.
+
+- Continue booting when a slot or macro flash recovery record is damaged. Block further slot and macro writes while keeping the recovery record for inspection.
+- 슬롯·공유 매크로의 플래시 복구 기록이 손상돼도 부팅을 계속합니다. 복구 기록을 보존하고 해당 부팅에서 슬롯·공유 매크로 쓰기를 제한합니다.
+- Skip the redundant erase of an already clean flash metadata page when saving slots or macros.
+- 슬롯·매크로 저장 시 복구 메타데이터 페이지가 이미 비어 있으면 중복 소거를 생략합니다.
+
+- If a device operation delays shutdown, choose whether to keep waiting or close DS5Light with the operation unconfirmed.
+- 장치 작업 응답이 늦어 종료가 지연되면 계속 기다리거나 작업 결과를 미확인 상태로 두고 앱을 닫을 수 있습니다.
+
+- Detect settings changes during supported Studio reads and pre-apply checks, even when the profile stays the same.
+- 지원 펌웨어에서는 같은 프로필이 유지되더라도 조회 또는 적용 준비 중 설정이 바뀌면 다시 읽도록 안내합니다.
+
+- Distinguish unsupported Studio fields from valid zero values. A failed firmware settings packet now leaves its fields unchanged.
+- Studio 미지원 필드를 실제 설정값 0과 구분합니다. 묶음 설정 패킷이 실패하면 해당 패킷의 값은 적용되지 않습니다.
+
+- Report a DualSense connection only after the selected Pico confirms that its Bluetooth HID channels are ready.
+- 선택한 Pico에서 Bluetooth HID 준비 상태가 확인될 때 DualSense 연결을 표시합니다.
+
+- Reset the old speaker, microphone, and haptics state on a USB reset or detach so the next audio session starts cleanly.
+- USB 리셋이나 연결 해제 시 이전 스피커·마이크·햅틱 상태를 초기화해 다음 오디오 세션에 남지 않도록 합니다.
+
+- End macro suspension when the Pico USB session ends. Recover controller input and clear old Feature reports when either Bluetooth HID channel closes. Retry XInput rumble reception if the OUT endpoint fails to rearm.
+- Pico USB 연결이 끝나면 매크로 일시정지를 해제합니다. Bluetooth HID 채널이 끊기면 입력을 초기화하고 이전 Feature 응답을 비웁니다. XInput OUT 재등록이 실패하면 진동 수신을 다시 시도합니다.
+
+- Clean up the process capture helper if startup fails. Navigate the main tabs with the keyboard. Omit device identifier fields from exported diagnostics.
+- 프로세스 캡처 시작에 실패하면 헬퍼를 정리합니다. 키보드로 상단 탭을 이동할 수 있으며, 진단 파일에는 장치 식별 필드를 제외합니다.
+
+- **Studio restore.** Save a backup of the target slots and shared macros before writing. If a restore stops partway through, report confirmed saves, the unconfirmed slot, and where to find the backup.
+- **Studio 복원.** 쓰기 전에 대상 슬롯과 공유 매크로를 백업합니다. 복원이 중단되면 저장을 확인한 슬롯, 미확인 슬롯, 백업 파일 위치를 표시합니다.
+
+- **Studio saves.** Match each profile, macro, and device policy save to its own firmware response. These saves require the paired Studio firmware.
+- **Studio 저장.** 프로필·매크로·Pico 공통 설정을 저장할 때 해당 요청의 펌웨어 응답을 확인합니다. 이 저장 기능은 함께 제공되는 Studio 펌웨어가 필요합니다.
+
+- **Studio settings.** Verify the profile and changed settings after reconnect before confirming a save. If they differ, keep the edits and ask the user to refresh.
+- **Studio 설정.** 재연결 후 프로필과 변경값을 확인한 뒤 저장 결과를 표시합니다. 값이 다르면 편집값을 유지하고 새로 고침을 안내합니다.
+
+- **Studio USB.** Keep device identity and descriptors consistent during each USB attachment. Apply late DualSense Edge detection on the next enumeration.
+- **Studio USB.** 한 번의 USB 연결에서 장치 식별 정보와 디스크립터를 일관되게 유지합니다. 늦게 확인된 DualSense Edge는 다음 열거에 반영합니다.
+
+- **Studio firmware.** Remove Bluetooth pairing-key bytes from the HCI log. Stored-key and missing-key responses retain their existing behavior. Hardware UART verification is pending.
+- **Studio 펌웨어.** HCI 로그의 Bluetooth 페어링 키 바이트 출력을 제거했습니다. 저장된 키가 있을 때와 키가 없을 때의 응답은 유지합니다. 실기기 UART 확인은 남아 있습니다.
+
 # v1.0.18 — Audio processing and Studio connection fixes / 오디오 처리·Studio 연결 개선
 
 DS5Light-win-x64-v1.0.18.zip · ds5-studio-light_v47.uf2 (Pico 2 W)

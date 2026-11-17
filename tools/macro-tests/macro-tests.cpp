@@ -29,6 +29,7 @@ FakeKbdReport g_sent[64];
 int  g_sent_n = 0;
 bool g_ep_ready = true;
 unsigned char g_fake_flash[PICO_FLASH_SIZE_BYTES];
+extern const uint8_t __flash_binary_end[] = {0}; // Firmware linker symbol in the redo overlap check.
 uint32_t g_now_ms = 1000;
 
 static Config_body g_cfg;
@@ -94,6 +95,7 @@ static void fresh_device() {
     g_ep_ready = true;
     reset_report();
     macro_load();
+    macro_suspend(false);
     macro_reset();
     g_sent_n = 0;
 }
@@ -901,6 +903,22 @@ static void t_disabled_hold_row_is_inert() {
     ok(macro_suppress_mask() == 0, "and suppresses nothing");
 }
 
+static void t_pause_lease_expires_without_host_request() {
+    printf("restore pause resumes macro playback after the app stops renewing\n");
+    fresh_device();
+    macro_set_entry(0, chord_macro(BTN_R3, K_CTRL, K_J, 0, false));
+    enable_only(1u);
+    ok(macro_pause_lease(1, 42), "restore obtains the pause");
+    btn_r3(true); settle();
+    ok(!saw_key(1, K_J), "macro playback is suppressed during the pause");
+    btn_r3(false); settle();
+    g_now_ms += 30000;
+    macro_task();
+    ok(!macro_pause_lease(2, 42), "a late renewal cannot reacquire the pause");
+    btn_r3(true); settle();
+    ok(saw_key(1, K_J), "a fresh chord fires after automatic resumption");
+}
+
 int main() {
     printf("=== macro engine tests ===\n");
     t_press_then_second_button();
@@ -926,6 +944,7 @@ int main() {
     t_stick_hysteresis();
     t_hold_released_on_suspend();
     t_disabled_hold_row_is_inert();
+    t_pause_lease_expires_without_host_request();
     t_gesture();
     t_persistence();
     t_virgin_flash();

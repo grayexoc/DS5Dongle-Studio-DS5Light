@@ -43,9 +43,9 @@ This is CPU-based signal processing, with no large AI model or GPU inference in 
 ## Download and start
 
 
-**DS5Light v1.0.18 · Studio firmware v47 compatible**
+**DS5Light v1.0.19 · Studio firmware v48 compatible**
 
-Download `DS5Light-win-x64-v1.0.18.zip` from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases). Extract the whole package and run `DS5Light.exe` with `_internal` beside it. Python is not required. The separate Pico 2 W firmware attachment is `ds5-studio-light_v47.uf2`.
+Download from [v1.0.19](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.0.19): `DS5Light-win-x64-v1.0.19.zip`. Extract the whole package and run `DS5Light.exe` with `_internal` beside it. Python is not required. The separate Pico 2 W firmware attachment is `ds5-studio-light_v48.uf2`.
 
 Use the app's **Studio settings → Recommended presets → Save and use** workflow. The files are `Studio Presert/DS_Native.json`, `Studio Presert/Audio_Haptic_01.json` and `Studio Presert/Audio_Haptic_02.json`. Recommended presets change current audio-haptics fields, preserve other current settings, and save that resulting configuration to the selected slot. Check before overwriting a slot.
 

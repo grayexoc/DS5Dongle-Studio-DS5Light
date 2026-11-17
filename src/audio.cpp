@@ -142,8 +142,13 @@ bool audio_profile_chime() {
     return true;
 #endif
 }
-static bool stream_reset_requested = false;
-void audio_reset_stream() { stream_reset_requested = true; audio_input_seen = false; }
+bool spk_active = false;
+enum class StreamReset { None, UsbSessionEnded, FlushUsb };
+static StreamReset stream_reset_requested = StreamReset::None;
+void audio_reset_stream() {
+    stream_reset_requested = StreamReset::FlushUsb;
+    audio_input_seen = false;
+}
 static_assert(std::atomic<bool>::is_always_lock_free);
 static_assert(std::atomic<uint8_t>::is_always_lock_free);
 
@@ -285,6 +290,18 @@ void set_mic_active(bool active) {
     update_mic_status();
 }
 
+void audio_usb_session_reset() {
+    // Discard the old FIFO now. The next audio loop may already see a new alt setting.
+    if (spk_active || audio_input_seen || stream_reset_requested == StreamReset::FlushUsb) {
+        tud_audio_clear_ep_out_ff();
+        bt_discard_audio();
+    }
+    spk_active = false;
+    audio_input_seen = false;
+    stream_reset_requested = StreamReset::UsbSessionEnded;
+    if (mic_active) set_mic_active(false);
+}
+
 bool audio_mic_active() {
     return mic_active && !get_config().disable_mic;
 }
@@ -354,12 +371,12 @@ void __not_in_flash_func(audio_loop)() {
     static uint8_t previous_mode = 0xff;
     const uint8_t mode = get_config().auto_haptics_enable;
     const bool link_changed = connected != was_connected;
-    const bool reset_stream = stream_reset_requested || link_changed ||
+    const bool reset_stream = stream_reset_requested != StreamReset::None || link_changed ||
         previous_mode != mode || (audio_input_seen &&
         to_ms_since_boot(get_absolute_time()) - last_audio_input_ms >= 60);
-    const bool discard_usb = stream_reset_requested || link_changed;
+    const bool discard_usb = stream_reset_requested == StreamReset::FlushUsb || link_changed;
     previous_mode = mode;
-    stream_reset_requested = false;
+    stream_reset_requested = StreamReset::None;
     if (reset_stream) {
         bt_discard_audio();
         speaker_filters_reset = true;
