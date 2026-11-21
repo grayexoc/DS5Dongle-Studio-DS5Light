@@ -1,0 +1,10 @@
+spec RearRouteHandover.tla
+check INVARIANTS NoRearContamination NoStaleAcknowledgement
+reach LateInFlight | control
+reach SameModeRevision | control
+reach StaleRequest | control
+reach StaleAck | control
+reach LinkRevoked | control
+reach Rearmed | control
+run control capacity=1 | Capacity=1 MaxRevision=3 MaxLink=2 InitialMode="control"
+run native capacity=2 | Capacity=2 MaxRevision=2 MaxLink=2 InitialMode="native"

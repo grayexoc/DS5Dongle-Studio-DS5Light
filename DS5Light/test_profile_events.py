@@ -1,4 +1,5 @@
 import struct
+import sys
 import unittest
 from unittest.mock import Mock,patch
 from device_binding import DeviceIdentity
@@ -9,6 +10,25 @@ from test_oled_integration import binding,AH
 def frame(seq=1):return b'\x8fSLP1\x01'+struct.pack('<I',seq)+bytes([1,0,1,0,0,0])
 
 class EventTests(unittest.TestCase):
+ def test_hid_import_failure_retries_on_same_device(self):
+  monitor=events.ProfileEvents()
+  identity=DeviceIdentity(b'pad','ours')
+  with (patch.object(events,'start_thread',side_effect=lambda thread:thread.run()),
+        patch.object(events.time,'monotonic') as clock,
+        patch('hid.enumerate',return_value=[]) as scan):
+   clock.return_value=0
+   with patch.dict(sys.modules,{'hid':None}):
+    monitor.tick(identity)
+   monitor.tick(identity)
+   self.assertFalse(monitor.healthy)
+   clock.return_value=2.9
+   monitor.tick(identity)
+   scan.assert_not_called()
+   clock.return_value=3
+   monitor.tick(identity)
+   scan.assert_called_once()
+  monitor.close()
+
  def test_strict_frame(self):
   self.assertEqual(events.decode(frame()),1)
   for raw in (b'',frame()[:-1],frame()+b'\0',b'\x8fFAIL'+frame()[5:],frame()[:12]+b'\x03'+frame()[13:]):

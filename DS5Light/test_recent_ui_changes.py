@@ -1,6 +1,7 @@
 """Recent hover and recommended-preset flows; all device operations are mocked."""
 import copy,json,time,unittest
 from pathlib import Path
+from tkinter import ttk
 from unittest.mock import patch
 import test_studio_settings as fixture
 from studio_scope import EDITABLE
@@ -11,15 +12,18 @@ from test_studio_recommended import Client
 
 
 class ScopeTests(unittest.TestCase):
-    def test_allowlist_exactly_matches_visible_studio_audio_haptic_fields(self):
+    def test_preset_allowlist_preserves_the_user_highpass_setting(self):
         section=next(s for s in SECTIONS if s['title']=='Auto-Haptics & Speaker Effect Leak')
-        self.assertEqual(AUDIO_HAPTIC_FIELDS,{f[1] for f in section['fields'] if f[1] in EDITABLE})
+        visible={f[1] for f in section['fields'] if f[1] in EDITABLE}
+        self.assertEqual(visible-AUDIO_HAPTIC_FIELDS,{'ah_highpass'})
+        self.assertFalse(AUDIO_HAPTIC_FIELDS-visible)
     def test_all_three_files_preserve_every_non_audio_live_field(self):
         for filename,_,_ in PRESETS:
             with self.subTest(filename=filename):
                 client=Client();client.values={k:v for k,v in fixture.defaults().items() if k in EDITABLE}
                 client.values.update(audio_buffer_length=61,polling_rate_mode=2,gyro_mode=1,trigger_reduce=4,
-                                     haptics_gain=1.7,disable_speaker=0,disable_mic=0,macro_disable=0xfffffffa)
+                                     haptics_gain=1.7,disable_speaker=0,disable_mic=0,macro_disable=0xfffffffa,
+                                     ah_highpass=2)
                 before=dict(client.values);name,fields=load_preset(filename)
                 save_and_activate(client,fields,name,2,('empty',''),dict(client.stamp),before,lambda _:None)
                 self.assertEqual({k:v for k,v in before.items() if k not in AUDIO_HAPTIC_FIELDS},
@@ -45,9 +49,9 @@ class RecentUITests(unittest.TestCase):
             yield child
             yield from self.walk(child)
 
-    def test_five_question_hovers_show_hide_and_do_not_change_controls(self):
+    def test_filter_question_hovers_show_hide_and_do_not_change_controls(self):
         icons=[w for w in self.walk(self.root) if hasattr(w,'_filter_help_hint')]
-        self.assertEqual(len(icons),5)
+        self.assertEqual(len(icons),4)
         before=self.ui.controls
         with patch.object(self.ui,'start') as start,patch.object(self.ui,'update_controls') as edit:
             for icon in icons:
@@ -57,8 +61,9 @@ class RecentUITests(unittest.TestCase):
                 hint.hide();self.assertIsNone(hint.popup)
             start.assert_not_called();edit.assert_not_called()
         self.assertEqual(self.ui.controls,before)
-        gain=next(w for w in icons if '100%' in w._filter_help_hint.text)
-        self.assertEqual(gain.cget('bg'),gain.master.cget('bg'))
+        gain=next(w for w in icons if '기본 1x' in w._filter_help_hint.text)
+        frame_style = gain.master.cget('style') or gain.master.winfo_class()
+        self.assertEqual(gain.cget('bg'), ttk.Style(gain.master).lookup(frame_style, 'background'))
         self.ui.filter_on.set(False);self.ui.update_controls()
         for icon in icons:icon._filter_help_hint.show();icon._filter_help_hint.hide()
 

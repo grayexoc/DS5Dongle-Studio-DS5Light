@@ -25,20 +25,22 @@ Thank you to the original authors and contributors. This repository contains mod
 
 ## Download and quick start
 
-**Release v1.0.19 · DS5Light v1.0.19 · Studio firmware v48**
+**Release v1.1.0 · DS5Light v1.1.0 · Studio firmware v49**
 
-Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.0.19):
+Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.1.0):
 
 | File | Purpose |
 | --- | --- |
-| `ds5-studio-light_v48.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
-| `DS5Light-win-x64-v1.0.19.zip` | Complete Windows x64 app package. Python is not required. |
+| `ds5-studio-light_v49.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
+| `DS5Light-win-x64-v1.1.0.zip` | Complete Windows x64 app package. Python is not required. |
 
 1. Back up current dongle settings and slots. To install this firmware, enter BOOTSEL mode on the Pico 2 W and copy the UF2 to its USB drive. The app does not flash firmware automatically.
 2. Extract the entire app ZIP into a writable folder. Run `DS5Light.exe`, keeping `_internal` beside it. GitHub's automatic **Source code** archives are not the executable package.
 3. Connect the dongle and controller. In **Studio settings → Recommended presets**, choose a preset and save slot, then **Save and use**. The included files are `Studio Presert/DS_Native.json`, `Audio_Haptic_01.json` and `Audio_Haptic_02.json`.
-4. In **Audio haptics**, select the capture target and output, check the filter and gain, then start processing. New preferences default to PC suppression on, Balanced, 55% suppression, 85% impact preservation and 100% gain (adjustable from 50% to 200%); existing preferences take precedence.
+4. In **Audio haptics**, select the capture target and output, check the filter and gain, then start processing. New preferences default to PC suppression on, Balanced, 55% suppression, 85% impact preservation and 100% gain (adjustable from 50% to 300%); existing preferences take precedence.
 5. For native-haptics games, stop app audio processing and select a suitable native profile. Turning off only the PC filter leaves audio transmission active.
+
+The supplied Mix and Replace audio-haptics presets have changed. After updating, we recommend reviewing and applying one as a starting point with the app filter enabled and strength at 100%, then adjusting it for the game. Mix combines front audio haptics with raw rear native haptics; Replace uses front audio. Existing saved slots retain their settings. Stop dongle audio and back up the target slot before using **Save and use**, which overwrites that slot.
 
 Recommended presets change only the current audio-haptics fields, preserving other **current** settings, then save that resulting configuration to the chosen slot. Overwriting a slot replaces its previous contents. Loading an existing dongle slot applies the saved profile settings. Pico-wide settings and PC game presets are managed separately.
 
@@ -55,6 +57,10 @@ DS5Light requires Windows 10/11 x64; selected-application capture requires build
 Left: **Audio haptics** — select the capture target, manage game presets and adjust channel mixing, suppression and haptic strength. Right: **Studio settings** — configure the dongle inside the app. The preview shows an earlier layout.
 
 ### Audio haptics processing
+
+- Low-band DSP: Improve quieter follow-up hits and suppress sustained background audio. The filter works directly through the audio-haptics controls.
+- Studio control output: Support attack-shaped rear control with stereo steering when the input provides sufficient directional evidence.
+- Sub-bass protection: Studio provides a second-order high-pass option. Adaptive PC gain reduces overload and recovers toward the configured strength.
 
 - Audio source selection: Send audio from a specific game or application, or capture the entire selected output device. The original audio you hear through your speakers or headphones remains unchanged.
 - Background suppression and impact preservation: Reduce unwanted vibration from sustained background sounds while retaining the response of brief effects. Adjust suppression and impact preservation independently.
@@ -74,6 +80,7 @@ The filter uses changes over time and energy levels across frequency bands. It d
 
 - Pico settings: Configure device-wide sleep, dock-disconnect and USB serial hiding independently of profiles. The serial choice is adopted once from saved settings and retained across profile changes; changing USB identity can require selecting the Windows default audio output again.
 - Dongle settings: Read and edit Studio settings for audio haptics, triggers, gyro, buttons, macros, and LEDs directly in the app.
+- Touchpad mouse: Adjust operation, speed, small-motion rejection, axis inversion, trackball inertia and friction in Studio settings.
 - Profiles and slots: Load profiles stored on the dongle, manage settings and slots, and back up or restore configurations.
 - **Custom triggers and macros.** Use shortcuts to add trigger effects, edit button actions, and temporarily apply an effect to test it on the controller before saving the profile.
 
@@ -156,20 +163,22 @@ DS5Light는 DS5Dongle-Studio 펌웨어의 오디오 햅틱 기능을 보완하�
 
 ## 다운로드와 시작
 
-**릴리즈 v1.0.19 · DS5Light v1.0.19 · Studio 펌웨어 v48**
+**릴리즈 v1.1.0 · DS5Light v1.1.0 · Studio 펌웨어 v49**
 
-[Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.0.19)에서 첨부 파일을 받으세요.
+[Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.1.0)에서 첨부 파일을 받으세요.
 
 | 파일 | 용도 |
 | --- | --- |
-| `ds5-studio-light_v48.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
-| `DS5Light-win-x64-v1.0.19.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
+| `ds5-studio-light_v49.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
+| `DS5Light-win-x64-v1.1.0.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
 
 1. 현재 동글 설정과 슬롯을 백업합니다. 펌웨어 설치 시 Pico 2 W를 BOOTSEL 모드로 연결하고 USB 드라이브에 UF2를 복사하세요. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
 2. 앱 ZIP 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행합니다. `_internal` 폴더를 함께 유지하세요. GitHub의 자동 **Source code** 압축 파일은 실행 배포본이 아닙니다.
 3. 동글과 컨트롤러를 연결하고 **Studio설정 → 추천 프리셋**에서 프리셋과 저장 슬롯을 선택한 뒤 **저장 후 사용**을 누릅니다. 파일은 `Studio Presert/DS_Native.json`, `Audio_Haptic_01.json`, `Audio_Haptic_02.json`입니다.
-4. **오디오햅틱**에서 캡처 대상과 출력을 선택하고 필터·세기를 확인한 뒤 시작합니다. 새 설정의 기본값은 PC 필터 켬·균형·억제량 55%·타격 보존 85%·세기 100%(조절 범위 50~200%)이며 기존 저장 설정이 우선합니다.
+4. **오디오햅틱**에서 캡처 대상과 출력을 선택하고 필터·세기를 확인한 뒤 시작합니다. 새 설정의 기본값은 PC 필터 켬·균형·억제량 55%·타격 보존 85%·세기 100%(조절 범위 50~300%)이며 기존 저장 설정이 우선합니다.
 5. 네이티브 햅틱 게임은 앱의 오디오 처리를 정지하고 적절한 네이티브 프로필을 사용하세요. PC 필터만 끄면 오디오 전송은 계속됩니다.
+
+동봉 Mix·Replace 오디오 햅틱 프리셋이 변경되었습니다. 업데이트 후 앱 필터 켬·세기 100%를 시작점으로 동봉 프리셋을 확인하고 적용해 보는 것을 권장합니다. Mix는 Front 오디오 햅틱과 Rear 네이티브 햅틱 원본을 함께 사용하고, Replace는 Front 오디오를 사용합니다. 기존 저장 슬롯은 자동으로 바뀌지 않습니다. 저장 전 동글 오디오 전송을 멈추고 대상 슬롯을 백업하세요. **저장 후 사용**은 대상 슬롯을 덮어씁니다.
 
 추천 프리셋은 현재 구성의 오디오햅틱 항목만 변경하고 **현재**의 다른 설정을 유지한 결과를 선택한 슬롯에 저장합니다. 슬롯을 덮어쓰면 그 슬롯의 기존 내용이 교체됩니다. 기존 동글 슬롯을 불러오면 저장된 프로필 설정이 적용됩니다. Pico 공통 설정과 PC 게임 프리셋은 별도로 관리합니다.
 
@@ -180,6 +189,10 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 ## DS5Light 주요 기능
 
 ### 오디오 햅틱 처리
+
+- 저역 DSP: 강한 효과 뒤의 작은 타격 보호와 지속 배경음 억제를 보완했습니다. 오디오 햅틱 필터의 조절 항목으로 사용합니다.
+- Studio 제어 출력: 타격 시작 구간의 파형을 조절하며, 입력 신호에 충분한 좌우 차이가 있을 때 스테레오 방향을 반영합니다.
+- 극저음·과출력 보호: Studio의 2차 하이패스 옵션과 PC 게인 적응 처리를 제공합니다.
 
 - 처리 효율: PC 필터가 처음 필요할 때 SciPy를 불러옵니다. 프로세스별 캡처에서 버퍼 밀림이 지속되면 감지하고 보정합니다.
 
@@ -201,6 +214,7 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 - 프로필 전환 매핑: 프로필 1~8을 동작에 지정하고 선택적으로 전환 신호음·미리듣기를 사용합니다. 빈 슬롯·현재 슬롯은 전환하지 않으며 재전환 전 입력을 놓아야 합니다. 신호음은 프로필의 스피커 음량·헤드셋 경로를 따릅니다.
 
 - 동글 설정 편집: 오디오 햅틱, 트리거, 자이로, 버튼·매크로, LED 등 Studio 설정을 앱에서 조회하고 수정합니다.
+- 터치패드 마우스: Studio 설정에서 사용 여부, 이동 속도, 미세 움직임 차단, 방향 반전, 트랙볼 관성과 감속을 조절합니다.
 - 프로필·슬롯 관리: 동글에 저장된 프로필을 불러오고, 설정과 슬롯을 관리하며 백업·복원 기능을 사용합니다.
 - **커스텀 트리거·매크로.** 단축 옵션으로 트리거 효과를 추가하고 버튼 동작을 편집할 수 있습니다. 임시 적용으로 프로필에 저장하기 전에 컨트롤러에서 효과를 시험할 수 있습니다.
 

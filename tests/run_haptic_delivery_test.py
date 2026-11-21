@@ -232,3 +232,7 @@ subprocess.run([str(bin_dir/'g++.exe'),'-std=c++17','-Wall','-Wextra','-I'+str(r
     str(root/'tests/output_diagnostics_test.cpp'),'-o',str(out/'diagnostics.exe')],env=env,check=True)
 subprocess.run([str(out/'diagnostics.exe')],env=env,check=True)
 print('PASS: diagnostic control bytes, idle identity, 2-second tests, wrap, OFF acknowledgement and untouched LED/audio fields')
+subprocess.run([str(bin_dir/'g++.exe'),'-std=c++17','-Wall','-Wextra','-Werror','-I'+str(root/'src'),
+    str(root/'tests/rear_route_lease_test.cpp'),'-o',str(out/'rear-route-lease.exe')],env=env,check=True)
+subprocess.run([str(out/'rear-route-lease.exe')],env=env,check=True)
+print('PASS: rear route policy prototype rejects stale revisions, links and USB generations')

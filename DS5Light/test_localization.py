@@ -24,13 +24,13 @@ class LocalizationTests(unittest.TestCase):
     def test_auto_device_compatible_both_directions(self):
         for lang in ('ko','en'):
             with patch.object(L,'LANGUAGE',lang):
-                for value in (L.AUTO_KO,EN[L.AUTO_KO]):
+                for value in (L.AUTO_KO,EN[L.AUTO_KO],'자동 선택 · 기존 BAT 방식','Automatic · original BAT method'):
                     self.assertEqual(L.display_device(value),L.tr(L.AUTO_KO))
                     self.assertEqual(L.canonical_device(value),L.AUTO_KO)
                 self.assertEqual(L.display_device('Actual device name'),'Actual device name')
     def test_dynamic_status_translation(self):
         with patch.object(L,'LANGUAGE','en'):
-            self.assertEqual(L.tr('게임 전용 PID 123'),'Process PID 123')
+            self.assertEqual(L.tr('게임 전용 PID 123'),'Game-only PID 123')
             self.assertEqual(L.tr('연결됨 · 기존 브리지 전송'),'Connected · Original bridge transport')
     def test_all_display_literals_covered(self):
         import ast

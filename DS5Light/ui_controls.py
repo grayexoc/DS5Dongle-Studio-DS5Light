@@ -56,6 +56,14 @@ def draw_ui_symbol(canvas, kind, x, y, size, color, tags=()):
             line(cx+2,cy,x+size-1,cy)
             canvas.create_rectangle(cx-2,cy-2,cx+2,cy+2,
                                     outline=color,width=1.5,tags=tags)
+    elif kind in ('input', 'output'):
+        left, right = x+size*.52, x+size*.92
+        top, middle, bottom = y+size*.2, y+size*.5, y+size*.8
+        line(left,top,right,top,right,bottom,left,bottom)
+        start, end = (x+size*.08,x+size*.7) if kind=='input' else (x+size*.7,x+size*.08)
+        tail = end+(start-end)*.38
+        line(start,middle,end,middle)
+        line(tail,middle-size*.16,end,middle,tail,middle+size*.16)
     elif kind == 'gear':
         cx,cy=x+size/2,y+size/2
         points=[]
@@ -334,13 +342,12 @@ def circle_image(master, color, size=14, radio=False, selected=False):
 
 
 class RadioChoice(tk.Canvas):
-    def __init__(self,parent,text,value,variable,command,background,foreground,muted,accent,disabled,tracking=0):
+    def __init__(self,parent,text,value,variable,command,background,foreground,muted,accent,disabled):
         self.font=tkfont.Font(family='맑은 고딕',size=10)
         super().__init__(parent,width=self.font.measure(text)+px(parent,30),height=max(px(parent,28),self.font.metrics('linespace')+px(parent,8)),bg=background,
                          highlightthickness=0,highlightbackground=background,highlightcolor=background,
                          takefocus=1,borderwidth=0,cursor='hand2')
         self.text=text; self.value=value; self.variable=variable; self.command=command
-        self.tracking=tracking
         self.foreground=foreground; self.disabled=disabled; self.enabled=True
         self._accent,self._muted=accent,muted;self._icon_scale=None
         widget_trace(self,self.variable,lambda *_:self.draw())
@@ -365,18 +372,11 @@ class RadioChoice(tk.Canvas):
                 for enabled in (True,False) for selected in (True,False)}
             self._icon_scale=scale
         height=max(px(self,28),self.font.metrics('linespace')+px(self,8))
-        tracking=self.tracking*scale
-        text_width=self.font.measure(self.text)+max(0,len(self.text)-1)*tracking
-        self.configure(width=round(text_width)+px(self,30),height=height)
+        self.configure(width=self.font.measure(self.text)+px(self,30),height=height)
         self.delete('all')
         self.create_image(px(self,11),height/2,image=self.icons[(self.enabled,self.variable.get()==self.value)])
-        color=self.foreground if self.enabled else self.disabled
-        if tracking:
-            for index,character in enumerate(self.text):
-                x=px(self,26)+self.font.measure(self.text[:index])+index*tracking
-                self.create_text(x,height/2,text=character,anchor='w',font=self.font,fill=color)
-        else:
-            self.create_text(px(self,26),height/2,text=self.text,anchor='w',font=self.font,fill=color)
+        self.create_text(px(self,26),height/2,text=self.text,anchor='w',font=self.font,
+                         fill=self.foreground if self.enabled else self.disabled)
 
 
 class CircleCheck(RadioChoice):
@@ -403,7 +403,7 @@ class SectionTitle(tk.Canvas):
         def advance(character):
             width=self.font.measure(character)+self.tracking
             return width*.5 if character.isspace() else width
-        vector=self.number in ('camera','filter','channels')
+        vector=self.number in ('camera','filter','channels','sliders','input','output')
         icon=px(self,18);gap=px(self,4)
         number_width=icon if vector else sum(advance(c) for c in self.number)
         height=self.font.metrics('linespace')+px(self,4)

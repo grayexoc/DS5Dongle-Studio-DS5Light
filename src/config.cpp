@@ -148,18 +148,19 @@ static void config_body_valid(Config_body &value) {
     }
     if (body->auto_haptics_enable > 2) body->auto_haptics_enable = 0;
     if (body->auto_haptics_gain > 200) body->auto_haptics_gain = 100; // 0 is a VALID value (silence); >200 covers fresh-flash 0xFF
-    if (body->auto_haptics_lowpass_hz < 20 || body->auto_haptics_lowpass_hz > 400) body->auto_haptics_lowpass_hz = 60;
+    if (body->auto_haptics_lowpass_hz < 20 || body->auto_haptics_lowpass_hz > 400) body->auto_haptics_lowpass_hz = 120;
     if (body->auto_mute_replace > 1) body->auto_mute_replace = 1;
     if (body->auto_mute_mix > 1) body->auto_mute_mix = 0;
-    if (body->auto_haptics_gate > 100) body->auto_haptics_gate = 20;
-    if (body->auto_haptics_slope != 6 && body->auto_haptics_slope != 12 && body->auto_haptics_slope != 24) body->auto_haptics_slope = 12;
+    if (body->auto_haptics_gate > 100) body->auto_haptics_gate = 16;
+    if (body->auto_haptics_slope != 6 && body->auto_haptics_slope != 12 && body->auto_haptics_slope != 24) body->auto_haptics_slope = 24;
     if (body->lightbar_off > 1) body->lightbar_off = 0;
     if (body->lightbar_fixed > 1) body->lightbar_fixed = 0;
     if (body->rumble_gain < 100 || body->rumble_gain > 200) body->rumble_gain = 100;
     if (body->rumble_release > 2) body->rumble_release = 0;
+    if (body->ah_highpass > 2) body->ah_highpass = 0;
     if (body->rumble_mode > 2) body->rumble_mode = 0;
     if (body->usb_gamepad_mode > 1) body->usb_gamepad_mode = 0;
-    if (body->auto_haptics_smooth > 100) body->auto_haptics_smooth = 40;
+    if (body->auto_haptics_smooth > 100) body->auto_haptics_smooth = 15;
     // Staged battery notification. An upgraded config arrives with this tail
     // 0xFF-filled, so every value has to be clamped into range rather than
     // trusted - 0xFF blinks would flash for eight minutes.
@@ -220,12 +221,12 @@ static void config_body_valid(Config_body &value) {
     // got split=off with no feedback and concluded the gains did nothing).
     // 0xFFFF (fresh flash) still lands on off via the upper clamp exception.
     if (body->ah_xover_hz != 0) {
-        if (body->ah_xover_hz == 0xFFFF) body->ah_xover_hz = 0;          // fresh flash
+        if (body->ah_xover_hz == 0xFFFF) body->ah_xover_hz = body->auto_haptics_lowpass_hz > 55 ? 55 : 0;
         else if (body->ah_xover_hz < 30)  body->ah_xover_hz = 30;
         else if (body->ah_xover_hz > 200) body->ah_xover_hz = 200;
     }
     if (body->ah_low_gain > 100) body->ah_low_gain = 100;
-    if (body->ah_high_gain > 100) body->ah_high_gain = 100;
+    if (body->ah_high_gain > 100) body->ah_high_gain = 45;
     // Trigger resistance shapes (fresh flash 0xFF lands on defaults)
     if (body->at_shape > 3) body->at_shape = 0;    // 3 = weapon break (v1.12.0)
     if (body->at_strength_b > 100) body->at_strength_b = 70;
@@ -917,7 +918,9 @@ bool active_profile_restore(uint8_t slot, uint32_t fingerprint) {
             (prefix_id(offsetof(Config_body, usb_gamepad_mode)) == fingerprint ||
              (new_tail && prefix_id(offsetof(Config_body, rumble_gain)) == fingerprint) ||
              (new_tail && old_tail && prefix_id(offsetof(Config_body, lightbar_fixed)) == fingerprint));
-        if (body.rumble_mode != 0xff || !(previous_layout || older_layout)) return false;
+        const bool before_highpass = body.ah_highpass == 0xff &&
+            prefix_id(offsetof(Config_body, ah_highpass)) == fingerprint;
+        if (!before_highpass && (body.rumble_mode != 0xff || !(previous_layout || older_layout))) return false;
     }
     // Validate a private copy. Restore identity/baseline only: never activate a
     // slot or overwrite the saved live settings loaded by config_load().

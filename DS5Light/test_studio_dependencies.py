@@ -9,6 +9,18 @@ from studio_option_help import option_help
 from studio_settings_ui import StudioSettings
 
 class ProtocolTests(unittest.TestCase):
+    def test_touchpad_mouse_round_trip_and_reconnect(self):
+        device=fixture.Device()
+        client=SettingsClient(device,sleep=lambda _:None)
+        keys=('touch_mouse','touch_mouse_sens','touch_mouse_min','touch_mouse_invert',
+              'touch_mouse_trackball','touch_mouse_friction')
+        before,missing=client.read_fields([FIELDS[key] for key in keys])
+        self.assertEqual(missing,[])
+        changes=dict(zip(keys,(1,135,2,3,1,25)))
+        self.assertTrue(needs_reconnect(before,dict(before,**changes)))
+        self.assertFalse(needs_reconnect(changes,dict(changes,touch_mouse_sens=140)))
+        self.assertEqual(client.write_fields(changes,before),changes)
+
     def test_reconnect_tracks_keyboard_and_mouse_outputs(self):
         rows={str(i):[0]*35 for i in range(32)}
         rows['0'][0]=rows['1'][0]=rows['2'][0]=1

@@ -1,84 +1,266 @@
-# DS5 Light
+# DS5Dongle-Studio-DS5Light
 
-[한국어 소개](PRODUCT_KO.md) · [Setup guide](SETUP.md) · [User guide (TXT)](README.txt)
+This project extends the DS5Dongle-Studio firmware and DS5Light to bring audio haptics processing and dongle configuration together in one Windows app.
 
-A lightweight Windows audio-haptics preprocessor for **[DS5Dongle-Studio](https://github.com/artzox/DS5Dongle-Studio)**.
+DS5Light was developed to complement DS5Dongle-Studio's audio haptics with **background suppression and impact preservation**.
 
-DS5 Light adds adaptive filtering to the copy of game audio sent to your dongle. It aims to reduce unwanted vibration from music and dialogue while retaining the timing and texture of game effects. Your listening audio stays unchanged.
+The app later integrated features from the Studio web configurator, bringing audio processing, profiles, triggers, and macros together in one place.
 
-## Features
+As the project grew, user requests and the developer's own needs led to new features and a fork of the original Studio firmware.
 
-- Link speaker/headset volume; synchronize explicit speaker-volume changes to the matching Pico Windows endpoint. The displayed Windows percentage is an estimate.
-- Refresh the process list once when entering selected-process capture with audio haptics enabled.
+The app was developed with upstream Studio compatibility in mind, but **full compatibility across all features is currently unverified.**
 
-- High-DPI controls and window bounds, retaining the dark/gold theme. Popups follow the main window's scale.
-- Integrated Studio settings, momentary Base/Shift mappings and profile 1–8 output actions with optional chime/preview.
-- Safer settings-task completion, bounded device-lock waits and guarded thread startup; Korean/English labels and controller-button icons.
+**For the full DS5Light feature set, use the app and firmware provided together in this project's releases.**
 
-For mapping save order and compatibility, see [MAPPING_GUIDE_KO.md](MAPPING_GUIDE_KO.md); for scaling behavior, see [DPI_LAYOUT_KO.md](DPI_LAYOUT_KO.md).
+Both the firmware and the app aim to preserve their intended behavior while reducing unnecessary processing and keeping system resource usage low.
 
-- Capture a selected game's audio or an entire output device.
-- Choose Detail, Balanced or Suppression, with adjustable suppression strength.
-- Control rear/side, Center and LFE contributions with 5.1/7.1 input.
-- Save game settings in 12 preset slots.
-- Switch between Korean and English UI.
-- Use the included **Audio Haptics** and **DS Native** Studio profiles.
+The Windows package includes the runtime components it needs and requires no separate DLL or driver installation. Keeping resource use and additional dependencies low is a core development goal.
 
-## How the filter works
+This project is based on:
 
-The filter considers how sound changes over time, adding another layer before Studio's own processing:
+- Studio firmware: [artzox/DS5Dongle-Studio](https://github.com/artzox/DS5Dongle-Studio)
+- DS5Light app: [fnflwkd/DS5Light](https://github.com/fnflwkd/DS5Light)
 
-1. **Adaptive background estimation:** Track the recent energy level in four frequency bands. Sound that stays near its background level receives more attenuation than sound rising above it.
-2. **Transient protection:** Compare sudden level increases with recent changes to reduce attenuation around new impacts, shots and other brief events. A sudden sound does not bypass the filter completely.
-3. **Limited, smooth attenuation:** Adjust each band's gain gradually, using shared left/right control. The filter reduces levels rather than applying an automatic output boost.
+Thank you to the original authors and contributors. This repository contains modified versions of both projects.
 
-This is CPU-based signal processing, with no large AI model or GPU inference in the default path. It does not identify or separate individual instruments or voices: music transients can pass through, and sustained effects can also be reduced. Results depend on the game, audio mix and Studio settings.
+## Download and quick start
 
-## Requirements
+**Release v1.1.0 · DS5Light v1.1.0 · Studio firmware v49**
 
-- Windows 10/11 x64. Selected-game capture requires Windows build 20348 or later; earlier Windows 10 builds can use whole-device capture.
-- A supported dongle running DS5Dongle-Studio and a DualSense controller.
-- A working Studio audio-haptics setup. Start with the supplied Audio Haptics profile.
+Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.1.0):
 
-## Download and start
+| File | Purpose |
+| --- | --- |
+| `ds5-studio-light_v49.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
+| `DS5Light-win-x64-v1.1.0.zip` | Complete Windows x64 app package. Python is not required. |
 
+1. Back up current dongle settings and slots. To install this firmware, enter BOOTSEL mode on the Pico 2 W and copy the UF2 to its USB drive. The app does not flash firmware automatically.
+2. Extract the entire app ZIP into a writable folder. Run `DS5Light.exe`, keeping `_internal` beside it. GitHub's automatic **Source code** archives are not the executable package.
+3. Connect the dongle and controller. In **Studio settings → Recommended presets**, choose a preset and save slot, then **Save and use**. The included files are `Studio Presert/DS_Native.json`, `Audio_Haptic_01.json` and `Audio_Haptic_02.json`.
+4. In **Audio haptics**, select the capture target and output, check the filter and gain, then start processing. New preferences default to PC suppression on, Balanced, 55% suppression, 85% impact preservation and 100% gain (adjustable from 50% to 300%); existing preferences take precedence.
+5. For native-haptics games, stop app audio processing and select a suitable native profile. Turning off only the PC filter leaves audio transmission active.
 
-**DS5Light v1.0.19 · Studio firmware v48 compatible**
+The supplied Mix and Replace audio-haptics presets have changed. After updating, we recommend reviewing and applying one as a starting point with the app filter enabled and strength at 100%, then adjusting it for the game. Mix combines front audio haptics with raw rear native haptics; Replace uses front audio. Existing saved slots retain their settings. Stop dongle audio and back up the target slot before using **Save and use**, which overwrites that slot.
 
-Download from [v1.0.19](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.0.19): `DS5Light-win-x64-v1.0.19.zip`. Extract the whole package and run `DS5Light.exe` with `_internal` beside it. Python is not required. The separate Pico 2 W firmware attachment is `ds5-studio-light_v48.uf2`.
+Recommended presets change only the current audio-haptics fields, preserving other **current** settings, then save that resulting configuration to the chosen slot. Overwriting a slot replaces its previous contents. Loading an existing dongle slot applies the saved profile settings. Pico-wide settings and PC game presets are managed separately.
 
-Use the app's **Studio settings → Recommended presets → Save and use** workflow. The files are `Studio Presert/DS_Native.json`, `Studio Presert/Audio_Haptic_01.json` and `Studio Presert/Audio_Haptic_02.json`. Recommended presets change current audio-haptics fields, preserve other current settings, and save that resulting configuration to the selected slot. Check before overwriting a slot.
+DS5Light requires Windows 10/11 x64; selected-application capture requires build 20348 or later. Earlier Windows 10 builds can use whole-device capture. Additional settings and tests require firmware support; OLED features need the appropriate display and wiring.
 
-New preferences default to PC suppression on, Balanced, 55% suppression, 85% impact preservation and 100% gain; saved preferences take precedence. Capture channels default to automatic, with manual stereo/5.1/7.1 available. The capture format does not establish the game's internal audio settings.
+[Detailed setup](DS5Light/SETUP.md) · [App guide](DS5Light/README.txt) · [Versions and release notes](DS5Light/RELEASE_NOTES.md)
 
-[Setup](SETUP.md) · [User guide](README.txt) · [Versions and release notes](RELEASE_NOTES.md) · [Sources](SOURCES.md)
+## DS5Light features
 
-### Build from source
+### App preview
 
-Run `powershell -ExecutionPolicy Bypass -File build.ps1` with the prerequisites in `requirements-build.txt`. The script verifies the pinned Windows x64 build runtime (CPython 3.12.16 with OpenSSL 3.5.9) and creates a project-local build environment. The ZIP records its runtime versions and DLL hashes. The build uses `app_version.py` for the app title and `DS5Light-win-x64-v<version>.zip`; intermediate output is `dist/DS5Light`. `START.bat` opens that built output. Existing ZIP files are never overwritten; update the app version for a new release. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the release version policy.
+![DS5Light Audio haptics and Studio settings screens](docs/images/preview.jpg)
 
-## Attributions and licenses
+Left: **Audio haptics** — select the capture target, manage game presets and adjust channel mixing, suppression and haptic strength. Right: **Studio settings** — configure the dongle inside the app. The preview shows an earlier layout.
 
-DS5 Light is an unofficial companion to [DS5Dongle-Studio](https://github.com/artzox/DS5Dongle-Studio), independently maintained rather than an official Studio release. Thank you to the upstream developers and contributors.
+### Audio haptics processing
 
-| Project / component | License | Use in DS5 Light |
-|---|---|---|
-| [DS5Dongle-Studio](https://github.com/artzox/DS5Dongle-Studio) | MIT | Portions of the `ds5audio.py` audio bridge; original notices for awalol and artzox are retained |
-| [NumPy](https://numpy.org/) | BSD-3-Clause; bundled components have additional notices | Numerical array processing |
-| [SciPy](https://scipy.org/) | BSD-3-Clause; bundled components have additional notices | Digital filters and signal processing |
-| [PyAudioWPatch](https://github.com/s0d3s/PyAudioWPatch) | Apache-2.0 for the fork's contributions; retained PyAudio/PortAudio MIT notices | Windows audio capture and playback |
-| [Python](https://www.python.org/) | PSF license and included component notices | Packaged runtime |
-| [PyInstaller](https://pyinstaller.org/) | GPL-2.0-or-later with the distribution exception; component terms also apply | Application packaging |
-| DS5 Light's own code | [Custom free-use license](LICENSE.txt) | Application UI, processing and integration; sales and paid integration restricted |
+- Low-band DSP: Improve quieter follow-up hits and suppress sustained background audio. The filter works directly through the audio-haptics controls.
+- Studio control output: Support attack-shaped rear control with stereo steering when the input provides sufficient directional evidence.
+- Sub-bass protection: Studio provides a second-order high-pass option. Adaptive PC gain reduces overload and recovers toward the configured strength.
 
-This table summarizes the main components, not every bundled dependency. Original Studio notices are in [vendor/LICENSE-Studio.txt](vendor/LICENSE-Studio.txt). See [SOURCES.md](SOURCES.md), [upstream notices](licenses/upstream), and the release's `THIRD_PARTY` directory for detailed provenance and license texts. Third-party licenses remain in force; the restrictions on DS5 Light's own code do not override them.
+- Audio source selection: Send audio from a specific game or application, or capture the entire selected output device. The original audio you hear through your speakers or headphones remains unchanged.
+- Background suppression and impact preservation: Reduce unwanted vibration from sustained background sounds while retaining the response of brief effects. Adjust suppression and impact preservation independently.
+- Processing efficiency: The PC filter loads SciPy when first needed. Selected-process capture monitors sustained buffer buildup and corrects it.
+- Haptic strength control: Adjust output gain separately from the filter settings to suit each game and your preference.
+- Multichannel audio: Support automatic, stereo, 5.1, and 7.1 capture, with controls for the contribution of center, LFE, rear, and side channels in multichannel input.
+- **Mix mode.** Blend game-native haptics with audio-generated haptics. The front-only option disables the rear channel pair independently of the PC filter.
+- Automatic process refresh: Refresh the list once when an audio-haptics profile is selected with selected-process capture enabled, or when switching to that capture option.
+- Per-game presets: Store settings in 12 presets and associate them with games. The app also remembers the last-used options and window size.
 
-Background-estimation concepts were also informed by [noisereduce](https://github.com/timsainb/noisereduce). Its implementation is not copied into the runtime; this is design reference, not an additional code dependency.
+The filter uses changes over time and energy levels across frequency bands. It does not fully separate music, dialogue, and sound effects. Results depend on the game's audio mix and your settings.
 
-## License
+### Integrated Studio configuration
 
-Free use, modification and free redistribution are permitted under the [DS5 Light license](LICENSE.txt). Selling the program or integrating it into paid products or services requires separate permission. Using it as a tool for monetized game videos or streams is allowed.
+- Momentary Shift mappings: Choose a Shift button and edit Base/Shift layers; unspecified Shift inputs inherit Base. The Shift key is suppressed from game input and uses one of 32 global macro records, with per-profile enable states.
+- Profile-switch mapping: Assign profile 1–8, with an optional chime and preview. Empty/current profiles are not switched; release the source input before another activation. Chime volume follows the profile's speaker/headset settings.
 
-[English license translation](LICENSE_EN.txt) · [Distribution policy](DISTRIBUTION_POLICY_KO.md)
+- Pico settings: Configure device-wide sleep, dock-disconnect and USB serial hiding independently of profiles. The serial choice is adopted once from saved settings and retained across profile changes; changing USB identity can require selecting the Windows default audio output again.
+- Dongle settings: Read and edit Studio settings for audio haptics, triggers, gyro, buttons, macros, and LEDs directly in the app.
+- Touchpad mouse: Adjust operation, speed, small-motion rejection, axis inversion, trackball inertia and friction in Studio settings.
+- Profiles and slots: Load profiles stored on the dongle, manage settings and slots, and back up or restore configurations.
+- **Custom triggers and macros.** Use shortcuts to add trigger effects, edit button actions, and temporarily apply an effect to test it on the controller before saving the profile.
 
-The Korean license text controls. This custom license is not an OSI-approved open-source license.
+### Convenience and diagnostics
+
+- High-DPI layout: Per-monitor awareness, logical pixel scaling, DPI-aware shared controls and work-area bounds. Popups share the main window scale, including when the main window moves between monitors.
+
+- **USB reconnection.** After a serial visibility change, the app uses USB port information to verify the same Pico. Check the Windows default output and select the Pico audio output again if needed.
+- Input checks: View detected-button history, last-report age, touch-click qualification and the first keyboard key to diagnose mapping inputs.
+- Controller status: View connection and battery information.
+- Device diagnostics and output tests: Read dongle status and output statistics, and run individual tests for conventional rumble, adaptive triggers, and native haptics.
+- Microphone button shortcut: Assign a keyboard shortcut to the DualSense Mute button.
+- Korean and English UI: Switch languages and use setting descriptions to help adjust features in the app.
+
+Completing mapping edits, deletion, imports or Shift-key changes saves the shared actions automatically. After Pico reconnection is verified, save the profile activation checks when prompted. If saving is uncertain, export the edits and refresh before changing profiles. Back up before changing slots. Clear/disable extended records before downgrading to unsupported firmware; Edge onboard Fn+face combinations may conflict with onboard profile switching. [Mapping guide](DS5Light/MAPPING_GUIDE_KO.md) · [DPI details](DS5Light/DPI_LAYOUT_KO.md).
+
+Availability of additional settings and diagnostics depends on the connected firmware and device environment.
+
+## Main differences from upstream Studio
+
+The Studio firmware has been modified to support DS5Light integration and additional features. Changes also cover audio and rumble processing, LED control, power management, and configuration storage.
+
+- Extended app protocol: Added communication features for checking configuration save results, reading device status, and running output tests.
+- USB modes: Native DualSense and XInput support are included together. The default profile mode remains Native.
+- Audio and rumble adjustments: Modified transitions between native haptics and conventional rumble, output queues and retries, rumble strength and release behavior, and peak limiting in Mix mode.
+- Extended LED control: Added fixed lightbar color and extended player LED controls, with improvements to restoring game-controlled LED states when switching settings.
+- OLED status display: Added dongle status display support for compatible hardware, with a scrolling title that includes the firmware version.
+- Extended power management: Added app-initiated sleep, automatic sleep, and a setting to disconnect the controller when docked.
+- Connection and storage: Preserve the last complete settings record across interrupted writes. Handle Bluetooth disconnects and input reset, detect Edge, and keep Pico replies separate from controller replies.
+
+This is a summary of the main changes. See docs/ for implementation details, change history, and validation scope.
+
+## Repository layout
+
+- Repository root: Modified Studio firmware source
+- DS5Light/: Modified DS5Light app source, user documentation, and assets
+- docs/: Firmware changes, communication protocols, and validation notes
+
+## Original Studio documentation
+
+[README.upstream.md](README.upstream.md) preserves the upstream README for reference, with its source revision identified. Its version numbers, web-portal steps, downloads and board-specific files describe upstream, not the attachments in this fork's release. Use the current setup links above to install and configure this version.
+
+## Credits and licenses
+
+The Studio firmware retains its MIT license. DS5Light's own code is covered by DS5Light/LICENSE.txt. Third-party components retain their respective licenses and attribution notices.
+
+Original projects:
+
+- https://github.com/artzox/DS5Dongle-Studio
+- https://github.com/fnflwkd/DS5Light
+
+---
+
+# 한국어
+
+# DS5Dongle-Studio-DS5Light
+
+DS5Dongle-Studio 펌웨어와 DS5Light를 기반으로, 오디오 햅틱 처리와 동글 설정을 하나의 Windows 앱에서 사용할 수 있도록 수정·확장한 프로젝트입니다.
+
+DS5Light는 DS5Dongle-Studio 펌웨어의 오디오 햅틱 기능을 보완하기 위한 **배경음 억제와 타격감 보존** 용도로 개발되었습니다.
+
+이후 기존 Studio 웹 설정에서 다루던 기능도 앱에 통합하여, 오디오 처리부터 프로필·트리거·매크로 설정까지 한곳에서 관리할 수 있도록 구성했습니다.
+
+프로젝트가 진행됨에 따라 사용자 요청과 개인적인 필요에 의해 다양한 기능이 추가되었으며, 이 과정에서 기존 Studio 펌웨어 역시 Fork 되었습니다.
+
+원본 Studio 펌웨어와의 호환성도 고려하여 개발되었으나, **현재 모든 기능의 완전한 호환성을 보장하지는 않습니다.**
+
+따라서 **DS5LIGHT의 모든 기능을 정상적으로 활용하려면 함께 제공되는 전용 펌웨어와 앱을 사용하는 것을 권장합니다.**
+
+본 프로젝트는 펌웨어와 앱 모두 의도된 기능을 유지하면서 불필요한 연산을 최소화하고, 경량화 및 최적화를 통해 시스템 리소스 사용량을 줄이는 데 중점을 두고 있습니다.
+
+또한 별도의 DLL이나 드라이버 설치 없이 사용할 수 있도록 설계하여, 시스템 자원 소모와 추가적인 의존성을 최소화하는 것을 핵심 개발 방향으로 삼고 있습니다.
+
+이 프로젝트는 다음 두 원본을 바탕으로 합니다.
+
+- Studio 펌웨어: [artzox/DS5Dongle-Studio](https://github.com/artzox/DS5Dongle-Studio)
+- DS5Light 앱: [fnflwkd/DS5Light](https://github.com/fnflwkd/DS5Light)
+
+원본 제작자와 기여자분들께 감사드립니다. 이 저장소에는 두 프로젝트를 바탕으로 수정한 펌웨어와 앱이 함께 포함되어 있습니다.
+
+## 다운로드와 시작
+
+**릴리즈 v1.1.0 · DS5Light v1.1.0 · Studio 펌웨어 v49**
+
+[Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.1.0)에서 첨부 파일을 받으세요.
+
+| 파일 | 용도 |
+| --- | --- |
+| `ds5-studio-light_v49.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
+| `DS5Light-win-x64-v1.1.0.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
+
+1. 현재 동글 설정과 슬롯을 백업합니다. 펌웨어 설치 시 Pico 2 W를 BOOTSEL 모드로 연결하고 USB 드라이브에 UF2를 복사하세요. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
+2. 앱 ZIP 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행합니다. `_internal` 폴더를 함께 유지하세요. GitHub의 자동 **Source code** 압축 파일은 실행 배포본이 아닙니다.
+3. 동글과 컨트롤러를 연결하고 **Studio설정 → 추천 프리셋**에서 프리셋과 저장 슬롯을 선택한 뒤 **저장 후 사용**을 누릅니다. 파일은 `Studio Presert/DS_Native.json`, `Audio_Haptic_01.json`, `Audio_Haptic_02.json`입니다.
+4. **오디오햅틱**에서 캡처 대상과 출력을 선택하고 필터·세기를 확인한 뒤 시작합니다. 새 설정의 기본값은 PC 필터 켬·균형·억제량 55%·타격 보존 85%·세기 100%(조절 범위 50~300%)이며 기존 저장 설정이 우선합니다.
+5. 네이티브 햅틱 게임은 앱의 오디오 처리를 정지하고 적절한 네이티브 프로필을 사용하세요. PC 필터만 끄면 오디오 전송은 계속됩니다.
+
+동봉 Mix·Replace 오디오 햅틱 프리셋이 변경되었습니다. 업데이트 후 앱 필터 켬·세기 100%를 시작점으로 동봉 프리셋을 확인하고 적용해 보는 것을 권장합니다. Mix는 Front 오디오 햅틱과 Rear 네이티브 햅틱 원본을 함께 사용하고, Replace는 Front 오디오를 사용합니다. 기존 저장 슬롯은 자동으로 바뀌지 않습니다. 저장 전 동글 오디오 전송을 멈추고 대상 슬롯을 백업하세요. **저장 후 사용**은 대상 슬롯을 덮어씁니다.
+
+추천 프리셋은 현재 구성의 오디오햅틱 항목만 변경하고 **현재**의 다른 설정을 유지한 결과를 선택한 슬롯에 저장합니다. 슬롯을 덮어쓰면 그 슬롯의 기존 내용이 교체됩니다. 기존 동글 슬롯을 불러오면 저장된 프로필 설정이 적용됩니다. Pico 공통 설정과 PC 게임 프리셋은 별도로 관리합니다.
+
+DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 이상이 필요합니다. 이전 Windows 10에서는 장치 전체 캡처를 사용하세요. 추가 설정·테스트에는 펌웨어 지원이 필요하며 OLED는 해당 디스플레이와 배선이 필요합니다.
+
+[상세 설치 안내](DS5Light/SETUP_KO.md) · [앱 사용법](DS5Light/README_KO.txt) · [버전 및 릴리즈 안내](DS5Light/RELEASE_NOTES.md)
+
+## DS5Light 주요 기능
+
+### 오디오 햅틱 처리
+
+- 저역 DSP: 강한 효과 뒤의 작은 타격 보호와 지속 배경음 억제를 보완했습니다. 오디오 햅틱 필터의 조절 항목으로 사용합니다.
+- Studio 제어 출력: 타격 시작 구간의 파형을 조절하며, 입력 신호에 충분한 좌우 차이가 있을 때 스테레오 방향을 반영합니다.
+- 극저음·과출력 보호: Studio의 2차 하이패스 옵션과 PC 게인 적응 처리를 제공합니다.
+
+- 처리 효율: PC 필터가 처음 필요할 때 SciPy를 불러옵니다. 프로세스별 캡처에서 버퍼 밀림이 지속되면 감지하고 보정합니다.
+
+- 자동 프로세스 조회: 선택한 프로세스 캡처 상태에서 오디오햅틱 프로필로 전환하거나 해당 캡처 옵션을 선택하면 목록을 한 번 갱신합니다.
+
+- 캡처 대상 선택: 특정 게임·프로그램의 오디오 또는 선택한 출력 장치 전체의 오디오를 동글로 전달합니다. 스피커나 헤드폰으로 듣는 원래 소리는 바꾸지 않습니다.
+- 배경음 억제와 타격 보존: 지속되는 배경음으로 인한 불필요한 진동을 줄이고 짧은 효과음의 반응을 살리는 필터를 제공합니다. 배경 억제량과 타격 보존량을 각각 조절할 수 있습니다.
+- 진동 세기 조절: 필터 설정과 별도로 햅틱 출력 게인을 조절하여 게임과 취향에 맞게 강도를 맞출 수 있습니다.
+- 다채널 오디오 처리: 자동·스테레오·5.1·7.1 캡처를 지원하며, 다채널 입력에서 센터·LFE·후방 및 측면 채널의 기여를 조절할 수 있습니다.
+- **Mix 모드.** 게임의 네이티브 햅틱과 오디오에서 생성한 햅틱을 혼합할 수 있습니다. 전면 채널만 사용하는 옵션은 PC 필터 설정과 관계없이 후방 채널 출력을 끕니다.
+- 게임별 프리셋: 12개 프리셋에 설정을 저장하고 게임별 연결에 활용할 수 있습니다. 마지막 사용 옵션과 창 크기도 저장합니다.
+
+필터는 소리의 시간적 변화와 대역별 에너지를 이용하는 방식입니다. 음악·대사·효과음을 완전히 분리하는 기능은 아니며, 체감 결과는 게임의 사운드 구성과 설정에 따라 달라집니다.
+
+### Studio 설정 통합
+
+- Pico 설정: 절전·충전독 연결 해제·USB 시리얼 숨김을 프로필과 별도로 저장합니다. 시리얼 숨김은 기존 저장값을 한 번 이전하며, 이후 프로필 전환으로 바뀌지 않습니다. 변경 후 Windows 기본 오디오 출력을 다시 선택해야 할 수 있습니다.
+- 시프트 매핑: 시프트 버튼을 누르는 동안 기본/시프트 레이어를 전환하고 미지정 입력은 기본 매핑을 상속합니다. 시프트키는 게임으로 보내지 않으며 공통 매크로 32칸 중 한 칸을 사용합니다. 사용 체크는 프로필별입니다.
+- 프로필 전환 매핑: 프로필 1~8을 동작에 지정하고 선택적으로 전환 신호음·미리듣기를 사용합니다. 빈 슬롯·현재 슬롯은 전환하지 않으며 재전환 전 입력을 놓아야 합니다. 신호음은 프로필의 스피커 음량·헤드셋 경로를 따릅니다.
+
+- 동글 설정 편집: 오디오 햅틱, 트리거, 자이로, 버튼·매크로, LED 등 Studio 설정을 앱에서 조회하고 수정합니다.
+- 터치패드 마우스: Studio 설정에서 사용 여부, 이동 속도, 미세 움직임 차단, 방향 반전, 트랙볼 관성과 감속을 조절합니다.
+- 프로필·슬롯 관리: 동글에 저장된 프로필을 불러오고, 설정과 슬롯을 관리하며 백업·복원 기능을 사용합니다.
+- **커스텀 트리거·매크로.** 단축 옵션으로 트리거 효과를 추가하고 버튼 동작을 편집할 수 있습니다. 임시 적용으로 프로필에 저장하기 전에 컨트롤러에서 효과를 시험할 수 있습니다.
+
+### 사용 편의 및 진단
+
+- 입력 확인: 감지 버튼 이력·마지막 수신 시각·터치 클릭 판정·키보드 첫 키를 표시합니다.
+- 고배율 UI: 모니터별 DPI 인식, 논리 픽셀 변환, 공통 컨트롤 배율과 작업 영역 안의 창 배치를 지원합니다. 팝업은 메인 창 배율을 공유하며 메인 창 이동 시 함께 갱신됩니다.
+
+- **USB 재연결.** 시리얼 표시 설정을 바꾸면 USB 포트 정보로 같은 Pico를 확인합니다. Windows 기본 출력과 앱의 Pico 오디오 출력을 확인하고 필요한 경우 다시 선택하세요.
+- 컨트롤러 상태 표시: 연결 상태와 배터리 정보를 확인할 수 있습니다.
+- 장치 진단과 출력 테스트: 동글 상태와 출력 통계를 조회하고 일반 진동·트리거·네이티브 햅틱을 개별 시험할 수 있습니다.
+- 마이크 버튼 단축키: DualSense의 Mute 버튼에 키보드 단축키를 지정할 수 있습니다.
+- 한국어·영어 UI: 언어 전환과 설정 항목 설명을 제공하여 앱에서 기능을 확인하며 조절할 수 있습니다.
+
+매핑 편집 완료·삭제·가져오기·시프트키 변경은 공용 동작을 자동 저장합니다. Pico 재연결 확인 후 안내에 따라 프로필 사용 체크를 저장하세요. 저장이 미확인된 경우 편집값을 내보내고 새로 고침으로 확인한 뒤 프로필을 전환하세요. 슬롯 변경 전에 백업하고, 구형 펌웨어로 내리기 전 확장 레코드를 제거하거나 해제하세요. Edge 자체 Fn+도형 버튼은 내장 프로필 전환과 겹칠 수 있습니다. [매핑 안내](DS5Light/MAPPING_GUIDE_KO.md) · [DPI 안내](DS5Light/DPI_LAYOUT_KO.md).
+
+추가 설정과 진단 기능의 사용 가능 여부는 연결된 펌웨어와 장치 환경에 따라 달라집니다.
+
+## 원본 Studio와의 주요 차이점
+
+Studio 펌웨어는 DS5Light와의 연동 및 기능 확장을 위해 일부 개조했습니다. 앱 연동뿐 아니라 오디오·진동 처리, LED 제어, 전원 관리와 설정 저장에도 변경 사항이 포함되어 있습니다.
+
+- 앱 연동 확장: 설정 저장 결과 확인, 장치 상태 조회 및 출력 테스트를 위한 통신 기능을 추가했습니다.
+- USB 모드: Native DualSense와 XInput을 함께 지원하며, 기본 프로필 모드는 Native입니다.
+- 오디오·진동 처리 조정: 네이티브 햅틱과 일반 진동 간 전환, 출력 큐와 재시도, 진동 강도·해제 동작 및 Mix 모드의 피크 제한 방식을 수정했습니다.
+- LED 제어 확장: 고정 라이트바 색상과 플레이어 LED 제어를 확장하고, 설정 전환 시 게임에서 지정한 LED 상태를 복원하는 처리를 보완했습니다.
+- OLED 상태 표시: 지원 하드웨어에서 동글의 상태와 펌웨어 버전을 표시합니다.
+- 전원 관리 확장: 앱에서의 수동 휴면, 자동 휴면 및 도크 연결 시 컨트롤러 연결 해제 설정을 추가했습니다.
+- 연결 및 저장: 저장이 중단돼도 마지막 정상 설정을 보존합니다. Bluetooth 연결 해제 시 입력을 중립화하고, Edge를 판별하며 Pico 응답과 컨트롤러 응답을 분리합니다.
+
+위 내용은 주요 변경 사항의 요약입니다. 세부 구현과 변경 이력, 검증 범위는 docs/의 문서를 참고하세요.
+
+## 저장소 구성
+
+- 저장소 루트: 수정된 Studio 펌웨어 소스
+- DS5Light/: 수정된 DS5Light 앱 소스, 사용 안내 및 관련 자산
+- docs/: 펌웨어 변경 사항과 통신 규약, 검증 관련 문서
+
+## 원본 Studio 문서
+
+[README.upstream.md](README.upstream.md)에 원본 README와 기준 커밋을 명시해 참고용으로 보관합니다. 그 문서의 버전·웹 포털 절차·다운로드·보드별 파일은 원본 기준이며 이 포크의 릴리즈 첨부 목록이 아닙니다. 현재 버전의 설치·설정에는 위의 최신 안내를 사용하세요.
+
+## 출처 및 라이선스
+
+Studio 펌웨어는 기존 MIT 라이선스를, DS5Light 자체 코드는 DS5Light/LICENSE.txt를 따릅니다. 외부 구성요소는 각각의 라이선스와 출처 고지를 유지합니다.
+
+원본 프로젝트:
+- https://github.com/artzox/DS5Dongle-Studio
+- https://github.com/fnflwkd/DS5Light

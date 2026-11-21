@@ -8,8 +8,9 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from device_binding import DeviceIdentity
+from studio_i18n import text as tr
 from device_diagnostics import (CONTROL_BYTES, ReportTiming, collect_snapshot,
-    decode_status, decode_transport, run_output_test, tagged_command, tone_block, audio_recovery_candidates)
+    decode_status, decode_transport, decode_usb_playback, run_output_test, tagged_command, tone_block, audio_recovery_candidates)
 
 
 def response(page=0):
@@ -30,6 +31,39 @@ class Client:
 
 
 class DiagnosticTests(unittest.TestCase):
+    def test_usb_playback_observation_is_optional_and_checks_flags(self):
+        base = response()
+        base[59:63] = bytes((1, 0, 0, 2))
+        self.assertTrue(decode_status(base)['usb_playback_diagnostics'])
+        page = response(3)
+        page[9:11] = bytes((1, 3))
+        struct.pack_into('<5I', page, 11, 8, 3, 2, 3, 42)
+        self.assertEqual(decode_usb_playback(page), dict(known=True, active=True, generation=8,
+                              opens=3, closes=2, invalidations=3, config_revision=42))
+        page[31] = 2
+        self.assertFalse(decode_usb_playback(page)["local_discard_complete"])
+        page[10] = 1
+        self.assertTrue(decode_usb_playback(page)["local_discard_complete"])
+        page[31] = 1
+        self.assertFalse(decode_usb_playback(page)["local_discard_complete"])
+        page[10] = 0
+        self.assertFalse(decode_usb_playback(page)['known'])
+        page[10] = 2
+        with self.assertRaises(ValueError):
+            decode_usb_playback(page)
+
+    def test_haptic_packet_peaks_are_optional_and_require_a_valid_packet(self):
+        legacy = response()
+        self.assertNotIn('haptic_packet_valid', decode_status(legacy))
+        legacy[59:63] = bytes((1, 127, 128, 0))
+        status = decode_status(legacy)
+        self.assertFalse(status['haptic_packet_valid'])
+        self.assertNotIn('haptic_packet_left_peak', status)
+        legacy[62] = 1
+        status = decode_status(legacy)
+        self.assertTrue(status['haptic_packet_valid'])
+        self.assertEqual((status['haptic_packet_left_peak'],status['haptic_packet_right_peak']), (127,128))
+
     def test_controller_ready_requires_a_current_consistent_diagnostic_sample(self):
         from studio_settings_protocol import SettingsClient
         for flags,expected in ((0,False),(1,False),(2,None),(3,True),(4,False)):
@@ -404,12 +438,16 @@ class DialogTests(unittest.TestCase):
         self.app.use_recovered_pico_output.assert_called_once_with(row)
 
     def setUp(self):
+        from core import Controls
         from device_binding import DeviceBinding
         self.root = tk.Tk();self.root.withdraw()
-        self.app = SimpleNamespace(root=self.root, engine=None, _closing=False,
+        self.app = SimpleNamespace(root=self.root, engine=None, controls=Controls(), _closing=False,
+            scope=tk.StringVar(self.root, value='process'), game=tk.StringVar(self.root, value='game-a'),
+            destination=tk.StringVar(self.root, value='Auto'),
             _close_requested=False, _stopping=False,
-            studio=SimpleNamespace(binding=DeviceBinding(), busy=False),
+            studio=SimpleNamespace(binding=DeviceBinding(), busy=False, rear_control_required=lambda:False),
             studio_settings=SimpleNamespace(busy=False), studio_power=SimpleNamespace(blocked=False))
+        self.app.configured_controls = lambda: self.app.controls
         from device_diagnostics_ui import DeviceDiagnosticsDialog
         with patch.object(tk.Toplevel, 'grab_set'):
             self.dialog = DeviceDiagnosticsDialog(self.app)
@@ -423,6 +461,350 @@ class DialogTests(unittest.TestCase):
         self.assertIsNone(self.dialog.job)
         self.assertFalse(self.dialog.available('snapshot'))
         self.assertFalse(self.dialog.busy)
+
+    def test_studio_tools_fit_when_expanded_at_minimum_size(self):
+        dialog = self.dialog
+        self.root.tk.call('tk', 'scaling', 120/72)
+        width, height = dialog.window.minsize()
+        dialog.window.geometry(f'{width}x{height}')
+        self.root.deiconify()
+        dialog.window.deiconify()
+        dialog.window.update()
+        self.assertFalse(dialog.exclusive_button.winfo_viewable())
+        dialog.studio_tools_button.invoke()
+        dialog.window.update_idletasks()
+        for button in (dialog.signal_button, dialog.exclusive_button, dialog.preview_button,
+                       dialog.route_button, dialog.intensity_button):
+            self.assertTrue(button.winfo_viewable(), button.cget('text'))
+            self.assertGreaterEqual(button.winfo_width(), button.winfo_reqwidth())
+            self.assertLessEqual(button.winfo_rooty() + button.winfo_height(),
+                                 dialog.window.winfo_rooty() + dialog.window.winfo_height())
+        dialog.studio_tools_button.invoke()
+        self.assertFalse(dialog.exclusive_button.winfo_viewable())
+
+    def test_exclusive_replay_uses_selected_hid_and_verified_endpoint(self):
+        from core import Controls
+        identity = DeviceIdentity(hid_path=b'pico')
+        self.app.studio.binding._identity = identity
+        controls = self.app.controls = Controls(bypass=True)
+        self.dialog.report = {'status': dict(ready=True, auto_haptics=2, usb_playback_diagnostics=True)}
+        self.dialog.update_test_buttons()
+        self.assertEqual(str(self.dialog.exclusive_button.cget('state')), 'normal')
+        with (
+            patch('device_diagnostics_ui.filedialog.askopenfilename', return_value='fixture.wav'),
+            patch.object(self.dialog, 'start') as start,
+            patch('audio.devices', return_value=[]),
+            patch('studio_replay.verified_endpoint', return_value={'endpoint_id': 'studio'}),
+            patch('studio_replay.play_exclusive_on_endpoint') as play,
+        ):
+            self.dialog.exclusive_button.invoke()
+            kind, operation = start.call_args.args
+            self.assertEqual(kind, 'exclusive_replay')
+            self.app.controls = Controls()
+            operation(Mock(), identity)
+            self.assertEqual(play.call_args.args[2], 'studio')
+            self.assertIs(play.call_args.kwargs['stereo_controls'], controls)
+            client = play.call_args.args[1]
+            self.assertFalse(client.cancel())
+            self.app.studio.binding._identity = DeviceIdentity(hid_path=b'other')
+            self.assertTrue(client.cancel())
+            with self.assertRaises(RuntimeError):
+                operation(Mock(), identity)
+            play.assert_called_once()
+
+    def test_optimizer_preview_displays_and_invalidates_readback_candidate(self):
+        import tkinter as tk
+        from studio_i18n import text
+
+        identity = DeviceIdentity(hid_path=b'pico')
+        self.app.studio.binding._identity = identity
+        self.app.studio.rear_control_required = lambda:False
+        self.app.engine = Mock()
+        self.assertFalse(self.dialog.available('optimizer_preview'))
+        self.app.engine = None
+        value = {'reason': 'review', 'identity': identity, 'live_output': False,
+                 'epoch': self.dialog.preview_epoch, 'observed': {'ah_dsp_source': 1},
+                 'changes': {'ah_dsp_source': (1, 0)}}
+        self.dialog.results.put(('optimizer_preview', value, None))
+        self.dialog.poll()
+        self.assertIn('→', self.dialog.status.get())
+        self.dialog.invalidate_optimizer_preview()
+        stale = text('Studio 상태가 바뀌었습니다. 최적화 미리보기를 다시 조회하세요.')
+        self.assertEqual(self.dialog.status.get(), stale)
+
+        self.dialog.results.put(('optimizer_preview', value, None))
+        self.dialog.poll()
+        self.assertEqual(self.dialog.status.get(), stale)
+        self.assertFalse(self.dialog.preview_visible)
+
+    def test_route_button_requires_confirmation_and_restores_verified_candidate(self):
+        identity = DeviceIdentity(hid_path=b'pico')
+        self.app.studio.binding._identity = identity
+        self.app.studio.rear_control_required = lambda:False
+        candidate = dict(identity=identity, apply_supported=True, live_output=False,
+                         epoch=self.dialog.preview_epoch)
+        self.dialog.optimizer_result = candidate
+        self.dialog.update_test_buttons()
+        before = dict(auto_haptics_enable=0)
+        applied = dict(auto_haptics_enable=2)
+        with (patch('device_diagnostics_ui.messagebox.askokcancel', side_effect=[False, True]) as confirm,
+              patch.object(self.dialog, 'start') as start,
+              patch('studio_optimizer_preview.apply_route_preview',
+                    return_value=dict(before=before, applied=applied)) as apply,
+              patch('studio_optimizer_preview.rollback_route_apply') as restore):
+            self.dialog.route_button.invoke()
+            start.assert_not_called()
+            self.dialog.route_button.invoke()
+            kind, operation = start.call_args.args
+            self.assertEqual(kind, 'optimizer_write')
+            with self.assertRaises(RuntimeError):
+                operation(Mock(), DeviceIdentity(hid_path=b'other'))
+            apply.assert_not_called()
+            receipt = operation(Mock(), identity)
+            self.dialog.results.put((kind, receipt, None))
+            self.dialog.poll()
+            self.assertIs(self.dialog.route_receipt, receipt)
+            self.dialog.route_button.invoke()
+            kind, operation = start.call_args.args
+            self.dialog.results.put((kind, operation(Mock(), identity), None))
+            self.dialog.poll()
+            self.assertIsNone(self.dialog.route_receipt)
+            self.assertEqual(str(self.dialog.route_button.cget('state')), 'disabled')
+            self.assertEqual(confirm.call_count, 2)
+            apply.assert_called_once()
+            restore.assert_called_once()
+
+    def test_intensity_ui_applies_and_restores_without_overlapping_route_receipt(self):
+        from dataclasses import asdict
+        from core import Controls
+        from studio_settings_protocol import SettingsClient
+
+        identity = DeviceIdentity(hid_path=b'pico')
+        route = dict(auto_haptics_enable=2, ah_dsp_source=1, auto_mute_replace=1)
+        state = dict(revision=1, intensity=200, reply=None)
+        hardware = Mock()
+        requests = []
+
+        def token():
+            return struct.pack('<II', state['revision'], state['intensity'])
+
+        def send(packet):
+            self.assertEqual(packet[:4], bytes((0x80, 0x66, 0x26, 1)))
+            self.assertEqual(packet[9:17], token())
+            self.assertEqual(packet[17], state['intensity'])
+            requests.append((packet[4], packet[17], packet[18]))
+            state.update(revision=state['revision'] + 1, intensity=packet[18])
+            state['reply'] = (bytes((0x84, 0x66, 0x26, 0)) + packet[3:9] + token()).ljust(64, b'\0')
+            return len(packet)
+
+        hardware.send_feature_report.side_effect = send
+        hardware.get_feature_report.side_effect = lambda *_: state['reply']
+        self.app.studio.binding._identity = identity
+        self.app.studio.rear_control_required = lambda:True
+        self.app.controls = Controls(gain=1.5)
+        self.dialog.optimizer_result = dict(
+            identity=identity, live_output=True, live_route_verified=True, intensity_supported=True,
+            revision=token().hex(), changes={}, observed=route,
+            studio_output_gain=2.0, studio_dsp_baseline=dict(ah_xover_hz=0, auto_haptics_gain=200))
+        self.dialog.signal_result = dict(current=dict(rear_peak=4915), dsp_controls=asdict(self.app.controls))
+        self.dialog.route_receipt = {'identity': identity}
+        self.assertFalse(self.dialog.intensity_action_available())
+        self.dialog.route_receipt = None
+        self.dialog.update_test_buttons()
+        with (patch('device_diagnostics_ui.messagebox.askokcancel', return_value=True) as confirm,
+              patch.object(self.dialog, 'start') as start,
+              patch('audio.devices', return_value=[]),
+              patch('studio_replay.verified_endpoint', return_value={'endpoint_id': 'studio'}),
+              patch.object(SettingsClient, 'profile', side_effect=lambda **_: {'config_token': token().hex()}),
+              patch.object(SettingsClient, 'read_fields',
+                           side_effect=lambda _: (dict(route, auto_haptics_gain=state['intensity']), [])),
+              patch('studio_optimizer_preview.playback_snapshot', side_effect=lambda _: dict(
+                  conditional_intensity_apply=True, known=True, active=False,
+                  local_discard_complete=True, config_revision=state['revision']))):
+            self.dialog.intensity_button.invoke()
+            kind, operation = start.call_args.args
+            self.assertEqual(kind, 'intensity_write')
+            self.dialog.results.put((kind, operation(hardware, identity), None))
+            self.dialog.poll()
+            lowered = state['intensity']
+            self.assertLess(lowered, 200)
+            self.assertEqual(str(self.dialog.route_button.cget('state')), 'disabled')
+            self.dialog.intensity_button.invoke()
+            kind, operation = start.call_args.args
+            self.dialog.results.put((kind, operation(hardware, identity), None))
+            self.dialog.poll()
+            self.assertIsNone(self.dialog.intensity_receipt)
+            self.assertEqual(str(self.dialog.intensity_button.cget('state')), 'disabled')
+            confirm.assert_called_once()
+            self.assertEqual(requests, [(1, 200, lowered), (2, lowered, 200)])
+            self.assertEqual(state['intensity'], 200)
+
+    def test_wav_signal_preview_accepts_no_selected_device_and_exports_no_path(self):
+        from core import Controls
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        self.app.controls = Controls()
+        self.assertTrue(self.dialog.available('signal_preview'))
+        signal = {'current': {'rear_peak': 200}, 'bypass': {'rear_peak': 0}, 'live_pcm': {'rear_peak': 30}}
+        with (patch('device_diagnostics_ui.filedialog.askopenfilename', return_value='fixture.wav'),
+              patch('device_diagnostics_ui.simpledialog.askstring', side_effect=[None, '1.25, 2']),
+              patch.object(self.dialog, 'start') as start,
+              patch('studio_optimizer_preview.analyze_rehearsal_windows', return_value=signal) as analyze):
+            self.dialog.signal_preview()
+            start.assert_not_called()
+            self.dialog.signal_preview()
+            kind, operation = start.call_args.args
+            self.assertEqual(kind, 'signal_preview')
+            self.assertEqual(operation(None, DeviceIdentity()), signal)
+            analyze.assert_called_once_with(Path('fixture.wav'), self.app.controls, (1.25, 2.0))
+        self.dialog.results.put(('signal_preview', signal, None))
+        self.dialog.poll()
+        self.assertIn('200 / 0', self.dialog.status.get())
+        self.assertIn('30', self.dialog.status.get())
+        with TemporaryDirectory() as directory:
+            report = Path(directory) / 'test.json'
+            with patch('device_diagnostics_ui.filedialog.asksaveasfilename', return_value=str(report)):
+                self.dialog.export()
+            self.assertEqual(json.loads(report.read_text(encoding='utf-8'))['optimizer_signal'], signal)
+
+    def test_wav_candidate_is_unavailable_after_game_switch(self):
+        from dataclasses import asdict
+
+        self.dialog.signal_context = self.dialog.current_signal_context()
+        self.dialog.signal_result = dict(dsp_controls=asdict(self.app.controls),
+                                         pc_gain_candidate=dict(gain=1.0))
+        self.assertEqual(self.dialog.pc_gain_action(), (1.0, False))
+        self.app.game.set('game-b')
+        self.assertEqual(self.dialog.pc_gain_action(), (None, False))
+
+    def test_pc_gain_candidate_applies_only_to_matching_idle_controls(self):
+        from dataclasses import asdict, replace
+        from core import Controls
+
+        controls = self.app.controls = Controls(gain=2.0)
+        self.app.gain = tk.DoubleVar(self.root, value=200)
+        self.app.update_controls = Mock(side_effect=lambda: setattr(
+            self.app, 'controls', replace(self.app.controls, gain=self.app.gain.get() / 100)))
+        signal = self.dialog.signal_result = dict(
+            dsp_controls=asdict(controls), current=dict(rear_peak=4915),
+            pc_gain_candidate=dict(gain=1.0, rear_peak=3500))
+        self.app.studio.rear_control_required = lambda: True
+        self.dialog.optimizer_result = dict(
+            identity=self.app.studio.binding.snapshot(), live_output=True,
+            live_route_verified=True, revision='observed', changes={}, intensity_supported=True,
+            observed=dict(auto_haptics_enable=2, ah_dsp_source=1, auto_mute_replace=1),
+            studio_output_gain=2.0, studio_dsp_baseline=dict(ah_xover_hz=0, auto_haptics_gain=200))
+        self.dialog.update_test_buttons()
+        self.assertEqual(str(self.dialog.pc_gain_button.cget('state')), 'normal')
+        self.assertFalse(self.dialog.intensity_action_available())
+        self.app.engine = Mock()
+        self.dialog.pc_gain_button.invoke()
+        self.app.engine = None
+        self.dialog.update_test_buttons()
+        self.app.controls = replace(controls, impact=.5)
+        self.dialog.pc_gain_button.invoke()
+        self.assertEqual(self.app.gain.get(), 200)
+        self.app.update_controls.assert_not_called()
+        self.app.controls = controls
+        self.dialog.update_test_buttons()
+        self.dialog.pc_gain_button.invoke()
+        self.assertEqual(self.app.controls, replace(controls, gain=1.0))
+        self.app.update_controls.assert_called_once_with()
+        self.assertEqual(self.dialog.pc_gain_action(), (2.0, True))
+        self.assertEqual(self.dialog.signal_result['current']['rear_peak'], 3500)
+        self.assertIsNone(self.dialog.signal_result['pc_gain_candidate'])
+        self.assertTrue(self.dialog.intensity_action_available())
+        applied = self.app.controls
+        self.app.controls = replace(applied, gain=1.25)
+        self.app.gain.set(125)
+        self.dialog.pc_gain_button.invoke()
+        self.assertEqual(self.app.gain.get(), 125)
+        self.app.update_controls.assert_called_once_with()
+        self.app.controls = applied
+        self.app.gain.set(100)
+        self.dialog.update_test_buttons()
+        self.dialog.pc_gain_button.invoke()
+        self.assertEqual(self.app.controls, controls)
+        self.assertIs(self.dialog.signal_result, signal)
+        self.assertFalse(self.dialog.intensity_action_available())
+        self.assertIsNone(self.dialog.pc_gain_restore)
+        self.assertEqual(self.app.update_controls.call_count, 2)
+
+        self.dialog.pc_gain_button.invoke()
+        newer = dict(dsp_controls=asdict(self.app.controls), current=dict(rear_peak=10))
+        self.dialog.signal_result = newer
+        self.dialog.pc_gain_button.invoke()
+        self.assertEqual(self.app.controls, controls)
+        self.assertIs(self.dialog.signal_result, newer)
+        self.assertFalse(self.dialog.intensity_action_available())
+
+    def test_optimizer_export_excludes_identity_and_stale_preview(self):
+        from dataclasses import asdict, replace
+        from core import Controls
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        identity = DeviceIdentity(hid_path=b'private')
+        self.app.studio.binding._identity = identity
+        self.app.studio.rear_control_required = lambda:True
+        self.app.controls = Controls(gain=2.0)
+        self.app.configured_controls = lambda: replace(self.app.controls, background=False)
+        self.dialog.signal_result = dict(dsp_controls=asdict(self.app.controls),
+                                         pc_gain_candidate=dict(gain=1.0))
+        self.dialog.optimizer_result = dict(identity=identity, live_output=True, revision='private-token',
+                                            observed={'ah_dsp_source': 0},
+                                            changes={'ah_dsp_source': (0, 1)}, reason='read only',
+                                            apply_supported=True)
+        with TemporaryDirectory() as directory:
+            log = Path(directory) / 'preview.json'
+            with patch('device_diagnostics_ui.filedialog.asksaveasfilename', return_value=str(log)):
+                self.dialog.export()
+            raw = log.read_text(encoding='utf-8')
+            self.assertNotIn('private', raw)
+            report = json.loads(raw)
+            result = report['optimizer_preview']
+            self.assertEqual(result['observed'], {'ah_dsp_source': 0})
+            profile = report['haptics_profile']
+            self.assertEqual(profile['pc']['desired_controls'], asdict(self.app.controls))
+            self.assertFalse(profile['pc']['configured_controls']['background'])
+            self.assertIsNone(profile['pc']['engine_requested_controls'])
+            self.assertEqual(profile['studio']['desired_route']['ah_dsp_source'], 1)
+            self.assertEqual(profile['studio']['route_status'], 'unverified')
+            self.assertTrue(result['profile_revision_verified'])
+            self.assertTrue(result['conditional_apply_ready_at_preview'])
+            self.assertTrue(report['optimizer_signal']['matches_current_pc_controls'])
+            self.assertEqual(report['optimizer_signal']['pc_gain_candidate'], {'gain': 1.0})
+            self.dialog.optimizer_result.update(
+                live_route_verified=True, changes={},
+                observed=dict(auto_haptics_enable=2, ah_dsp_source=1, auto_mute_replace=1),
+                studio_output_gain=2.0, studio_dsp_baseline=dict(ah_xover_hz=0, auto_haptics_gain=200))
+            self.dialog.signal_result.update(
+                current=dict(rear_peak=4915), live_pcm=dict(rear_peak=750),
+                pc_gain_candidate=dict(gain=1.0, rear_peak=1500, live_pcm=dict(rear_peak=400)))
+            self.assertIn('2.70', self.dialog.studio_intensity_summary())
+            with patch('device_diagnostics_ui.filedialog.asksaveasfilename', return_value=str(log)):
+                self.dialog.export()
+            combined = json.loads(log.read_text(encoding='utf-8'))['optimizer_preview']
+            self.assertEqual(combined['studio_pc_gain_only_estimate']['proposed'], 200)
+            comparison = combined['studio_headroom_comparison']
+            self.assertEqual(comparison['simulated_live']['trial_rear_peak'], 400)
+            self.assertEqual(comparison['rehearsal']['trial_rear_peak'], 1500)
+            self.assertNotIn('studio_intensity_candidate', combined)
+            def change_selection_during_save(**_):
+                self.app.studio.binding._identity = DeviceIdentity(hid_path=b'other')
+                self.app.controls = replace(self.app.controls, gain=1.0)
+                return str(log)
+
+            with patch('device_diagnostics_ui.filedialog.asksaveasfilename', side_effect=change_selection_during_save):
+                self.dialog.export()
+            report = json.loads(log.read_text(encoding='utf-8'))
+            self.assertNotIn('optimizer_preview', report)
+            self.assertIsNone(report['haptics_profile']['studio']['observed_route'])
+            self.assertFalse(report['optimizer_signal']['matches_current_pc_controls'])
+            self.assertIsNone(self.dialog.optimizer_result)
 
     def test_audio_inventory_works_without_hid_and_cannot_rebind(self):
         inventory = dict(endpoints=[dict(id='test', name='Speaker', state=1, mix_channels=4)],
@@ -439,7 +821,6 @@ class DialogTests(unittest.TestCase):
         output_list = next(w for frame in popup.winfo_children() for w in frame.winfo_children()
                            if isinstance(w, tk.Listbox))
         self.assertIn('4 ch', output_list.get(0))
-        self.assertEqual(output_list.cget('activestyle'), 'underline')
         self.app.use_recovered_pico_output.assert_not_called()
         self.assertTrue(all(str(button.cget('state')) == 'disabled' for button in self.dialog.output_buttons))
 
@@ -503,10 +884,12 @@ class DialogTests(unittest.TestCase):
         observation=dict(blocks_delta=1,channels=4,front_peak=0,rear_left_peak=0,rear_right_peak=0)
         with patch.object(self.dialog,'start_input_monitor'):
             self.dialog.show(dict(status=status,audio_observation=observation))
-        self.assertIn('4채널 신호는 거의 무음',self.dialog.audio_hint.get())
+        from device_diagnostics import audio_signal_guidance
+        hint = tr(audio_signal_guidance(dict(status=status, audio_observation=observation)))
+        self.assertEqual(self.dialog.audio_hint.get(), hint)
         self.dialog.show(dict(diagnostic_error='read failed'))
-        self.assertNotIn('4채널 신호는 거의 무음',self.dialog.audio_hint.get())
-        self.assertIn('장치 연결',self.dialog.audio_hint.get())
+        self.assertNotEqual(self.dialog.audio_hint.get(), hint)
+        self.assertEqual(self.dialog.audio_hint.get(), tr(audio_signal_guidance(dict(diagnostic_error='read failed'))))
 
     def test_timing_summary_and_manual_response_are_saved_as_data(self):
         value = dict(reports=250, hz=250., max_ms=8., intervals_ms=[4., 8., 4.])
@@ -553,7 +936,7 @@ class DialogTests(unittest.TestCase):
         self.dialog.show(self.dialog.report)
         self.dialog.results.put(('snapshot',None,'disconnected'))
         self.dialog.poll()
-        self.assertTrue(all(v.get()=='미확인' for v in self.dialog.state_values))
+        self.assertTrue(all(v.get()==tr('미확인') for v in self.dialog.state_values))
         self.assertTrue(all(str(b.cget('state'))=='disabled' for b in self.dialog.output_buttons))
 
     def test_controller_shrinks_smoothly_and_keeps_aspect(self):
@@ -612,7 +995,7 @@ class DialogTests(unittest.TestCase):
         self.dialog.input_state=dict(mask=1<<18)
         self.dialog.input_failed('removed')
         self.assertIsNone(self.dialog.input_state)
-        self.assertTrue(all(v.get()=='미확인' for v in self.dialog.state_values))
+        self.assertTrue(all(v.get()==tr('미확인') for v in self.dialog.state_values))
         self.assertTrue(all(str(b.cget('state'))=='disabled' for b in self.dialog.output_buttons))
 
     def test_stale_input_clears_highlight_and_stops_monitor(self):

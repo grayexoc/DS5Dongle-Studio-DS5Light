@@ -44,6 +44,7 @@ void usb_detach() {
 }
 
 extern "C" void tud_umount_cb(void) {
+    audio_usb_playback_invalidate();
     macro_suspend(false);
 }
 

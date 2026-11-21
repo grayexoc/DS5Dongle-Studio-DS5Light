@@ -245,6 +245,7 @@ static bool set_field_in(Config_body &new_config, uint8_t field_id, uint8_t cons
         case 0xc3: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize) || v < 100 || v > 200)return false; new_config.rumble_gain=v; break; }
         case 0xc5: { uint8_t mode{}; if (!read_config_value(mode, buffer, bufsize) || mode > 1) return false; new_config.usb_gamepad_mode = mode; break; }
         case 0xc4: { uint8_t v{}; if(!read_config_value(v,buffer,bufsize) || v > 2)return false; new_config.rumble_release=v; break; }
+        case 0xc9: { uint8_t v{}; if (!read_config_value(v, buffer, bufsize) || v > 2) return false; new_config.ah_highpass = v; break; }
         case 0xc6: { uint8_t v{}; if (!read_config_value(v, buffer, bufsize) || v > 2) return false; new_config.rumble_mode = v; break; }
         case 0xc2: { // Atomic RGB, u32 little-endian value 0x00RRGGBB.
             uint32_t v{};
@@ -419,6 +420,7 @@ static bool get_config_field_from(const Config_body &config, uint8_t field_id, u
         case 0xc5: return write_config_value(buffer, bufsize, config.usb_gamepad_mode);
         case 0xc4: return write_config_value(buffer, bufsize, config.rumble_release);
         case 0xc6: return write_config_value(buffer, bufsize, config.rumble_mode);
+        case 0xc9: return write_config_value(buffer, bufsize, config.ah_highpass);
         case 0xc2: return write_config_value(buffer, bufsize,
             (uint32_t(config.lightbar_r) << 16) | (uint32_t(config.lightbar_g) << 8) | config.lightbar_b);
         case 0xbb: { extern volatile uint8_t g_diag_pled_bits;  return write_config_value(buffer, bufsize, g_diag_pled_bits); }
@@ -1126,12 +1128,19 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     reply[57] = 1; // optional speaker pipeline counters
                     reply[58] = audio_diagnostic_route();
 #endif
+                    const uint32_t haptics_packet = audio_diagnostic_haptics_packet();
+                    reply[59] = 1; // optional quantized haptic packet peaks
+                    reply[60] = haptics_packet;
+                    reply[61] = haptics_packet >> 8;
+                    reply[62] = (haptics_packet >> 16) | 2u; // tagged USB playback observation page
                 } else if (buffer[0] == 1) {
                     reply[2] = 0; bt_diagnostic_snapshot(reply + 9);
 #if !DISABLE_SPEAKER_PROC
                 } else if (buffer[0] == 2) {
                     reply[2] = 0; audio_diagnostic_snapshot(reply + 9);
 #endif
+                } else if (buffer[0] == 3) {
+                    reply[2] = 0; audio_diagnostic_usb_playback(reply + 9);
                 }
             }
             pico_settings_reply.assign(reply, reply + sizeof(reply));
@@ -1209,6 +1218,113 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 if (macro_pause_lease(buffer[1], owner)) {
                     reply[2] = 0;
                     if (buffer[1] != 3) manual_power_note_activity(60000);
+                }
+            }
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
+            break;
+        }
+
+        case 0x24: {
+            // Version, operation, request tag, attempt, revision, link, generation, sequence.
+            uint8_t reply[63]{0x66, 0x24, 1};
+            if (bufsize >= 26 && buffer[0] == 1) {
+                memcpy(reply + 3, buffer, 6);
+                uint32_t fields[5];
+                memcpy(fields, buffer + 6, sizeof(fields));
+                const uint32_t result = audio_rear_request(buffer[1], fields[0], fields[1],
+                                                          fields[2], fields[3], fields[4]);
+                if (result != 0) {
+                    reply[2] = 0;
+                    memcpy(reply + 9, &result, sizeof(result));
+                }
+            }
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
+            break;
+        }
+
+        case 0x25: {
+            // Version, operation, tag, expected revision/checksum, current and target route.
+            static uint32_t rollback_token[2]{};
+            static uint8_t rollback_route[3]{};
+            static bool rollback_available = false;
+            uint8_t reply[63]{0x66, 0x25, 1};
+            if (bufsize >= 20 && buffer[0] == 1) {
+                memcpy(reply + 3, buffer, 6);
+                uint32_t expected[2];
+                memcpy(expected, buffer + 6, sizeof(expected));
+                const auto &cfg = get_config();
+                const uint8_t current[] = {cfg.auto_haptics_enable, cfg.ah_dsp_source,
+                                           cfg.auto_mute_replace};
+                const uint8_t *target = buffer + 17;
+                const bool idle = !spk_active && !audio_processing_active() &&
+                                  !audio_haptics_stream_active() && bt_is_ready() &&
+                                  !usb_xinput_active();
+                const bool live_target = target[0] == 2 && target[1] == 1 && target[2] == 1 &&
+                                         (current[0] != 1 || cfg.mix_native_level == 0);
+                const bool mix_target = current[0] == 1 && cfg.mix_native_level > 0 &&
+                                        current[1] == 1 && target[0] == 1 && target[1] == 0 &&
+                                        target[2] == current[2];
+                const auto operation = buffer[1];
+                const bool can_rollback = operation == 2 && rollback_available &&
+                    memcmp(expected, rollback_token, sizeof(expected)) == 0 &&
+                    memcmp(target, rollback_route, sizeof(rollback_route)) == 0;
+                if (idle && expected[0] == config_revision() && expected[1] == config_checksum() &&
+                    memcmp(buffer + 14, current, sizeof(current)) == 0 &&
+                    target[0] <= 2 && target[1] <= 1 && target[2] <= 1 &&
+                    memcmp(current, target, sizeof(current)) != 0 &&
+                    (can_rollback || (operation == 1 && (live_target || mix_target)))) {
+                    Config_body updated = cfg;
+                    updated.auto_haptics_enable = target[0];
+                    updated.ah_dsp_source = target[1];
+                    updated.auto_mute_replace = target[2];
+                    set_config(updated);
+                    reply[2] = 0;
+                    const uint32_t applied[] = {config_revision(), config_checksum()};
+                    rollback_available = operation == 1;
+                    if (rollback_available) {
+                        memcpy(rollback_token, applied, sizeof(applied));
+                        memcpy(rollback_route, current, sizeof(current));
+                    }
+                    memcpy(reply + 9, applied, sizeof(applied));
+                }
+            }
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
+            break;
+        }
+
+        case 0x26: {
+            static uint32_t rollback_token[2]{};
+            static uint8_t rollback_intensity = 0;
+            static bool rollback_available = false;
+            uint8_t reply[63]{0x66, 0x26, 1};
+            if (bufsize >= 16 && buffer[0] == 1) {
+                memcpy(reply + 3, buffer, 6);
+                uint32_t expected[2];
+                memcpy(expected, buffer + 6, sizeof(expected));
+                const auto &cfg = get_config();
+                const auto current = cfg.auto_haptics_gain;
+                const auto target = buffer[15];
+                const auto operation = buffer[1];
+                const bool apply = operation == 1 && target < current;
+                const bool rollback = operation == 2 && rollback_available &&
+                    target == rollback_intensity && memcmp(expected, rollback_token, sizeof(expected)) == 0;
+                if ((apply || rollback) && current <= 200 && target <= 200 && target != current &&
+                    buffer[14] == current && expected[0] == config_revision() &&
+                    expected[1] == config_checksum() && cfg.auto_haptics_enable == 2 &&
+                    cfg.ah_dsp_source == 1 && cfg.auto_mute_replace == 1 && !spk_active &&
+                    !audio_processing_active() && !audio_haptics_stream_active() && bt_is_ready() &&
+                    !usb_xinput_active() && audio_rear_idle_for_settings()) {
+                    Config_body updated = cfg;
+                    updated.auto_haptics_gain = target;
+                    set_config(updated);
+                    const uint32_t applied[] = {config_revision(), config_checksum()};
+                    rollback_available = apply;
+                    if (apply) {
+                        rollback_intensity = current;
+                        memcpy(rollback_token, applied, sizeof(applied));
+                    }
+                    reply[2] = 0;
+                    memcpy(reply + 9, applied, sizeof(applied));
                 }
             }
             pico_settings_reply.assign(reply, reply + sizeof(reply));

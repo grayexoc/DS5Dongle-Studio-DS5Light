@@ -85,6 +85,22 @@ int main(){
  g_now_ms+=760;ps_shortcut_tick(report,63);assert(last_key==HID_KEY_TAB&&reports==1);
  g_now_ms+=30;ps_shortcut_task();blank();
  report[9]=0;g_now_ms+=60;ps_shortcut_tick(report,63);assert(reports==2);
+ // A 730 ms press remains short even though the debounce extends past 750 ms.
+ clean();report[9]=1;ps_shortcut_tick(report,63);
+ g_now_ms=1729;ps_shortcut_tick(report,63);
+ report[9]=0;g_now_ms=1730;ps_shortcut_tick(report,63);
+ g_now_ms=1750;ps_shortcut_tick(report,63);assert(reports==0);
+ g_now_ms=1780;ps_shortcut_tick(report,63);assert(reports==1&&last_key==HID_KEY_G);
+ // A confirmed long press must not send Win+G if the macro held the keyboard.
+ clean();report[9]=1;ps_shortcut_tick(report,63);
+ macro_active=true;g_now_ms=1750;ps_shortcut_tick(report,63);
+ macro_active=false;report[9]=0;g_now_ms=1760;ps_shortcut_tick(report,63);
+ g_now_ms=1810;ps_shortcut_tick(report,63);assert(reports==0);
+ // If the button is still held, retry its long action when the keyboard frees up.
+ clean();report[9]=1;ps_shortcut_tick(report,63);
+ macro_active=true;g_now_ms=1750;ps_shortcut_tick(report,63);assert(reports==0);
+ macro_active=false;g_now_ms=1760;ps_shortcut_tick(report,63);
+ assert(reports==1&&last_key==HID_KEY_TAB);
  // The 30 ms deadline must not fire early across uint32 timer wrap.
  pulse(0xfffffff0u);g_now_ms=0xfffffff1u;ps_shortcut_task();assert(reports==1);
  g_now_ms=0x0e;ps_shortcut_task();blank();assert(reports==2);
@@ -93,8 +109,10 @@ int main(){
 '''
 (out/'test.cpp').write_text(code,encoding='utf-8')
 bin_dir=root.parent/'DS5Dongle-Studio-build/source/toolchain/mingw64/mingw64/bin'
+compiler=Path(os.environ.get('CXX',str(bin_dir/'g++.exe')))
+bin_dir=compiler.parent
 env=dict(os.environ);env['PATH']=str(bin_dir)+os.pathsep+env.get('PATH','')
-subprocess.run([str(bin_dir/'g++.exe'),'-std=c++17','-DENABLE_WAKE_HID',
+subprocess.run([str(compiler),'-std=c++17','-DENABLE_WAKE_HID',
  '-I'+str(root/'src'),'-I'+str(stubs),'-I'+str(root/'tools/macro-tests/stubs'),
  str(out/'test.cpp'),str(root/'src/ps_shortcut.cpp'),'-o',str(out/'test.exe')],env=env,check=True)
 p=subprocess.run([str(out/'test.exe')],env=env,capture_output=True,text=True)

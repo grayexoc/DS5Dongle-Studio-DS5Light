@@ -17,10 +17,13 @@ PLANS = {
         ('스틱 마우스', 'Stick mouse', 'stick_mouse', False, False),
         ('이동 속도', 'Movement speed', 'stick_mouse_sens stick_mouse_sens_y', False, True),
         ('세부 조정', 'Fine tuning', 'stick_mouse_deadzone stick_mouse_curve stick_mouse_invert', True, True)],
+    'Touchpad as Mouse': [
+        ('터치패드 마우스', 'Touchpad mouse', 'touch_mouse', False, False),
+        ('', '', 'touch_mouse_sens touch_mouse_min touch_mouse_invert touch_mouse_trackball touch_mouse_friction', False, True)],
     'Auto-Haptics & Speaker Effect Leak': [
         ('오디오햅틱 모드', 'Audio haptics mode', 'auto_haptics_enable', False, False),
         ('', '', 'auto_haptics_gain auto_mute_mix auto_mute_replace mix_native_level mix_native_filter rumble_haptic_strength', False, True),
-        ('주파수·반응 세부 조정', 'Frequency & response tuning', 'ah_dsp_source auto_haptics_smooth auto_haptics_gate auto_haptics_lowpass_hz auto_haptics_slope ah_xover_hz ah_low_gain ah_high_gain', True, True)],
+        ('주파수·반응 세부 조정', 'Frequency & response tuning', 'ah_dsp_source auto_haptics_smooth auto_haptics_gate auto_haptics_lowpass_hz auto_haptics_slope ah_xover_hz ah_low_gain ah_high_gain ah_highpass', True, True)],
     'General Haptics & Audio': [
         ('햅틱및 진동 세기', 'Haptics and rumble strength', 'haptics_gain rumble_gain rumble_mode rumble_release', False, False),
         ('스피커·헤드셋', 'Speaker & headset', 'speaker_gain speaker_volume headset_volume', False, False),
@@ -77,6 +80,10 @@ class OptionGroups:
                     self.field_row(leak,0,available.pop('mix_native_filter'),
                                    title_text=title('누설 억제','Leak suppression'),dropdown_width=6)
             self._option_groups.append((group_id, rows, button, conditional, box))
+        if section in ('Gyro Aiming', 'Touchpad as Mouse'):
+            label = tk.Label(card, bg='#151515', fg='#e0a030', justify='left', anchor='w', wraplength=440)
+            label.grid(row=len(plan)+1, column=0, columnspan=2, sticky='ew', pady=(4,0))
+            self._touch_gyro_notices.append(label)
         # New firmware fields must remain accessible without changing this plan.
         if available and section != 'Rumble → Trigger':
             self.render_additional_fields(available.values())
@@ -110,4 +117,19 @@ class OptionGroups:
                     row.grid()
                 else:
                     row.grid_remove()
+        values = self.doc.values
+        notice = ''
+        if values.get('touch_mouse'):
+            if values.get('gyro_mode') == 3:
+                notice = title('터치 중 자이로도 작동합니다. 자이로 출력이 마우스면 손가락과 자이로 이동이 합산됩니다.',
+                               'Touch also activates gyro. With mouse output, finger and gyro movement are added.')
+            elif values.get('gyro_mode') == 4:
+                notice = title('터치하는 동안 자이로가 일시 정지합니다.',
+                               'Touch pauses gyro while the finger is on the pad.')
+        for label in getattr(self, '_touch_gyro_notices', ()):
+            if notice:
+                label.configure(text=notice)
+                label.grid()
+            else:
+                label.grid_remove()
         self.sync_scrollregion()

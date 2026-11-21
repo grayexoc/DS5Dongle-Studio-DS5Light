@@ -89,12 +89,13 @@ class ProfileTests(unittest.TestCase):
         level=bytes((129,102,4,0x55,60))
         source=bytes((129,102,4,0x64,0))
         for current in (0,1,2):
-            replies=[self.reply(),mode(current)]+([level,source] if current==1 else [])+[self.reply()]
+            fields = {0: [], 1: [level, source], 2: [source]}[current]
+            replies = [self.reply(), mode(current), *fields, self.reply()]
             device=Fake(replies)
             state=StudioClient(device,sleep=lambda _:None).profile_state()
             self.assertEqual(state.get('mix_native_level'),60 if current==1 else None)
-            self.assertEqual(state.get('ah_dsp_source'),0 if current==1 else None)
-            self.assertEqual(len(device.sent),5 if current==1 else 3)
+            self.assertEqual(state.get('ah_dsp_source'), 0 if current in (1, 2) else None)
+            self.assertEqual(len(device.sent), 3 + len(fields))
 
     def test_extended_snapshot_is_one_request_and_default_profile_stays_legacy(self):
         extended=self.reply()[:22]+b'\x02SLP2'+bytes((1,75,1))+bytes(34)

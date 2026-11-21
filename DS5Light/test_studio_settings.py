@@ -92,7 +92,7 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(client.stored,1)
 
     def test_full_stable_registry_and_descriptions(self):
-        self.assertEqual(len(FIELDS),143);self.assertEqual(len({f[0] for f in FIELDS.values()}),143)
+        self.assertEqual(len(FIELDS),144);self.assertEqual(len({f[0] for f in FIELDS.values()}),144)
         self.assertEqual(set(FIELDS),set(LABELS));self.assertFalse(any('experimental' in s['title'].lower() for s in SECTIONS))
         for key,f in FIELDS.items():
             text=help_text(key);self.assertIn(f[3],text);self.assertNotIn('('+key+')',text)
@@ -122,11 +122,16 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(int.from_bytes(bytes(r[:4]),'little'),1<<24);self.assertEqual(r[4],128);self.assertEqual(r[7:9],[224,4]);self.assertEqual(len(r),35)
     def test_legacy_slot_raw_fields_survive_full_backup_and_restore_validation(self):
         class Client(SettingsClient):
+            touch_supported=True
             def read_lightbar(self,refresh=False):return {'lightbar_fixed':0,'lightbar_rgb':0}
             def read_rumble(self,refresh=False):return {'rumble_gain':100,'rumble_release':0}
             def slots(self):return [Slot(0,'saved','Legacy'),Slot(1,'saved','Custom')]
             def read_macros(self):return {}
             def command(self,command,payload,report=0x81,echo=b'',echo_offset=3,**kwargs):
+                if command==4 and payload==b'\xc9':return b'\x66\x04\xc9\x01'
+                if command==4 and payload==b'\xa2':
+                    return b'\x66\x04\xa2\x00' if self.touch_supported else b'\x66\x04\xff'
+                if command==12 and payload==b'\x01\xa2':return b'\x66\x0c\x00\x01\xa2\x01\x00'
                 if command==12 and payload==b'\x01\xc8':return b'\x66\x0c\x00\x01\xc8\x01\x00'
                 if command==12 and payload==b'\x01\xc5':return b'\x66\x0c\x00\x01\xc5\x01\x00'
                 if command==12 and payload==b'\x01\xc6':return b'\x66\x0c\x00\x01\xc6\x01\x00'
@@ -148,9 +153,14 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(set(rows[0]['fields']),{k for k in EDITABLE if not k.startswith('ce_')})
         for key,value in dict(rumble_gain=100,rumble_release=0,rumble_mode=0,haptics_gain=1.0,
                               ah_xover_hz=0,haptics_aa=1,stick_mouse_curve=18,
+                              touch_mouse=0,touch_mouse_sens=100,touch_mouse_min=1,
+                              touch_mouse_invert=0,touch_mouse_trackball=0,touch_mouse_friction=10,
                               macro_disable=0xffffffff).items():
             self.assertEqual(rows[0]['fields'][key],value,key)
         self.assertEqual(rows[1]['fields'],{k:v for k,v in custom.items() if not k.startswith('ce_') and k!='disable_usb_sn'})
+        old=Client(None);old.touch_supported=False
+        rows,_=validate_backup(backup_all(old))
+        self.assertTrue(all(not any(key.startswith('touch_mouse') for key in row['fields']) for row in rows))
 
     def test_backup_rejects_duplicates_and_unknown_active_actions(self):
         row=dict(index=0,valid=True,name='A',fields={'auto_haptics_gain':100})
@@ -168,6 +178,85 @@ class SchemaTests(unittest.TestCase):
         with self.assertRaises(ValueError):validate_backup(portal)
 
 class ProtocolTests(unittest.TestCase):
+    def test_conditional_route_write_checks_tag_and_never_resends(self):
+        device = Device()
+        client = SettingsClient(device, sleep=lambda _: None)
+        token = '2a0000005b000000'
+        updated = bytes.fromhex('2b0000005c000000')
+
+        def reply(status, tag=b'test'):
+            return (bytes((0x84, 0x66, 0x25, status, 1, 1)) + tag + updated).ljust(64, b'\0')
+
+        with patch('studio_settings_protocol.secrets.token_bytes', return_value=b'test'):
+            with patch.object(device, 'get_feature_report', side_effect=[reply(0, b'old!'), reply(0)]):
+                self.assertEqual(client.conditional_studio_route_write(1, token, (0, 0, 1), (2, 1, 1)),
+                                 updated.hex())
+            self.assertEqual(device.sent[0][:23], b'\x80\x66\x25\x01\x01test' +
+                             bytes.fromhex(token) + bytes((0, 0, 1, 2, 1, 1)))
+            with patch.object(device, 'get_feature_report', return_value=reply(1)):
+                with self.assertRaises(ValueError):
+                    client.conditional_studio_route_write(1, token, (0, 0, 1), (2, 1, 1))
+            with patch.object(device, 'get_feature_report', return_value=reply(0, b'old!')):
+                with self.assertRaises(PartialApplyError):
+                    client.conditional_studio_route_write(1, token, (0, 0, 1), (2, 1, 1))
+        self.assertEqual(len(device.sent), 3)
+
+    def test_conditional_intensity_write_requires_a_decrease_and_a_matching_reply(self):
+        device = Device()
+        client = SettingsClient(device, sleep=lambda _: None)
+        token = '2a0000005b000000'
+        updated = bytes.fromhex('2b0000005c000000')
+        reply = (bytes((0x84, 0x66, 0x26, 0, 1, 1)) + b'test' + updated).ljust(64, b'\0')
+        with self.assertRaises(ValueError):
+            client.conditional_studio_intensity_write(1, token, 150, 151)
+        self.assertEqual(device.sent, [])
+        with (patch('studio_settings_protocol.secrets.token_bytes', return_value=b'test'),
+              patch.object(device, 'get_feature_report', side_effect=[reply])):
+            self.assertEqual(client.conditional_studio_intensity_write(1, token, 150, 100), updated.hex())
+        self.assertEqual(device.sent[0][:19],
+                         bytes((0x80, 0x66, 0x26, 1, 1)) + b'test' + bytes.fromhex(token) + bytes((150, 100)))
+        with (patch('studio_settings_protocol.secrets.token_bytes', return_value=b'new!'),
+              patch.object(device, 'get_feature_report', return_value=reply)):
+            with self.assertRaises(PartialApplyError):
+                client.conditional_studio_intensity_write(1, token, 150, 100)
+        self.assertEqual(len(device.sent), 2)
+
+    def test_rear_lease_acknowledges_only_matching_nonexpired_attempt(self):
+        closed = dict(known=True, active=False, local_discard_complete=True,
+                      rear_link_epoch=9, config_revision=8, generation=7)
+        opened = dict(closed, active=True, generation=8)
+        tag = b'test'
+        device = Device()
+        client = SettingsClient(device, sleep=lambda _: None)
+
+        def reply(operation, attempt, response_tag=tag):
+            return (bytes((0x84, 0x66, 0x24, 0, 1, operation)) + response_tag
+                    + struct.pack('<I', attempt)).ljust(64, b'\0')
+
+        with patch('studio_settings_protocol.secrets.token_bytes', return_value=tag):
+            with patch.object(device, 'get_feature_report', side_effect=[reply(1, 17, b'old!'), reply(1, 18)]):
+                self.assertEqual(client.rear_lease_exchange(1, closed)[0], 18)
+            self.assertEqual(device.sent[-1][:29],
+                             bytes((0x80, 0x66, 0x24, 1, 1)) + tag + struct.pack('<5I', 0, 8, 9, 7, 0))
+            with patch.object(device, 'get_feature_report', return_value=reply(2, 17)):
+                with self.assertRaisesRegex(RuntimeError, 'stale'):
+                    client.rear_lease_exchange(2, opened, attempt=18)
+            with patch.object(device, 'get_feature_report', return_value=reply(2, 18)):
+                with patch('studio_settings_protocol.time.monotonic', side_effect=[4.0, 5.0]):
+                    with self.assertRaisesRegex(RuntimeError, 'stale'):
+                        client.rear_lease_exchange(2, opened, attempt=18)
+                self.assertEqual(client.rear_lease_exchange(2, opened, attempt=18)[0], 18)
+            with patch.object(device, 'get_feature_report', return_value=reply(3, 18)):
+                self.assertEqual(client.rear_lease_exchange(3, opened, attempt=18, sequence=1)[0], 18)
+
+        count = len(device.sent)
+        with self.assertRaises(ValueError):
+            client.rear_lease_exchange(1, dict(closed, local_discard_complete=False))
+        with self.assertRaises(ValueError):
+            client.rear_lease_exchange(2, closed, attempt=18)
+        self.assertEqual(len(device.sent), count)
+
+
     def test_bulk_roundtrip_and_only_changed_fields(self):
         dev=Device();c=SettingsClient(dev,sleep=lambda _:None);values,missing=c.read_fields();self.assertFalse(missing);self.assertEqual(len(values),len(EDITABLE))
         c.write_fields({'auto_haptics_gain':100},values)
@@ -322,7 +411,8 @@ class RevisionTests(unittest.TestCase):
         self.assertEqual(d.macros['0'],old);self.assertFalse(d.macro_changes)
     def test_reference_and_default_markers(self):
         from studio_help import reference_point
-        self.assertEqual(reference_point('auto_haptics_gain'),(80,'추천'))
+        self.assertEqual(reference_point('auto_haptics_gain'),(100,'추천'))
+        self.assertEqual(reference_point('auto_haptics_gate'),(16,'추천'))
         self.assertEqual(reference_point('trigger_reduce'),(0,'기본'))
         for key,f in EDITABLE.items():
             if f[4]=='number' and key!='headset_volume':self.assertIsNotNone(reference_point(key)[0],key)
@@ -377,12 +467,31 @@ class RevisionUITests(NativeUITests):
         e.search.set('gyro_sens');e.render_fields();self.assertIn('gyro_sens',e.vars)
     def test_every_gyro_and_stick_option_stays_visible_when_off(self):
         e=self.editor();e.select_category(3)
-        keys={f[1] for section in SECTIONS if section['title'] in ('Gyro Aiming','Right Stick','Stick to Mouse') for f in section['fields']}
+        keys={f[1] for section in SECTIONS if section['title'] in
+              ('Gyro Aiming','Right Stick','Stick to Mouse','Touchpad as Mouse') for f in section['fields']}
         self.assertEqual(set(e.vars),keys)
     def test_removed_fields_not_searchable(self):
         e=self.editor()
-        for term in ('effect_leak','touch_mouse','batt_stage','t2_mode'):
+        for term in ('effect_leak','batt_stage','t2_mode'):
             e.search.set(term);e.render_fields();self.assertFalse(e.vars)
+    def test_touchpad_mouse_follows_stick_and_updates_gyro_warning(self):
+        e=self.editor();e.select_category(3)
+        groups=[group[0] for group in e._option_groups]
+        self.assertLess(max(i for i,group in enumerate(groups) if group[0]=='Stick to Mouse'),
+                        min(i for i,group in enumerate(groups) if group[0]=='Touchpad as Mouse'))
+        e.doc.values.update(touch_mouse=0,touch_mouse_trackball=0,gyro_mode=3)
+        e.refresh_option_groups()
+        self.assertFalse(e.enabled_for('touch_mouse_sens'))
+        self.assertTrue(all(not label.winfo_manager() for label in e._touch_gyro_notices))
+        e.select_value('touch_mouse',1)
+        self.assertTrue(e.enabled_for('touch_mouse_sens'))
+        self.assertFalse(e.enabled_for('touch_mouse_friction'))
+        self.assertTrue(all(label.winfo_manager() for label in e._touch_gyro_notices))
+        text=e._touch_gyro_notices[-1].cget('text')
+        e.select_value('touch_mouse_trackball',1)
+        self.assertTrue(e.enabled_for('touch_mouse_friction'))
+        e.select_value('gyro_mode',4)
+        self.assertNotEqual(text,e._touch_gyro_notices[-1].cget('text'))
     def test_sliders_and_header_use_requested_layout(self):
         from studio_range import RangeSlider
         e=self.editor();self.root.deiconify();self.root.update()

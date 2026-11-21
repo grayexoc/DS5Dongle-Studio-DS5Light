@@ -42,18 +42,17 @@ class ModifiedUITests(unittest.TestCase):
             tabs._select_from_keyboard(2)
         self.assertEqual((self.ui.selected_tab,tabs.selected),(1,1))
 
-    def test_main_tabs_use_only_the_solid_box_border_for_focus(self):
-        tabs=self.ui.tabs
-        self.assertFalse(self.ui.studio_settings.built)
-        self.assertNotIn('Button.focus',str(tabs.style.layout('TButton')))
-        with patch.object(tabs,'focus_get',return_value=tabs):
-            for selected in range(len(tabs.labels)):
-                tabs.select(selected)
-                boxes=[item for item in tabs.find_all() if tabs.type(item)=='rectangle'
-                       and not any(tag.startswith('icon-') for tag in tabs.gettags(item))]
-                self.assertEqual(len(boxes),len(tabs.labels))
-                self.assertTrue(all(not tabs.itemcget(box,'dash') for box in boxes))
-                self.assertEqual(tabs.itemcget(boxes[selected],'outline'),ui.FG)
+    def test_main_buttons_and_tab_keep_focus_without_inner_dots(self):
+        app=self.ui
+        style=ui.ttk.Style(self.root)
+        for button in (app.refresh_button,app.game_save_button,app.load_button,
+                       app.studio.apply,app.start_button,app.stop_button):
+            self.assertNotIn('Button.focus',str(style.layout(button.cget('style'))))
+        with patch.object(app.tabs,'focus_get',return_value=app.tabs):
+            app.tabs.draw()
+        bounds=app.tabs.find_withtag('tab-0')[0]
+        self.assertEqual(app.tabs.itemcget(bounds,'dash'),'')
+        self.assertGreater(float(app.tabs.itemcget(bounds,'width')),1)
 
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
@@ -116,6 +115,31 @@ class ModifiedUITests(unittest.TestCase):
         self.assertEqual(app._run_route()[1:3],(124,2.))
         app.render_games([rows[0],dict(rows[1],started=3.)])
         self.assertIsNone(app._run_route()[1])
+
+    def test_settings_opens_device_diagnostics_without_duplicate_preview(self):
+        with patch('app.open_diagnostics') as open_dialog:
+            self.ui.device_diagnostics_button.invoke()
+            open_dialog.assert_called_once_with(self.ui)
+        self.assertFalse(hasattr(self.ui,'optimizer_preview_button'))
+
+    def test_failed_automatic_studio_output_reports_status(self):
+        app=self.ui
+        app.scope.set('device')
+        app.studio.observed_profile={'auto_haptics_enable':2,'ah_dsp_source':1}
+        candidate=self.engine()
+        candidate.start=Mock(side_effect=RuntimeError('exclusive denied'))
+        with (
+            patch('app.Engine',return_value=candidate),
+            patch('output_debug.record'),
+            patch.object(app.studio,'check_before_start',side_effect=lambda ready:ready()),
+            patch.object(app.studio.binding,'output',return_value={'name':'Studio'}),
+            patch('app.messagebox.showerror') as error,
+        ):
+            app.start()
+        self.assertTrue(candidate.studio_live)
+        self.assertIn('exclusive denied',app.status.get())
+        error.assert_not_called()
+        self.assertFalse(app.run_intent.requested)
 
     def test_start_confirmation_cancels_if_route_changed(self):
         app=self.ui
@@ -265,7 +289,7 @@ class ModifiedUITests(unittest.TestCase):
 
     def test_old_slot_gain_is_explicitly_clamped_and_other_bounds_are_preserved(self):
         app=self.ui
-        for requested,actual in ((0,.5),(.49,.5),(.50,.50),(2.,2.)):
+        for requested,actual in ((0,.5),(.49,.5),(.50,.50),(2.,2.),(4.,3.)):
             with self.subTest(gain=requested):
                 app.store.slots[0]=dict(name='Saved',game_exe='',scope='device',channels=0,input='',output='',
                                         controls=dict(asdict(app.controls),gain=requested))
@@ -302,47 +326,166 @@ class ModifiedUITests(unittest.TestCase):
         self.ui.launch_checks[1].invoke()
         self.assertTrue(self.ui.auto_start.get()); self.assertTrue(self.ui.remember_last.get())
 
-    def test_filter_selection_has_gold_border_without_dotted_focus(self):
-        style=ui.ttk.Style(self.root)
-        self.assertNotIn('Button.focus',str(style.layout('Filter.TButton')))
-        for index,(_,strength) in enumerate(self.ui.style_buttons):
-            self.ui.set_strength(strength)
-            for other,(button,_) in enumerate(self.ui.style_buttons):
-                self.assertEqual(button.cget('style'),'Selected.Filter.TButton' if other==index else 'Filter.TButton')
-        self.assertEqual(style.lookup('Selected.Filter.TButton','bordercolor',('focus',)),ui.ACCENT)
+    def test_manual_surround_includes_all_subchannels_and_hard_clips(self):
+        app=self.ui
+        app.scope.set('process')
+        app.center.set(False);app.rear.set(False);app.lfe.set(False)
+        app.limiter.set(next(label for label,value in ui.LIMITERS.items() if value=='soft'))
+        for channels in (6,8,0):
+            with self.subTest(channels=channels):
+                app.channel.set(next(label for label,value in ui.CHANNELS.items() if value==channels))
+                app.update_controls()
+                self.assertEqual((app.controls.center,app.controls.rear,app.controls.lfe,
+                                  app.controls.limiter),
+                                 (True,True,True,'hard') if channels else (False,False,False,'soft'))
+
+    def test_saved_profile_preserves_configuration_behind_forced_dsp_controls(self):
+        from preferences import PreferenceStore
+        from presets import PresetStore
+
+        app = self.ui
+        app.scope.set('process')
+        app.channel.set(next(label for label, value in ui.CHANNELS.items() if value == 6))
+        app.limiter.set(next(label for label, value in ui.LIMITERS.items() if value == 'soft'))
+        app.rear.set(True)
+        app.center.set(False)
+        app.lfe.set(False)
+        app.bg.set(False)
+        app.transient.set(False)
+        app.filter_on.set(True)
+        app.update_controls()
+        self.assertEqual(app.controls.limiter, 'hard')
+        self.assertTrue(app.controls.center and app.controls.lfe)
+        self.assertTrue(app.controls.background and app.controls.transient)
+
+        app.slot_name.set('Surround profile')
+        app.save_slot()
+        self.wait_for_file_save()
+        stored = PresetStore(app.store.path).slots[0]['controls']
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'preferences.json'
+            PreferenceStore(path).save(app._preference_snapshot())
+            self.assertEqual(PreferenceStore(path).load()['controls'], stored)
+        self.assertTrue(stored['rear'])
+        for flag in ('center', 'lfe', 'background', 'transient'):
+            self.assertFalse(stored[flag])
+        self.assertEqual(stored['limiter'], 'soft')
+
+        app.load_slot()
+        self.assertEqual(app.controls.limiter, 'hard')
+        app.channel.set(next(label for label, value in ui.CHANNELS.items() if value == 0))
+        app.update_controls()
+        self.assertEqual(app.controls.limiter, 'soft')
+        self.assertTrue(app.controls.rear)
+        self.assertFalse(app.controls.center or app.controls.lfe)
 
     def test_section_headings_use_bold_compact_tracking(self):
         def headings(widget):
             found=[widget] if isinstance(widget,ui.SectionTitle) else []
             for child in widget.winfo_children(): found.extend(headings(child))
             return found
-        titles=headings(self.ui.game_page)
-        self.assertEqual(len(titles),3)
-        self.assertIn(ui.tr('PC 억제 필터'),[title.title for title in titles])
+        titles=headings(self.ui.game_page)+headings(self.ui.device_page)
+        self.assertEqual(len(titles),6)
+        self.assertIn(ui.tr('오디오햅틱 필터'),[title.title for title in titles])
         for title in titles:
             self.assertEqual(title.font.actual('weight'),'bold'); self.assertLess(title.tracking,0)
+
+    def test_filter_has_no_processing_mode_selector(self):
+        self.assertFalse(hasattr(self.ui, 'processing_mode'))
 
     def test_gain_slider_and_filter_are_independent(self):
         self.assertEqual(self.ui.gain.get(),100)
         slider=self.ui.gain_slider
-        self.assertEqual((slider.minimum,slider.maximum,slider.reference),(50,200,100))
+        self.assertEqual((slider.minimum,slider.maximum,slider.reference),(100,300,100))
         labels=[slider.itemcget(item,'text') for item in slider.find_all() if slider.type(item)=='text']
-        self.assertEqual(labels,['50%','100%','200%'])
-        for key,value in (('Home',50),('End',200)):
+        self.assertEqual(labels,['1x','2x','3x'])
+        for key,value in (('Home',100),('Right',200),('End',300),('Right',300)):
             slider._key(SimpleNamespace(keysym=key))
             self.assertEqual(self.ui.gain.get(),value)
             self.assertEqual(self.ui.controls.gain,value/100)
+            self.assertEqual(self.ui.gain_value.cget('text'),f'{value/100:g}x')
+        self.root.update_idletasks()
+        slider._set_from_x(slider.pad + .42 * max(1,slider.winfo_width() - 2 * slider.pad))
+        self.assertEqual(self.ui.controls.gain,2.)
         self.ui.gain.set(125); self.ui.filter_on.set(False); self.ui.update_controls()
         self.assertEqual(self.ui.controls.gain,1.25)
         self.assertTrue(self.ui.controls.bypass); self.assertTrue(self.ui.gain_slider.enabled)
 
     def test_unchanged_channel_does_not_keep_scheduling_saves(self):
         self.ui.engine=self.engine(); self.ui.engine.capture_channels=6
-        self.ui.scope.set('device'); self.ui.channel.set(next(key for key,value in ui.CHANNELS.items() if value==6))
+        self.ui.scope.set('device'); self.ui.channel.set(next(key for key,value in ui.CHANNELS.items() if value==2))
         changes=[]
         self.ui.channel.trace_add('write',lambda *_:changes.append(True))
         self.ui.render(); self.ui.render()
         self.assertEqual(changes,[])
+
+    def test_main_controls_fit_at_minimum_size(self):
+        self.root.tk.call('tk', 'scaling', 120/72)
+        width,height=self.root.minsize()
+        self.root.geometry(f'{width}x{height}')
+        self.root.deiconify()
+        self.root.update()
+        app=self.ui
+        self.assertEqual(len(app.tabs.labels),3)
+        gain_card=app.gain_frame.master
+        filter_card=app.impact_slider.master.master
+        self.assertEqual(gain_card.winfo_rooty()+gain_card.winfo_height(),
+                         filter_card.winfo_rooty()+filter_card.winfo_height())
+        for scope in ('device','process'):
+            app.scope.set(scope);app.render()
+            self.root.update_idletasks()
+            self.assertTrue(app.process_table.winfo_viewable())
+            for widget in (app.start_button,app.stop_button,
+                           app.channel_choice,app.gain_slider,app.impact_slider):
+                self.assertTrue(widget.winfo_viewable(), (scope,str(widget),self.root.geometry()))
+                self.assertGreater(widget.winfo_width(),1)
+                self.assertLessEqual(widget.winfo_rooty()+widget.winfo_height(),
+                                     self.root.winfo_rooty()+self.root.winfo_height())
+
+    def test_device_selectors_are_on_settings_and_diagnostics_tab(self):
+        app=self.ui
+        app.open_connection()
+        self.assertEqual(app.selected_tab,1)
+        for key in ('source','output'):
+            widget=app.conn_widgets[key]
+            self.assertTrue(str(widget).startswith(str(app.device_page)+'.'))
+        app.scope.set('process');app.render_connection()
+        self.assertTrue(app.conn_widgets['source'].instate(['disabled']))
+        self.assertTrue(app.conn_widgets['output'].instate(['readonly']))
+
+    def test_basic_transport_starts_and_stops_both_capture_scopes(self):
+        app=self.ui
+        app.select_tab(0)
+        app.source.set(ui.AUTO)
+        app.destination.set(ui.AUTO)
+        app.game.set('Game.exe')
+        app.game_map['Game.exe']=123
+        app.game_names['Game.exe']='Game.exe'
+        for scope,pid in (('device',None),('process',123)):
+            with self.subTest(scope=scope):
+                app.scope.set(scope)
+                app.studio.observed_profile={'auto_haptics_enable':2,'ah_dsp_source':int(pid is not None)}
+                app.render()
+                candidate=self.engine()
+                candidate.start=Mock()
+                with (
+                    patch('app.Engine', return_value=candidate) as create,
+                    patch('output_debug.record'),
+                    patch.object(app.studio,'check_before_start',side_effect=lambda ready:ready()),
+                    patch.object(app.studio.binding,'output',return_value={'name':'Studio'}),
+                    patch.object(app.studio,'discover'),
+                    patch.object(app._process_sampler,'is_running',return_value=True),
+                ):
+                    app.start_button.invoke()
+                    candidate.start.assert_called_once()
+                    self.assertEqual(create.call_args.kwargs['process_pid'],pid)
+                    self.assertEqual(candidate.studio_live,pid is not None)
+                    app.stop_button.invoke()
+                    until=time.monotonic()+3
+                    while app.engine and time.monotonic()<until:
+                        self.root.update(); time.sleep(.01)
+                self.assertIsNone(app.engine)
+                self.assertEqual(app.selected_tab,0)
 
     def test_selected_game_auto_loads_linked_preset_without_changing_output(self):
         item=dict(name='Game tuned',game_exe='Game.exe',scope='process',channels=2,input='old input',output='old output',

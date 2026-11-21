@@ -9,7 +9,8 @@ import sys
 import tempfile
 from translations import EN
 
-AUTO_KO = '자동 선택 · 기존 BAT 방식'
+AUTO_KO = '자동 선택'
+_LEGACY_AUTO = ('자동 선택 · 기존 BAT 방식', 'Automatic · original BAT method')
 
 def settings_path():
     if '--ui-test-path' in sys.argv:
@@ -80,7 +81,7 @@ def _dynamic_english(text):
     return text
 
 def canonical_device(value):
-    return AUTO_KO if value in (AUTO_KO, EN[AUTO_KO], '자동 선택', 'Automatic') else value
+    return AUTO_KO if value in (AUTO_KO, EN[AUTO_KO], *_LEGACY_AUTO) else value
 
 def display_device(value):
     return tr(AUTO_KO) if canonical_device(value)==AUTO_KO else value

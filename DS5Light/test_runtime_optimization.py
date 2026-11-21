@@ -97,13 +97,13 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(Engine(process_pid=123).transport_frames,240)
     def test_invalid_block_rejected(self):
         with self.assertRaises(ValueError):Engine(transport_frames=120)
-    def run_transport(self,fail_small=False,fail_all=False,diagnostics=True):
+    def run_transport(self,fail_small=False,fail_all=False,diagnostics=True,frame_delta=0):
         e=Engine(controls=Controls(bypass=True),transport_frames=240);e.diagnostics_enabled=diagnostics;opened=[];writes=[];holder={}
         rows=[dict(index=0,name='PC Loopback',maxInputChannels=2,maxOutputChannels=0,defaultSampleRate=48000,isLoopbackDevice=True),
               dict(index=1,name='DualSense',maxOutputChannels=4,hostApi=1,endpoint_id='output')]
         class Stream:
             def get_read_available(self):return 240
-            def read(self,n,**kw):return bytes(n*2*2)
+            def read(self,n,**kw):return bytes((n+frame_delta)*2*2)
             def write(self,data,**kw):writes.append(data)
             def get_input_latency(self):return .01
             def get_output_latency(self):return .01
@@ -125,6 +125,13 @@ class TransportTests(unittest.TestCase):
             ns={'run':run};return ns
         with patch('audio.devices',return_value=rows),patch('audio.pa.PyAudio',PA),patch('audio.original_namespace',side_effect=namespace):e._run()
         return e,opened,writes,holder
+    def test_mismatched_capture_frame_count_never_reaches_output(self):
+        for delta in (-1, 1):
+            with self.subTest(delta=delta):
+                engine, _, writes, _ = self.run_transport(frame_delta=delta)
+                self.assertEqual(engine.capture_read_errors, 1)
+                self.assertEqual(engine.phase, 'error')
+                self.assertEqual(writes, [])
     def test_hidden_diagnostics_preserve_output_and_health(self):
         off,_,a,_=self.run_transport(diagnostics=False)
         on,_,b,_=self.run_transport(diagnostics=True)

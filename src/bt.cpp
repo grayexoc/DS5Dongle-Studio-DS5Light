@@ -218,6 +218,7 @@ bool bt_is_ready() {
 }
 
 static void reset_disconnected_hid() {
+    audio_rear_link_disconnected();
     controller_input_on_disconnect();
     feature_data.clear();
     wake_on_bt_disconnect();
@@ -1032,6 +1033,8 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
             }
             if (hid_interrupt_cid == 0 ||
                 l2cap_event_can_send_now_get_local_cid(packet) != hid_interrupt_cid) break;
+            // Check the lease before taking any packet or retry from the queue.
+            audio_rear_sync();
             for (unsigned scanned = 0; scanned < kSendScanLimit; ++scanned) {
                 if (!pending_send_valid) {
                     pending_send_valid = pop_send_fifo(pending_send);

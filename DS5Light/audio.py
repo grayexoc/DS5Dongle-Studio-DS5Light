@@ -30,7 +30,7 @@ from core import Controls, Processor, RumbleStateProvider
 
 from process_audio import ProcessCaptureStream
 
-from channel_mix import ChannelMixer
+from channel_mix import ChannelMixer, ChannelSignalCheck
 
 from output_gain import OutputGain
 
@@ -277,6 +277,9 @@ class Engine:
 
         self.controls,self.silent=controls,silent
         self.front_only=False
+        self.studio_live=False
+        self.studio_adaptive_gain=False
+        self._studio_output=None
 
         self.provider=RumbleStateProvider()
 
@@ -293,6 +296,9 @@ class Engine:
         self.process_stream=None
 
         self.capture_channels=None
+        self.capture_format=None
+        self.capture_signal=None
+        self.capture_endpoint_name=None
 
         self.output_lookup_active=False;self.output_wait_reason='';self.output_id=None; self.phase='starting'; self.reconnecting=False; self.reconnect_count=0
 
@@ -333,13 +339,24 @@ class Engine:
 
         self.stop_event.set()
 
+        if self._studio_output is not None:
+            self._studio_output.request_stop()
+
         wake=getattr(self.process_stream,'wake_waiters',None)
 
         if wake:wake()
 
-        if self.thread: self.thread.join(timeout=4)
+        deadline = time.monotonic() + 4
+        if self.thread:
+            self.thread.join(timeout=4)
+            if self.thread.is_alive():
+                return False
+        if self._studio_output is not None:
+            return self._studio_output.wait_closed(max(0, deadline - time.monotonic()))
+        return True
 
-        return not self.thread or not self.thread.is_alive()
+    def output_is_closed(self):
+        return self._studio_output is None or self._studio_output.is_closed()
 
     def stats(self):
 
@@ -363,7 +380,10 @@ class Engine:
 
             dsp_ms=dict(zip(('p50','p95','p99','max'),np.percentile(a,[50,95,99,100]).tolist())) if a else {},
 
-            stream_latency=self.latencies,transport=f'legacy int16 / {self.transport_frames} / blocking',
+            stream_latency=self.latencies,
+            transport=('Studio exclusive WASAPI / PCM16' if self.studio_live
+                       else f'legacy int16 / {self.transport_frames} / blocking'),
+            studio_live=self._studio_output.stats() if self._studio_output is not None else None,
 
             transport_frames=self.transport_frames,buffer_fallbacks=self.buffer_fallbacks,
 
@@ -374,6 +394,8 @@ class Engine:
             process_pid=self.process_pid,process_channels=self.process_channels if self.process_pid else None,
 
             capture_channels=self.capture_channels,
+            capture_format=self.capture_format, requested_channels=self.requested_channels,
+            capture_signal=self.capture_signal,
 
             channel_hint=self.channel_hint,channel_auto=self.requested_channels==0,mix_supported=self.mix_supported,
 
@@ -387,7 +409,8 @@ class Engine:
 
             reconnect_count=self.reconnect_count,output_name=self.output_name,
 
-            output_limited_samples=self.output_processor.level.limited_samples)
+            output_limited_samples=(self._studio_output.level.limited_samples if self._studio_output is not None
+                                    else self.output_processor.level.limited_samples))
 
     def _output_issue(self,rows):
         from output_debug import record
@@ -404,12 +427,15 @@ class Engine:
     def _check(self):
 
         if self.stop_event.is_set(): raise KeyboardInterrupt()
+        if self._studio_output is not None:
+            self._studio_output.check()
 
     def _run(self):
 
         engine=self
         from stream_cleanup import OwnedStream
         owned_streams=[]
+        studio_attempted=False
 
         class Stream(OwnedStream):
 
@@ -421,8 +447,12 @@ class Engine:
                 owned_streams.append(self)
 
                 self.channel_mixer=ChannelMixer()
+                self.signal_check=None
 
-                if kwargs.get('input'): engine.capture_channels=kwargs['channels']
+                if kwargs.get('input'):
+                    engine.capture_channels=kwargs['channels']
+                    engine.capture_format=(kwargs['channels'], kwargs['rate'])
+                    engine.capture_signal=None
 
             def __getattr__(self,name): return getattr(self.stream,name)
 
@@ -458,6 +488,9 @@ class Engine:
 
                         data=self.stream.read(n,**kwargs)
 
+                    if len(data) != n * self.kwargs['channels'] * 2:
+                        raise OSError(_ui_tr('오디오 캡처 프레임 길이가 일치하지 않습니다'))
+
                 except OSError:
 
                     engine.capture_read_errors+=1
@@ -476,7 +509,16 @@ class Engine:
 
                 ch=self.kwargs['channels']
 
-                if ch==8 and not engine.process_pid and not engine.mix_supported:ch=0
+                if engine.diagnostics_enabled and ch in (6,8):
+                    if self.signal_check is None:
+                        self.signal_check=ChannelSignalCheck(ch,self.kwargs['rate'])
+                    observation=self.signal_check.observe(data)
+                    if observation is not None:engine.capture_signal=observation
+                elif self.signal_check is not None:
+                    self.signal_check=None
+                    engine.capture_signal=None
+
+                if not engine.mix_supported:ch=0
 
                 return self.channel_mixer.process(data,ch,self.kwargs['rate'],controls.rear,controls.lfe,controls.limiter,center=controls.center)
 
@@ -484,13 +526,16 @@ class Engine:
 
                 engine._check(); diagnose=engine.diagnostics_enabled; start=time.perf_counter() if diagnose else 0.
 
-                try: out=engine.output_processor.process(data,engine.controls,front_only=engine.front_only)
+                if engine.studio_live:
+                    out = data
+                else:
+                    try: out=engine.output_processor.process(data,engine.controls,front_only=engine.front_only)
 
-                except Exception as exc:
+                    except Exception as exc:
 
-                    engine.errors+=1; engine.status=_ui_tr('필터 오류: 무음 ')+str(exc); out=bytes(len(data))
+                        engine.errors+=1; engine.status=_ui_tr('필터 오류: 무음 ')+str(exc); out=bytes(len(data))
 
-                if diagnose: engine.times.append((time.perf_counter()-start)*1000)
+                    if diagnose: engine.times.append((time.perf_counter()-start)*1000)
 
                 if engine.silent: out=bytes(len(out))
 
@@ -502,12 +547,16 @@ class Engine:
 
                     engine.latency_samples['capture_to_output_call_ms'].append(max(0.,submitted-timing[0])*1000)
 
-                engine._check()
-                try: self.stream.write(out,**kwargs)
+                if engine.studio_live:
+                    # This measures the queue submission call. The renderer runs separately.
+                    self.stream.write(out, engine.controls, stereo_capture=engine.capture_channels == 2)
+                else:
+                    engine._check()
+                    try: self.stream.write(out,**kwargs)
 
-                except OSError:
+                    except OSError:
 
-                    engine.output_wait_reason=_ui_tr('오디오 전송 실패 · 출력 장치 연결 상태를 확인하세요'); engine._waiting(); raise
+                        engine.output_wait_reason=_ui_tr('오디오 전송 실패 · 출력 장치 연결 상태를 확인하세요'); engine._waiting(); raise
 
                 if diagnose: engine.latency_samples['output_write_wait_ms'].append((time.perf_counter()-submitted)*1000)
 
@@ -515,7 +564,7 @@ class Engine:
 
                 engine.last_block_time=time.monotonic()
 
-                engine.retry_cadence.reset()
+                if not engine.studio_live: engine.retry_cadence.reset()
 
                 if diagnose and data:
 
@@ -565,6 +614,7 @@ class Engine:
 
             def open(self,**kwargs):
 
+                nonlocal studio_attempted
                 engine._check()
 
                 if kwargs.get('output'):
@@ -580,6 +630,33 @@ class Engine:
                     if 'hostApi' in d and d['hostApi']!=self.actual.get_host_api_info_by_type(pa.paWASAPI)['index']:
 
                         engine.output_wait_reason=engine._output_issue(engine.input_devices); engine._waiting(); raise OSError(engine.output_wait_reason)
+
+                    if engine.studio_live:
+                        from studio_live_output import StudioLiveOutput
+                        from studio_replay import verified_endpoint
+
+                        if studio_attempted or engine.binding is None:
+                            raise RuntimeError('Live Studio output requires a fresh start on a verified device.')
+                        studio_attempted = True
+                        try:
+                            identity = engine.binding.snapshot()
+                            endpoint = verified_endpoint(engine.binding, [self.selected_output])
+                            if engine.binding.snapshot() != identity:
+                                raise RuntimeError('Studio binding changed during exclusive endpoint validation.')
+                            output = StudioLiveOutput(engine.binding, identity, endpoint['endpoint_id'], engine.stop_event,
+                                                      adaptive_gain=engine.studio_adaptive_gain)
+                            engine._studio_output = output
+                            stream = Stream(output, kwargs)
+                            output.wait_ready()
+                        except (OSError, RuntimeError, ValueError) as exc:
+                            raise RuntimeError(_ui_tr('Studio 독점 출력 시작 실패 · ')+str(exc)) from exc
+                        discard = getattr(engine.process_stream, 'discard_backlog', None)
+                        if discard:
+                            discard()
+                        engine._capture_timing = None
+                        engine.phase = 'running'
+                        engine.status = _ui_tr('Studio 독점 오디오 출력')
+                        return stream
 
                     try:
 
@@ -607,13 +684,23 @@ class Engine:
 
                     d=self.actual.get_device_info_by_index(kwargs['input_device_index'])
 
-                    match=next((row for row in engine.input_devices if row['name']==d['name']),{})
-
-                    engine.mix_supported=kwargs['channels']!=8 or match.get('channel_mask')==0x63f
-
                     if any(name in d['name'].lower() for name in ('dualsense','studio xinput experiment')):
 
                         raise OSError(_ui_tr('자기 출력 재캡처 차단'))
+
+                    channels=kwargs['channels']
+                    surround_masks={6:(0x3f,0x60f),8:(0x63f,)}
+                    if channels in surround_masks:
+                        # Refresh on stream open so a changed driver layout cannot reuse an old mask.
+                        matches=[row for row in devices(self.actual)
+                                 if row.get('index')==d['index'] and row['name']==d['name']
+                                 and row.get('isLoopbackDevice') and row.get('endpoint_id')]
+                        engine.mix_supported=(len(matches)==1
+                                              and matches[0].get('mix_channels')==channels
+                                              and matches[0].get('mix_rate')==kwargs['rate']
+                                              and matches[0].get('channel_mask') in surround_masks[channels])
+                    else:
+                        engine.mix_supported=True
 
                 try: s=self.actual.open(**kwargs)
 
@@ -640,7 +727,9 @@ class Engine:
 
                 engine.opens.append(dict(kwargs)); engine.opens=engine.opens[-8:]
 
-                if kwargs.get('input'): engine.latencies['input_s']=s.get_input_latency()
+                if kwargs.get('input'):
+                    engine.latencies['input_s']=s.get_input_latency()
+                    engine.capture_endpoint_name=d['name']
 
                 else:
 

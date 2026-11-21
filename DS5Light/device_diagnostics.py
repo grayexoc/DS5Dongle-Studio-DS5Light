@@ -122,7 +122,30 @@ def decode_status(reply, firmware=b''):
     if reply[57] == 1:
         status['speaker_diagnostics'] = True
         status['output_route'] = {1: 'speaker', 2: 'headset'}.get(reply[58])
+    if reply[59] == 1:
+        status['haptic_packet_valid'] = bool(reply[62] & 1)
+        if status['haptic_packet_valid']:
+            status.update(haptic_packet_left_peak=reply[60], haptic_packet_right_peak=reply[61])
+        if reply[62] & 2:
+            status['usb_playback_diagnostics'] = True
     return status
+
+
+def decode_usb_playback(reply):
+    if len(reply) != 63 or reply[:5] != b'\x66\x1e\x00\x01\x03' or reply[9] != 1 or reply[10] not in (0, 1, 3):
+        raise ValueError('Invalid USB playback observation.')
+    generation, opens, closes, invalidations, revision = struct.unpack_from('<5I', reply, 11)
+    result = dict(known=bool(reply[10] & 1), active=bool(reply[10] & 2), generation=generation,
+                  opens=opens, closes=closes, invalidations=invalidations, config_revision=revision)
+    if reply[31] in (1, 2):
+        result['local_discard_complete'] = reply[31] == 2 and reply[10] == 1
+    if reply[36] == 1:
+        result['rear_link_epoch'] = struct.unpack_from('<I', reply, 32)[0]
+    if reply[37] == 1:
+        result['conditional_route_apply'] = True
+    if reply[38] == 1:
+        result['conditional_intensity_apply'] = True
+    return result
 
 
 def decode_speaker_counters(reply):
@@ -191,6 +214,8 @@ def collect_snapshot(device, identity, audio_stats=None, cancel=lambda: False):
     }
     if status.get('speaker_diagnostics'):
         pages['speaker_counters'] = lambda: decode_speaker_counters(tagged_command(client, 0x1e, 2))
+    if status.get('usb_playback_diagnostics'):
+        pages['usb_playback'] = lambda: decode_usb_playback(tagged_command(client, 0x1e, 3))
     for key, read in pages.items():
         if cancel():
             return report

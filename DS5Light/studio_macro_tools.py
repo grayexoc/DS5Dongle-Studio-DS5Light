@@ -282,10 +282,6 @@ class MacroTools:
         self.live_label.grid(row=2,column=0,columnspan=2,sticky='ew',pady=(12,0))
         self._live_view=None
         self.live_notice=tk.Label(box,text=_ui_tr('\n짧은 출력·전체 조합키·프로필 전환 등은 확인하지 못할 수 있음').lstrip(),bg=BG,fg=GOLD,wraplength=425,justify='left',anchor='w')
-        from localization import LANGUAGE
-        if LANGUAGE=='en':
-            self.live_notice.configure(width=1)
-            self.live_notice.bind('<Configure>',self.fit_slot_label,add='+')
         self.live_notice.grid(row=3,column=0,columnspan=2,sticky='ew',pady=(6,0))
         self.live_notice.grid_remove()
         if self.live_enabled and self.live_result:self.show_live_result(self.live_result)

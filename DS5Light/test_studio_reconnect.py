@@ -103,6 +103,27 @@ class RecoveryUITests(unittest.TestCase):
             self.transaction(e,c,fresh(),True)
         c.write_fields.assert_not_called();c.save_slot.assert_not_called();c.save_flash.assert_not_called()
         self.assertTrue(e.doc.dirty)
+
+    def test_settings_apply_requires_the_read_revision_and_updates_it_after_success(self):
+        e, c, _ = self.prepare()
+        e.profile_revision = 'loaded'
+        e.changed('auto_haptics_gain', 100)
+        c.profile.return_value = dict(PROFILE, config_token='external')
+        with self.assertRaisesRegex(RuntimeError, '외부에서 설정이 변경'):
+            self.transaction(e, c, fresh())
+        c.read_fields.assert_not_called()
+        c.write_fields.assert_not_called()
+        self.assertTrue(e.doc.dirty)
+
+        loaded = dict(PROFILE, config_token='loaded')
+        applied = dict(PROFILE, config_token='applied', edited=True)
+        c.profile.side_effect = [loaded, loaded, applied]
+        result, _ = self.transaction(e, c, fresh())
+        self.finish(e, 'apply', result)
+        self.assertEqual(e.profile_revision, 'applied')
+        self.assertEqual(e.profile_stamp, dict(PROFILE, edited=True))
+        c.save_slot.assert_not_called()
+        c.save_flash.assert_not_called()
     def test_enabling_existing_macro_refreshes_after_interface_reconnect(self):
         e,c,_=self.prepare(pending=True);e.doc.macros_pending_flash=False
         e.doc.values['macro_disable']=0xfffffffe
@@ -177,10 +198,26 @@ class RecoveryUITests(unittest.TestCase):
         c.save_flash.assert_not_called();c.commit_macros.assert_called_once()
     def test_shared_reconnect_same_serial_keeps_local_profile_draft_writable(self):
         e,c,new=self.prepare();e.changed('auto_haptics_gain',100)
-        answer,_=self.transaction(e,c,fresh(new),shared=True)
+        e.profile_revision = 'loaded'
+        reloaded = fresh(new)
+        reloaded['profile']['config_token'] = 'reconnected'
+        answer,_=self.transaction(e,c,reloaded,shared=True)
         self.finish(e,'shared_save',answer)
         self.assertEqual(e.doc.changes,{'auto_haptics_gain':100})
         self.assertTrue(e.write_ready);self.assertFalse(e.uncertain)
+        self.assertEqual(e.profile_revision, 'reconnected')
+
+    def test_shared_reconnect_does_not_rebase_a_draft_when_scalar_readback_changed(self):
+        e,c,new=self.prepare();e.changed('auto_haptics_gain',100)
+        e.profile_revision = 'loaded'
+        reloaded = fresh(new)
+        reloaded['profile']['config_token'] = 'reconnected'
+        reloaded['values']['auto_haptics_gain'] = 90
+        answer,_=self.transaction(e,c,reloaded,shared=True)
+        self.finish(e,'shared_save',answer)
+        self.assertEqual(e.doc.changes,{'auto_haptics_gain':100})
+        self.assertFalse(e.write_ready)
+        self.assertEqual(e.profile_revision, 'loaded')
     def test_other_serial_recovery_cannot_unlock_local_profile_draft(self):
         e,c,new=self.prepare();e.changed('auto_haptics_gain',100)
         other=fresh(new);other['rows']=[dict(ROW,serial_number='other')]

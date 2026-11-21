@@ -4,6 +4,24 @@
 #include "output_diagnostics.h"
 
 int main() {
+    UsbPlaybackObservation playback;
+    assert(!playback.known && !playback.active && playback.generation == 0);
+    playback.set_alternate(1);
+    playback.set_alternate(1);
+    assert(playback.known && playback.active && playback.opens == 2 && playback.generation == 2);
+    playback.set_alternate(0);
+    assert(playback.known && !playback.active && playback.closes == 1 && playback.generation == 3);
+    assert(!playback.local_discard_complete);
+    playback.mark_local_discard_complete();
+    assert(playback.local_discard_complete);
+    playback.invalidate();
+    playback.mark_local_discard_complete();
+    assert(!playback.local_discard_complete);
+    assert(!playback.known && !playback.active && playback.invalidations == 1 && playback.generation == 4);
+    playback.set_alternate(1);
+    assert(playback.known && playback.active && playback.opens == 3 && playback.generation == 5);
+    playback.mark_local_discard_complete();
+    assert(!playback.local_discard_complete);
     OutputDiagnostics diag;
     uint8_t host[47]{}, out[47]{};
     host[0] = 3; host[2] = 64; host[9] = 128; host[38] = 4;

@@ -1,6 +1,5 @@
 """Explicit gyro calibration, ported from the Studio portal's final panel."""
 from studio_i18n import text as _translate
-from localization import LANGUAGE
 
 def _ui_tr(text):
     return _translate(text).replace('. ', '.\n')
@@ -35,11 +34,7 @@ class GyroCalibration:
         counts_enabled = self.enabled_for('flick_counts_360')
         box=self.card(_ui_tr('자이로 센서 보정'))
         tk.Label(box,text=_translate('듀얼센스를 연결하고 자이로 작동 조건과 마우스 출력을 적용하세요. 측정하는 동안 설정한 작동 조건을 유지하세요.'),bg=BG,fg=MUTED,wraplength=440,justify='left',anchor='w').grid(row=1,column=0,columnspan=2,sticky='ew',pady=(0,10))
-        motion_note=tk.Label(box,text=_ui_tr('측정 중 듀얼센스를 수평으로 잡고 오른쪽으로 한 바퀴(360°) 돌려 시작 방향으로 돌아오세요. 남은 시간에는 가만히 유지하고 2~3회 반복해 비교하세요. 반대 방향 움직임도 합산되므로 한 방향으로만 돌리세요.'),bg=BG,fg=MUTED,wraplength=440,justify='left',anchor='w')
-        motion_note.grid(row=2,column=0,columnspan=2,sticky='ew',pady=(0,10))
-        if LANGUAGE=='en':
-            motion_note.configure(width=1)
-            motion_note.bind('<Configure>',self.fit_slot_label,add='+')
+        tk.Label(box,text=_ui_tr('측정 중 듀얼센스를 수평으로 잡고 오른쪽으로 한 바퀴(360°) 돌려 시작 방향으로 돌아오세요. 남은 시간에는 가만히 유지하고 2~3회 반복해 비교하세요. 반대 방향 움직임도 합산되므로 한 방향으로만 돌리세요.'),bg=BG,fg=MUTED,wraplength=440,justify='left',anchor='w').grid(row=2,column=0,columnspan=2,sticky='ew',pady=(0,10))
         ttk.Button(box,text=_ui_tr('360° 측정 · 8초'),command=self.measure_gyro,state='normal' if sensor_ready else 'disabled').grid(row=3,column=0,sticky='w')
         self.sensor_text=tk.StringVar(value=self.sensor_description());tk.Label(box,textvariable=self.sensor_text,bg=BG,fg=GOLD,wraplength=440,justify='left',anchor='w').grid(row=4,column=0,columnspan=2,sticky='ew',pady=10)
         ttk.Button(box,text=_ui_tr('보정값을 편집에 반영'),command=self.apply_sensor_trim,state='normal' if self.gyro_sensor_result and self.gyro_sensor_result['degrees']>=60 and sensor_ready and self.enabled_for('gyro_scale_trim_x100') else 'disabled').grid(row=5,column=0,columnspan=2,sticky='w')

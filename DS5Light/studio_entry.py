@@ -67,9 +67,12 @@ class EntryQueries:
         self.dock_policy=(result['path'],result.get('dock'))
         self.usb_serial_policy=(result['path'],result.get('usb_serial'))
         profile=result.get('profile');stamp={k:profile[k] for k in ('index','name','edited')} if profile else None
+        revision=(profile or {}).get('config_token')
+        previous=getattr(self,'profile_revision',None)
         changed=getattr(self,'external_stale',False) or (self.path is not None and self.path!=result['path']) or (self.profile_stamp is not None and any((stamp or {}).get(k)!=self.profile_stamp.get(k) for k in ('index','name')))
+        changed=changed or (previous is not None and revision!=previous)
         if self.doc.dirty and changed:
-            self.write_ready=False;self.progress.configure(text=_ui_tr('장치 프로필이 바뀌었습니다. 편집을 확인한 뒤 새로 고침을 눌러 주세요.'));return
+            self.external_stale=True;self.write_ready=False;self.progress.configure(text=_ui_tr('장치 프로필이 바뀌었습니다. 편집을 확인한 뒤 새로 고침을 눌러 주세요.'));return
         if changed and not self.doc.dirty:
             from studio_document import SettingsDocument
             self.doc=SettingsDocument()
@@ -80,7 +83,8 @@ class EntryQueries:
             self.doc.baseline.pop('disable_usb_sn',None)
             self.doc.values.pop('disable_usb_sn',None)
         self.doc.merge_read_values(result['values'])
-        self.path=result['path'];self.profile_stamp=stamp;self.loaded=bool(self.doc.values);self.external_stale=False
+        self.path=result['path'];self.profile_stamp=stamp;self.profile_revision=revision
+        self.loaded=bool(self.doc.values);self.external_stale=False
         self.profile_save_needed=bool(profile and profile.get('edited')) or getattr(self,'profile_save_needed',False) and not changed
         from studio_snapshot import device_labels
         self.device_choice.configure(values=device_labels(self.device_rows,self.path,profile))

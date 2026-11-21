@@ -1,9 +1,45 @@
 import unittest
+import json
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 import numpy as np
 from core import *
-from offline import process_array
+from offline import FEATURE_SCHEMA_ID, main as offline_main, process_array, wavfile
 
 class CoreTests(unittest.TestCase):
+    def test_offline_band_features_share_dsp_without_changing_output(self):
+        t = np.arange(BLOCK * 3) / RATE
+        tone = (.1 * np.sin(2 * np.pi * 80 * t)).astype(np.float32)
+        x = np.column_stack((tone, -tone))
+        frames = []
+        with_features, _ = process_array(x, feature_frames=frames)
+        baseline, _ = process_array(x)
+        np.testing.assert_array_equal(with_features, baseline)
+        indices, values = zip(*frames)
+        self.assertEqual(indices, (239,479,719))
+        values = np.asarray(values)
+        self.assertEqual(values.shape, (3, 4, 4))
+        self.assertTrue(np.isfinite(values).all())
+        self.assertGreater(values[-1,0,0], values[-1,0,3])
+        self.assertTrue(((values[:,3] >= 0) & (values[:,3] <= 1)).all())
+
+    def test_offline_cli_exports_features_on_the_output_sample_clock(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder)
+            source,output,features=(root/name for name in ('input.wav','output.wav','features.jsonl'))
+            wavfile.write(source,44100,np.zeros(1000,dtype=np.int16))
+            args=['offline',str(source),str(output),'--features-jsonl',str(features)]
+            with patch('sys.argv',args),patch('builtins.print'):
+                offline_main()
+            rate,pcm=wavfile.read(output)
+            records=[json.loads(line) for line in features.read_text(encoding='utf-8').splitlines()]
+            self.assertEqual(rate,RATE)
+            self.assertEqual(records[-1]['sample_index'],len(pcm)-1)
+            self.assertEqual([r['sequence'] for r in records],list(range(len(records))))
+            self.assertEqual({r['feature_schema_id'] for r in records},{FEATURE_SCHEMA_ID})
+            self.assertTrue(all(len(r['features'])==16 for r in records))
+
     def test_bypass_reconstructs_and_duplicate(self):
         rng=np.random.default_rng(20)
         x=rng.uniform(-.2,.2,(48000,6)).astype(np.float32)

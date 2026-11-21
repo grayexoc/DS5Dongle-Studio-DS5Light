@@ -413,6 +413,7 @@ struct __attribute__((packed)) Config_body {
     uint8_t rumble_release;         // 0 off, 1 linear 20ms, 2 linear 40ms
     uint8_t usb_gamepad_mode;       // 0 DualSense, 1 XInput
     uint8_t rumble_mode;           // 0 host, 1 classic V1, 2 improved V2
+    uint8_t ah_highpass;            // 0 off, 1 = 15 Hz, 2 = 25 Hz
 };
 
 // Stage-2 output buttons. Values are PERSISTED in every profile and slot, so

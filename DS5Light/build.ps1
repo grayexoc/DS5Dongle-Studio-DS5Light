@@ -8,30 +8,12 @@ $ds5BuildPython = $env:DS5LIGHT_BUILD_PYTHON
 if ($ds5BuildPython) {
     if (!(Test-Path -LiteralPath $ds5BuildPython -PathType Leaf)) { throw 'Invalid build Python path' }
 } else {
-    $ds5BuildPython = '.venv-build/Scripts/python.exe'
+    $ds5BuildPython = '.venv/Scripts/python.exe'
     if (!(Test-Path -LiteralPath $ds5BuildPython)) {
-        # Keep the release toolchain isolated from the developer's installed Python.
-        $runtimeDirectory = Join-Path $PSScriptRoot '.build-python/cpython-3.12.16-20261110'
-        $runtimePython = Join-Path $runtimeDirectory 'python/python.exe'
-        New-Item -ItemType Directory -Force $runtimeDirectory | Out-Null
-        $runtimeArchive = Join-Path $runtimeDirectory 'runtime.tar.gz'
-        $runtimeUrl = 'https://github.com/astral-sh/python-build-standalone/releases/download/20261110/cpython-3.12.16%2B20261110-x86_64-pc-windows-msvc-install_only.tar.gz'
-        $runtimeHash = 'e23fe5b16926de1d81661b1a97352e89fb167549c55a6825796ccd0f32ec7f1b'
-        if (!(Test-Path -LiteralPath $runtimeArchive) -or (Get-FileHash -LiteralPath $runtimeArchive).Hash -ne $runtimeHash) {
-            curl.exe --fail --location --silent --show-error --output $runtimeArchive $runtimeUrl
-            if ($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath $runtimeArchive).Hash -ne $runtimeHash) { throw 'Build Python download or SHA-256 verification failed' }
-        }
-        tar.exe -xf $runtimeArchive -C $runtimeDirectory
-        if ($LASTEXITCODE -ne 0) { throw 'Build Python extraction failed' }
-        & $runtimePython -m venv .venv-build
+        py -3.12 -m venv .venv
         if ($LASTEXITCODE -ne 0) { throw 'Python venv setup failed' }
     }
-}
-$ds5Runtime = & $ds5BuildPython -I -B -c "import re, sys, ssl, sysconfig; assert sys.version_info[:2] == (3, 12) and sys.version_info[:3] >= (3, 12, 16) and sys.version_info.releaselevel == 'final' and sysconfig.get_platform() == 'win-amd64'; openssl = re.fullmatch(r'OpenSSL 3\.5\.(\d+) .*', ssl.OPENSSL_VERSION); assert openssl and int(openssl[1]) >= 9; print(sys.version.split()[0], ssl.OPENSSL_VERSION)"
-if ($LASTEXITCODE -ne 0) { throw 'Build requires Windows x64 CPython 3.12.16 or later in 3.12 and OpenSSL 3.5.9 or later in 3.5. Clear DS5LIGHT_BUILD_PYTHON to use the project runtime.' }
-Write-Output "Build runtime: $ds5Runtime"
-if (!$env:DS5LIGHT_BUILD_PYTHON) {
-    & $ds5BuildPython -m pip install --disable-pip-version-check -r requirements-build.txt
+    & $ds5BuildPython -m pip install -r requirements-build.txt
     if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
 }
 & $ds5BuildPython -m pip check
@@ -62,6 +44,8 @@ $ds5DataFiles = @(
     'assets/dualsense-controls.svg;assets',
     'assets/diagnostic-controller.svg;assets',
     'assets/edge;assets/edge',
+    'native/StudioExclusiveRender.cs;native',
+    'native/StudioExclusiveRender.ps1;native',
     'vendor/ds5audio_original.py;vendor',
     'vendor/LICENSE-Studio.txt;vendor',
     'vendor/tksvg0.16/pkgIndex.tcl;vendor/tksvg0.16',
@@ -78,16 +62,19 @@ Get-ChildItem -LiteralPath $ds5Internal -File | Where-Object { $_.Name -eq 'ucrt
     if ($_.DirectoryName -ne $ds5Internal) { throw 'Unexpected DLL location' }
     Remove-Item -LiteralPath $_.FullName
 }
-& $ds5BuildPython package_notices.py
+$ds5LicenseOutput = 'dist/DS5Light/LICENSES'
+New-Item -ItemType Directory -Force -Path $ds5LicenseOutput | Out-Null
+Copy-Item LICENSE.txt,LICENSE_EN.txt,DISTRIBUTION_POLICY_KO.md,SOURCES.md -Destination $ds5LicenseOutput
+& $ds5BuildPython package_notices.py --target "$ds5LicenseOutput/THIRD_PARTY" --inventory reports/binary_inventory.json
 if ($LASTEXITCODE -ne 0) { throw '라이선스 고지 준비 실패' }
-# Copy release documents and the three user-provided Studio profiles.
-Copy-Item MAPPING_GUIDE_KO.md,DPI_LAYOUT_KO.md,LICENSE.txt,LICENSE_EN.txt,README.txt,DISTRIBUTION_POLICY_KO.md,default_config.json,README_KO.txt,SOURCES.md,README.md,PRODUCT_KO.md,SETUP.md,SETUP_KO.md,RELEASE_NOTES.md -Destination dist/DS5Light
+# Ship one bilingual start guide and keep the three editable Studio profiles accessible.
+Copy-Item -LiteralPath 'PACKAGE_README.md' -Destination 'dist/DS5Light/README.md'
+Copy-Item -LiteralPath 'default_config.json' -Destination 'dist/DS5Light'
 $ds5PresetOutput = Join-Path $PSScriptRoot 'dist/DS5Light/Studio Presert'
 New-Item -ItemType Directory -Force -Path $ds5PresetOutput | Out-Null
 foreach ($ds5PresetName in @('DS_Native.json','Audio_Haptic_01.json','Audio_Haptic_02.json')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Studio Presert/$ds5PresetName") -Destination $ds5PresetOutput
 }
-Copy-Item -LiteralPath 'Studio Presert/README.txt','Studio Presert/README_KO.txt' -Destination $ds5PresetOutput
 $ds5RetiredRecommendations = Join-Path $PSScriptRoot 'dist/DS5Light/recommend-slots.json'
 if (Test-Path -LiteralPath $ds5RetiredRecommendations) { Remove-Item -LiteralPath $ds5RetiredRecommendations }
 $ds5RetiredSlots = Join-Path $PSScriptRoot 'dist/DS5Light/ds5dongle-slots.json'

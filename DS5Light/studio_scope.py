@@ -11,14 +11,15 @@ FAST_TRIGGER_FIELDS = frozenset(prefix + suffix for prefix in ('t2_', 't2_l2_')
                                for suffix in ('mode', 'pos', 'button'))
 TRIGGER_FIELDS |= FAST_TRIGGER_FIELDS
 CONSTRUCTION = frozenset(k for k in FIELDS if k.startswith(('at_','t2_','ce_')) and k not in TRIGGER_FIELDS)
-REMOVED = frozenset(k for k in FIELDS if k=='disable_usb_sn' or k.startswith(('effect_leak_','batt_','touch_mouse')))
+REMOVED = frozenset(k for k in FIELDS if k=='disable_usb_sn' or k.startswith(('effect_leak_','batt_')))
 EDITABLE = {k:f for k,f in FIELDS.items() if k not in CONSTRUCTION | REMOVED}
+TOUCH_MOUSE_FIELDS=frozenset(k for k in EDITABLE if k.startswith('touch_mouse'))
 LIGHTBAR_FIELDS=frozenset(('lightbar_fixed','lightbar_rgb'))
 RUMBLE_FIELDS=frozenset(('rumble_gain','rumble_release'))
 USB_MODE_FIELDS=frozenset(('usb_gamepad_mode',))
 RUMBLE_MODE_FIELDS=frozenset(('rumble_mode',))
 EDGE_SERIAL_FIELDS=frozenset(('disable_usb_sn',))
-OPTIONAL_FIELDS=LIGHTBAR_FIELDS | RUMBLE_FIELDS | USB_MODE_FIELDS | RUMBLE_MODE_FIELDS | EDGE_SERIAL_FIELDS
+OPTIONAL_FIELDS={'ah_highpass'} | LIGHTBAR_FIELDS | RUMBLE_FIELDS | USB_MODE_FIELDS | RUMBLE_MODE_FIELDS | EDGE_SERIAL_FIELDS
 SUPPORTED_CONFIGS=(19,20,21,22)
 def config_version(values):
     if USB_MODE_FIELDS.issubset(values):return 22

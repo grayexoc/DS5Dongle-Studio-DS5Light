@@ -50,9 +50,9 @@ class ProfileEvents:
         if not identity.hid_path or time.monotonic()<self.retry_at:return
         self.retry_at=float('inf');token=self.stop
         def listen():
-            import hid
             device=None
             try:
+                import hid
                 rows=[r for r in hid.enumerate() if same_device(r,identity)]
                 if len(rows)!=1:
                     self.results.put((token,'missing'))
