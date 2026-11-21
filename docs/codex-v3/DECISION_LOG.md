@@ -70,3 +70,7 @@
 
 - The user chose a low-band policy for DSP Only to reduce background audio leakage. The filtered PC output uses the two bands below the existing 600 Hz crossover. Rear control requires meaningful low-band energy. Full-band features remain available for evaluation and a future model can use high-band event evidence under a separate acceptance policy.
 - The user deferred actual-game feel and trained GRU validation and continued the remaining work. Enable the host-tested direction and attack mapping on the existing managed Studio route. Use direction only for captured stereo, retain centered control for other input layouts, and retain the current routing, lease, and PCM bounds.
+
+### 2026-11-21 — Publish current development source
+
+At user direction, package the current V3 development work as DS5Light v1.1.0 with Studio v49 for Pico 2 W, and publish a regular release. Skip inspection and test runs for this release. Keep prior pending validation recorded and describe the implemented DSP features without claiming physical or game validation. Document updated haptic presets and touchpad mouse controls in the bilingual release materials.

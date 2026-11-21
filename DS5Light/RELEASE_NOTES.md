@@ -1,3 +1,36 @@
+# v1.1.0
+
+DS5Light v1.1.0 for Windows x64 pairs with Studio v49 for Raspberry Pi Pico 2 W. Back up your Studio slots before updating and use the app and firmware from this release together.
+
+- **Audio haptics filtering.** Improved protection for quieter hits following louder effects and refined suppression of sustained background audio. The active filter focuses haptic output on the low bands.
+- **Studio haptic output.** Added low-band control output with attack shaping and stereo steering when the captured stereo signal provides sufficient directional evidence.
+- **Sub-bass filtering.** Added a second-order high-pass filter to reduce very low-frequency content when generating haptics from audio. Refined the crossover in the 24 dB/oct low-pass path.
+- **Output protection.** Added adaptive PC gain handling to reduce overload and gradually recover toward the configured strength.
+- **Settings synchronization and diagnostics.** Improved detection of external Studio setting changes and guards for preview, apply, and restore operations. Expanded channel and output-route diagnostics.
+- **Touchpad mouse settings.** Exposed touchpad mouse operation, movement speed, small-motion rejection, axis inversion, trackball inertia, and friction in Studio settings.
+- **Updated haptic presets.** Revised the supplied Mix and Replace presets for the updated audio-haptics path. Mix preserves the raw rear native-haptics signal alongside front audio haptics; Replace generates haptics from front audio. Existing saved slots retain their settings.
+- **UI improvements.** Removed the processing-mode selector and refined English labels, wrapping, and control placement.
+
+After updating, we recommend reviewing and applying an included audio-haptics preset as a starting point, with the app filter enabled and app strength at 100%, then adjusting it to your game and preference. Stop dongle audio before saving. Back up the destination slot first: **Save and use overwrites that slot with the current configuration plus the preset's audio-haptics settings.**
+
+## 한국어
+
+Windows x64용 DS5Light v1.1.0은 Raspberry Pi Pico 2 W용 Studio v49와 함께 사용합니다. 업데이트 전 Studio 슬롯을 백업하고, 이번 릴리즈의 앱과 펌웨어를 함께 사용하세요.
+
+- **오디오 햅틱 필터 개선.** 강한 효과 뒤에 이어지는 작은 타격의 보호 처리를 보완하고 지속적인 배경음 억제를 조정했습니다. 활성 필터는 저역을 중심으로 햅틱 출력을 생성합니다.
+- **Studio 햅틱 출력 개선.** 저역 기반 제어 출력과 타격 시작 구간의 파형 처리를 추가했습니다. 스테레오 캡처 신호에서 충분한 좌우 차이가 확인되면 방향을 반영합니다.
+- **극저음 차단 추가.** 오디오에서 햅틱을 생성할 때 과도한 극저음을 줄이는 2차 하이패스 필터를 추가했습니다. 24 dB/oct 저역통과 경로의 크로스오버 처리도 조정했습니다.
+- **출력 보호 개선.** 과도한 출력을 줄이고 신호에 여유가 생기면 설정한 세기로 서서히 복귀하는 PC 게인 적응 처리를 추가했습니다.
+- **설정 동기화·진단 보완.** 외부에서 변경된 Studio 설정의 감지를 개선하고 미리보기·적용·복구 과정의 상태 확인을 보강했습니다. 채널별 신호와 출력 경로의 진단 정보도 확장했습니다.
+- **터치패드 마우스 설정 표시.** Studio 설정에서 터치패드 마우스 사용, 이동 속도, 미세 움직임 차단, 방향 반전, 트랙볼 관성과 감속을 조절할 수 있도록 표시했습니다.
+- **햅틱 프리셋 변경.** 변경된 처리 경로에 맞춰 동봉 Mix·Replace 프리셋을 조정했습니다. Mix는 Front 오디오 햅틱과 Rear 네이티브 햅틱 원본을 함께 사용하고, Replace는 Front 오디오로 햅틱을 생성합니다. 기존 저장 슬롯에는 이전 설정이 유지됩니다.
+- **UI 개선.** 처리 모드 선택을 제거하고 영문 표현, 줄바꿈과 조작부 배치를 다듬었습니다.
+
+업데이트 후 동봉 오디오 햅틱 프리셋을 확인하고 적용해 보는 것을 권장합니다. 앱 필터를 켜고 앱 세기 100%를 시작점으로 삼아 게임과 취향에 맞게 조절하세요. 저장 전 동글 오디오 전송을 멈추고 대상 슬롯을 백업하세요. **저장 후 사용은 현재 구성에 프리셋의 오디오 햅틱 설정을 반영한 결과로 대상 슬롯을 덮어씁니다.**
+
+
+---
+
 # v1.0.19 — Studio reliability and restore recovery / Studio 안정성과 복원 복구
 
 DS5Light-win-x64-v1.0.19.zip · ds5-studio-light_v48.uf2 (Pico 2 W)

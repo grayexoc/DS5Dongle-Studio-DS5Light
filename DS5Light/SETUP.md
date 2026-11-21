@@ -5,9 +5,9 @@
 ## Package and firmware
 
 
-Use the complete `DS5Light-win-x64-v1.0.19.zip` package on Windows 10/11 x64. Extract it into a writable folder, keep `_internal` beside `DS5Light.exe`, and run the executable. Python is not required for the packaged app.
+Use the complete `DS5Light-win-x64-v1.1.0.zip` package on Windows 10/11 x64. Extract it into a writable folder, keep `_internal` beside `DS5Light.exe`, and run the executable. Python is not required for the packaged app.
 
-This app build is v1.0.19 and supports Studio firmware v48. Firmware is a separate release attachment: `ds5-studio-light_v48.uf2`. That attachment is for Raspberry Pi Pico 2 W; it is not for RP2040 Pico W or Waveshare boards. The app does not flash firmware automatically.
+This app build is v1.1.0 and supports Studio firmware v49. Firmware is a separate release attachment: `ds5-studio-light_v49.uf2`. That attachment is for Raspberry Pi Pico 2 W; it is not for RP2040 Pico W or Waveshare boards. The app does not flash firmware automatically.
 
 Back up current settings and slots before changing firmware or saving profiles. This fork's additional settings and diagnostics require corresponding firmware support. An existing compatible Studio installation may support basic audio forwarding without all of these additions. A flash_nuke reset is not part of the routine setup.
 
