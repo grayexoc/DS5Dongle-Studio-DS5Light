@@ -177,11 +177,14 @@ class StudioLiveOutput:
                     try:
                         while not self._stop.is_set():
                             pcm = bytearray()
-                            collect_until = time.monotonic() + .04
+                            # Wait for up to 20 ms of input. Drain queued input up to the
+                            # original batch limit to catch up after a slow renderer write.
+                            collect_until = time.monotonic() + .020
                             while len(pcm) < 1920 * 8 and not self._stop.is_set():
                                 try:
                                     data, controls, stereo_capture = self._queue.get(
-                                        timeout=max(0, collect_until - time.monotonic()))
+                                        timeout=0 if len(pcm) >= 960 * 8 else
+                                        max(0, collect_until - time.monotonic()))
                                 except Empty:
                                     break
                                 last_input = time.monotonic()
@@ -189,7 +192,7 @@ class StudioLiveOutput:
                                 for start in range(0, len(stereo), BLOCK):
                                     block = stereo[start:start + BLOCK]
                                     _, rear = dsp.process(block, controls, now=sample_index / RATE,
-                                                          allow_direction=stereo_capture)
+                                                          allow_direction=stereo_capture, rear_only=True)
                                     sample_index += len(block)
                                     encoded = encode_studio_pcm(block * LIVE_PCM_SCALE, rear * LIVE_PCM_SCALE).tobytes()
                                     if self.adaptive is not None:

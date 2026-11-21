@@ -856,7 +856,7 @@ void __not_in_flash_func(audio_loop)() {
     static float gsm_l = 0.0f, gsm_r = 0.0f;
     static float carrier_ph = 0.0f;
     static float rc_lo_ph = 0.0f, rc_hi_ph = 0.0f;
-    static float native_lp_l = 0.0f, native_lp_r = 0.0f;
+    static NativeMixLowpass native_lowpass;
     static float aa1_l = 0.0f, aa1_r = 0.0f, aa2_l = 0.0f, aa2_r = 0.0f;
     const bool reset_haptic_filters = speaker_filters_reset;
     if (speaker_filters_reset) {
@@ -864,7 +864,7 @@ void __not_in_flash_func(audio_loop)() {
         xo1_l = xo2_l = xo1_r = xo2_r = 0;
         envlo_l = envlo_r = envhi_l = envhi_r = env_l = env_r = 0;
         gsm_l = gsm_r = carrier_ph = rc_lo_ph = rc_hi_ph = 0;
-        native_lp_l = native_lp_r = aa1_l = aa1_r = aa2_l = aa2_r = 0;
+        aa1_l = aa1_r = aa2_l = aa2_r = 0;
         hp_l = hp_r = 0.0f;
         ohp1_l = ohp2_l = ohp1_r = ohp2_r = 0.0f;
         olp1_l = olp2_l = olp1_r = olp2_r = 0.0f;
@@ -874,11 +874,12 @@ void __not_in_flash_func(audio_loop)() {
         speaker_filters_reset = false;
     }
     const bool dsp_rear = cfg.ah_dsp_source == 1 && actual_ch == 4;
+    const bool pc_rear_control = auto_mode == 2 && dsp_rear && rear_policy == RearRouteLease::Rear::Control;
     // TPT state-variable high-pass, Butterworth damping, at 48 kHz.
     constexpr float hp_g[] = {0.0f, 0.000981748f, 0.001636248f};
     constexpr float hp_damping = 1.414213562f;
     const uint8_t hp_mode = auto_mode != 0 && cfg.ah_highpass <= 2 &&
-        !(dsp_rear && rear_policy == RearRouteLease::Rear::Control) ? cfg.ah_highpass : 0;
+        !pc_rear_control ? cfg.ah_highpass : 0;
     static uint8_t last_hp_mode = 0;
     static bool last_hp_rear = false;
     static float hp_band_l = 0.0f, hp_band_r = 0.0f;
@@ -889,9 +890,14 @@ void __not_in_flash_func(audio_loop)() {
     last_hp_mode = hp_mode;
     last_hp_rear = dsp_rear;
     const float native_lvl = cfg.mix_native_level / 100.0f;
+    const bool filter_native = auto_mode == 1 && native_lvl > 0.0f && cfg.mix_native_filter;
+    if (!filter_native || reset_haptic_filters) native_lowpass.reset();
     const float rumble_str = cfg.rumble_haptic_strength / 100.0f;
     const uint8_t gate_cfg = cfg.auto_haptics_gate;
     const float GATE_THRESH = (gate_cfg > 100 ? 0 : gate_cfg) * 0.001f;
+    // PC Rear control already suppresses background. Keep the configured threshold
+    // and ramp the gain to unity over a smaller range for that input.
+    const float gate_knee = pc_rear_control ? 0.02f : 0.04f;
     float ah_out_pk = 0.0f;   // peak derived-haptic magnitude this block (diag meter)
     // Fold the raw-input diagnostics into the existing per-sample DSP pass so
     // reading channel peaks does not require a second full scan of the packet.
@@ -1070,14 +1076,13 @@ void __not_in_flash_func(audio_loop)() {
             // bass envelope hovers near the threshold, chopping the output (jagged
             // feel). Compute a target gate gain, then slew toward it so the gate
             // opens/closes smoothly instead of switching.
-            const float GATE_KNEE   = 0.04f; // wider knee = gentler transition
              // smoothed gate gain memory
             // Gate gain alone reaches 90% of a step in ~0.22 ms open / ~2.37 ms close at 48 kHz.
             constexpr float GATE_OPEN = 0.20f, GATE_CLOSE = 0.02f;
             float genv_l = use_env_l, genv_r = use_env_r;
             if (GATE_THRESH > 0.0f) {
-                float tgt_l = (use_env_l - GATE_THRESH) / GATE_KNEE;
-                float tgt_r = (use_env_r - GATE_THRESH) / GATE_KNEE;
+                float tgt_l = (use_env_l - GATE_THRESH) / gate_knee;
+                float tgt_r = (use_env_r - GATE_THRESH) / gate_knee;
                 tgt_l = tgt_l < 0.0f ? 0.0f : (tgt_l > 1.0f ? 1.0f : tgt_l);
                 tgt_r = tgt_r < 0.0f ? 0.0f : (tgt_r > 1.0f ? 1.0f : tgt_r);
                 gsm_l += ((tgt_l > gsm_l) ? GATE_OPEN : GATE_CLOSE) * (tgt_l - gsm_l);
@@ -1126,10 +1131,7 @@ void __not_in_flash_func(audio_loop)() {
             } else {
                 // Native fidelity: apply the profile level, without the derived-audio filter.
 
-                native_lp_l += lp_a * (h_l - native_lp_l);
-                native_lp_r += lp_a * (h_r - native_lp_r);
-                const float nat_l = cfg.mix_native_filter ? native_lp_l : h_l;
-                const float nat_r = cfg.mix_native_filter ? native_lp_r : h_r;
+                if (filter_native) native_lowpass.process(h_l, h_r, lp_a);
                 // Converted rumble: DS4Windows sends motor intensities (0-255) for
                 // Xbox360/DS4 emulation. Turn them into an actuator vibration using
                 // the same 90 Hz carrier and blend in, scaled by a configurable
@@ -1137,8 +1139,8 @@ void __not_in_flash_func(audio_loop)() {
                 const float rl = (rumble_l / 255.0f) * rc_lo * rumble_str;
                 const float rr = (rumble_r / 255.0f) * rc_hi * rumble_str;
                 // Keep native amplitude; additional signals use remaining headroom.
-                preserved_native_l = clamp(nat_l * native_lvl, -1.0f, 1.0f);
-                preserved_native_r = clamp(nat_r * native_lvl, -1.0f, 1.0f);
+                preserved_native_l = clamp(h_l * native_lvl, -1.0f, 1.0f);
+                preserved_native_r = clamp(h_r * native_lvl, -1.0f, 1.0f);
                 h_l = al + rl;
                 h_r = ar + rr;
             }
@@ -1207,10 +1209,13 @@ void __not_in_flash_func(audio_loop)() {
 
     // 4. 转换为int8并缓冲，满64字节即组包发送
     for (int i = 0; i < out_frames; i++) {
-        int val_l = static_cast<int>(out_buf[i * 2] * 127.0f * (auto_mode == 0 ? haptics_gain : 1.0f));
-        int val_r = static_cast<int>(out_buf[i * 2 + 1] * 127.0f * (auto_mode == 0 ? haptics_gain : 1.0f));
-        const int sample_l = clamp(val_l, -128, 127);
-        const int sample_r = clamp(val_r, -128, 127);
+        const float gain = auto_mode == 0 ? haptics_gain : 1.0f;
+        const float level_l = out_buf[i * 2] * 127.0f * gain;
+        const float level_r = out_buf[i * 2 + 1] * 127.0f * gain;
+        const int sample_l = auto_mode == 0 ? haptic_math::quantize_native(level_l)
+                                           : clamp(static_cast<int>(level_l), -128, 127);
+        const int sample_r = auto_mode == 0 ? haptic_math::quantize_native(level_r)
+                                           : clamp(static_cast<int>(level_r), -128, 127);
         haptic_buf[haptic_buf_pos++] = static_cast<int8_t>(sample_l);
         haptic_buf[haptic_buf_pos++] = static_cast<int8_t>(sample_r);
         packet_peak_l = std::max(packet_peak_l, static_cast<uint8_t>(std::abs(sample_l)));
@@ -1238,36 +1243,35 @@ void __not_in_flash_func(audio_loop)() {
         pkt[8] = buf_len; // 这 4 个字节的作用未知，调整没有效果
         pkt[9] = buf_len; // audio buffer length 只有调整这个字节生效。
         pkt[10] = packetCounter++;
-        // SetStateData
-        pkt[11] = 0x10 | 0 << 6 | 1 << 7;
-        pkt[12] = 63;
-        if (auto_mode != 0) state_set(pkt + 13,63);
-        // Haptics Audio Data
-        pkt[76] = 0x12 | 0 << 6 | 1 << 7;
-        pkt[77] = SAMPLE_SIZE;
-        memcpy(pkt + 78, haptic_buf, SAMPLE_SIZE);
+        // Native audio carries no cached controller state; host/synth use 0x31.
+        const unsigned state_size = auto_mode == 0 ? 0 : 65;
+        if (state_size) {
+            pkt[11] = 0x90;
+            pkt[12] = 63;
+            state_set(pkt + 13, 63);
+        }
+        const unsigned haptic_tag = 11 + state_size;
+        pkt[haptic_tag] = 0x92;
+        pkt[haptic_tag + 1] = SAMPLE_SIZE;
+        memcpy(pkt + haptic_tag + 2, haptic_buf, SAMPLE_SIZE);
 #if !DISABLE_SPEAKER_PROC
         // Speaker Audio Data -- omitted entirely when the user disables the
         // speaker/headset (config.disable_speaker), so the controller's speaker
         // amp isn't driven (mirrors the Pico W no-speaker report).
         if (speaker_enabled) {
-            pkt[speaker_tag_offset] = plug_headset ? 0x96 : 0x93;
-            pkt[speaker_tag_offset + 1] = speaker_payload_size;
-            auto *payload = pkt + speaker_tag_offset + 2;
+            const unsigned speaker_tag = haptic_tag + 2 + SAMPLE_SIZE;
+            pkt[speaker_tag] = plug_headset ? 0x96 : 0x93;
+            pkt[speaker_tag + 1] = speaker_payload_size;
+            auto *payload = pkt + speaker_tag + 2;
             if (!take_speaker_frame(payload)) {
                 const unsigned route = plug_headset ? 1 : 0;
                 if (opus_silence_mask.load(std::memory_order_acquire) & (1u << route))
                     memcpy(payload, opus_silence_buf[route], speaker_payload_size);
-                else { pkt[speaker_tag_offset] = 0; pkt[speaker_tag_offset + 1] = 0; }
+                else { pkt[speaker_tag] = 0; pkt[speaker_tag + 1] = 0; }
             }
         }
 #endif
 
-        if (auto_mode == 0) {
-            // Native audio carries no cached controller state; host/synth use 0x31.
-            memmove(pkt + 11, pkt + 76, sizeof(pkt) - 76 - 4);
-            memset(pkt + sizeof(pkt) - 65 - 4, 0, 65);
-        }
         bt_write(pkt, sizeof(pkt));
         // Publish the two peaks together so HID cannot observe different packets.
         haptic_packet_peaks.store(0x10000u | (uint32_t(packet_peak_r) << 8) | packet_peak_l,

@@ -1,6 +1,6 @@
-# DS5Light v1.1.0
+# DS5Light v1.1.1
 
-Use this Windows x64 package with Studio v49 for Raspberry Pi Pico 2 W.
+Use this Windows x64 package with Studio v50 for Raspberry Pi Pico 2 W.
 
 Extract the entire ZIP to a writable folder and run DS5Light.exe, keeping _internal beside it. No separate Python installation is required.
 
@@ -12,7 +12,7 @@ Studio Presert contains DS_Native.json, Audio_Haptic_01.json and Audio_Haptic_02
 
 ## 한국어
 
-Windows x64용 DS5Light v1.1.0은 Raspberry Pi Pico 2 W용 Studio v49와 함께 사용합니다.
+Windows x64용 DS5Light v1.1.1은 Raspberry Pi Pico 2 W용 Studio v50와 함께 사용합니다.
 
 ZIP 전체를 쓰기 가능한 폴더에 풀고 DS5Light.exe를 실행하세요. _internal 폴더를 함께 유지해야 하며 Python을 별도로 설치할 필요는 없습니다.
 

@@ -4,6 +4,10 @@
 #include <cmath>
 
 namespace haptic_math {
+inline int quantize_native(float scaled) {
+    return std::clamp(static_cast<int>(scaled + (scaled < 0.0f ? -0.5f : 0.5f)), -128, 127);
+}
+
 constexpr unsigned intervals = 1024;
 constexpr double pi = 3.14159265358979323846;
 constexpr float phase_end = 2.0f * static_cast<float>(pi);

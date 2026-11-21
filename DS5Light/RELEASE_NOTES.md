@@ -1,3 +1,34 @@
+# v1.1.1
+
+DS5Light v1.1.1 for Windows x64 pairs with Studio v50 for Raspberry Pi Pico 2 W. Use the app and firmware from this release together.
+
+- **Rear control and sustained effects.** Preserved low-band continuous haptic output alongside short impacts. Persistent left/right energy differences can steer sustained rear control, while protected impacts retain priority.
+- **Filter switching.** Select the Studio rear-control route only while the PC filter is enabled. A filter change that requires a different output route stops capture and asks for a restart.
+- **Audio buffering.** Shortened live input collection and limited queued playback in the exclusive renderer to reduce unnecessary buffering.
+- **Native haptics.** Adjusted native sample rounding and restarted the Mix low-pass from the current signal after bypass or stream reset.
+- **Rear-control settings.** Adjusted the gate transition for PC-generated rear control. The app disables the firmware high-pass control while that route bypasses it and explains why.
+- **UI responsiveness.** Reduced repeated redraws during slider adjustment and background status updates, and refined tab spacing and filter guidance.
+- **Input processing.** Removed unnecessary square-root calculations from Flick Stick threshold checks and bypassed the power function for a linear stick-to-mouse curve.
+
+The updated Mix and Replace presets remain available in Studio settings. If updating from an older setup, review a supplied preset with the app filter enabled and strength at 100% as a starting point, then adjust it to your game and preference. Stop dongle audio and back up the destination slot before **Save and use**, which overwrites that slot.
+
+## 한국어
+
+Windows x64용 DS5Light v1.1.1은 Raspberry Pi Pico 2 W용 Studio v50과 함께 사용합니다. 이번 릴리즈의 앱과 펌웨어를 함께 사용하세요.
+
+- **Rear 제어·지속 진동 보완.** 짧은 타격과 함께 저역의 지속적인 햅틱 출력을 유지하도록 조정했습니다. 좌우 에너지 차이가 지속되면 연속 Rear 제어에 방향을 반영하며, 보호된 타격 처리를 우선합니다.
+- **필터 전환 처리.** PC 필터가 켜져 있을 때 Studio Rear 제어 경로를 선택합니다. 필터 변경으로 출력 경로가 달라지면 캡처를 정지하고 다시 시작하도록 안내합니다.
+- **오디오 버퍼링 조정.** 실시간 입력을 모으는 대기 구간을 줄이고 전용 출력의 대기 오디오 양을 제한했습니다.
+- **네이티브 햅틱 처리.** 네이티브 샘플의 반올림을 조정하고, 우회·스트림 초기화 후 Mix 저역통과 필터가 현재 신호에서 시작하도록 수정했습니다.
+- **Rear 제어 설정 보완.** PC Rear 제어의 게이트 전환을 조정했습니다. 해당 경로에서 우회되는 펌웨어 극저음 차단 옵션은 앱에서 비활성화하고 이유를 표시합니다.
+- **UI 응답성 개선.** 슬라이더 조절과 백그라운드 상태 갱신 중 반복 그리기를 줄이고 탭 간격과 필터 안내를 다듬었습니다.
+- **입력 연산 정리.** Flick Stick 임계값 판정의 불필요한 제곱근 계산을 제거하고, 스틱 마우스가 선형 곡선일 때 거듭제곱 계산을 생략합니다.
+
+변경된 Mix·Replace 프리셋은 Studio 설정에서 사용할 수 있습니다. 이전 설정에서 업데이트한다면 앱 필터 켬·세기 100%를 시작점으로 동봉 프리셋을 확인하고 적용한 뒤 게임과 취향에 맞게 조절하는 것을 권장합니다. 저장 전 동글 오디오를 멈추고 대상 슬롯을 백업하세요. **저장 후 사용**은 대상 슬롯을 덮어씁니다.
+
+
+---
+
 # v1.1.0
 
 DS5Light v1.1.0 for Windows x64 pairs with Studio v49 for Raspberry Pi Pico 2 W. Back up your Studio slots before updating and use the app and firmware from this release together.

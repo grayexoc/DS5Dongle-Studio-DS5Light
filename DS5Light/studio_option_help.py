@@ -15,6 +15,10 @@ def inactive_reason(editor,key):
     if editor.enabled_for(key):
         return _ui_tr('조회·저장 작업이 끝나면 조절할 수 있습니다.') if editor.busy else ''
     mode=values.get('auto_haptics_enable')
+    if key == 'ah_highpass' and getattr(getattr(editor.app, 'engine', None), 'studio_live', False):
+        from localization import LANGUAGE
+        return ('Rear 제어 신호를 받는 동안 펌웨어 극저음 차단은 우회됩니다.'
+                if LANGUAGE == 'ko' else 'Firmware high-pass is bypassed while Studio receives Rear control.')
     if key=='haptics_gain':return _ui_tr('기존 증폭값은 유지합니다. Mix·Replace로 전환할 때 기본값 1을 예약합니다. 별도 조절은 오디오햅틱 끔에서 가능합니다.')
     if key=='rumble_mode':
         if key in getattr(editor,'unsupported_fields',()):

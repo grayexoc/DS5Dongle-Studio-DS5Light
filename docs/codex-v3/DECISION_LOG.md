@@ -74,3 +74,7 @@
 ### 2026-11-21 — Publish current development source
 
 At user direction, package the current V3 development work as DS5Light v1.1.0 with Studio v49 for Pico 2 W, and publish a regular release. Skip inspection and test runs for this release. Keep prior pending validation recorded and describe the implemented DSP features without claiming physical or game validation. Document updated haptic presets and touchpad mouse controls in the bilingual release materials.
+
+### 2026-11-22 — v1.1.1 / Studio v50 release
+
+Publish the current app and firmware together as DS5Light v1.1.1 / Studio v50. Keep the single custom/studio-ds5light branch. Describe the implemented changes without claiming measured latency or physical haptics results. No tests or hardware operations are added to this release action.

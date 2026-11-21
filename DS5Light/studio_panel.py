@@ -502,7 +502,7 @@ class StudioPanel(StartupDiscovery):
         return profile.get('auto_haptics_enable') == 2 and profile.get('ah_dsp_source') == 1
 
     def legacy_output_front_only(self):
-        return self.native_mix_front_only() or self.rear_control_required()
+        return self.native_mix_front_only()
 
     def native_mix_conflict(self):
         return self.native_mix_front_only() and self.observed_profile.get('ah_dsp_source')==1

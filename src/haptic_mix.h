@@ -1,5 +1,27 @@
 #pragma once
 #include <cmath>
+
+struct NativeMixLowpass {
+    float left = 0.0f, right = 0.0f;
+    bool primed = false;
+
+    void reset() { primed = false; }
+
+    void process(float &input_left, float &input_right, float coefficient) {
+        if (!primed) {
+            // Start from the current raw sample after a bypass or stream reset.
+            left = input_left;
+            right = input_right;
+            primed = true;
+            return;
+        }
+        left += coefficient * (input_left - left);
+        right += coefficient * (input_right - right);
+        input_left = left;
+        input_right = right;
+    }
+};
+
 inline float haptic_mix(float native, float added) {
     const float total = native + added; // native is already clamped to [-1, 1].
     if (std::fabs(total) <= 0.9f || added == 0.0f) return total;

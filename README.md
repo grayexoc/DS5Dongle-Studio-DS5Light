@@ -25,14 +25,14 @@ Thank you to the original authors and contributors. This repository contains mod
 
 ## Download and quick start
 
-**Release v1.1.0 · DS5Light v1.1.0 · Studio firmware v49**
+**Release v1.1.1 · DS5Light v1.1.1 · Studio firmware v50**
 
-Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.1.0):
+Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.1.1):
 
 | File | Purpose |
 | --- | --- |
-| `ds5-studio-light_v49.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
-| `DS5Light-win-x64-v1.1.0.zip` | Complete Windows x64 app package. Python is not required. |
+| `ds5-studio-light_v50.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
+| `DS5Light-win-x64-v1.1.1.zip` | Complete Windows x64 app package. Python is not required. |
 
 1. Back up current dongle settings and slots. To install this firmware, enter BOOTSEL mode on the Pico 2 W and copy the UF2 to its USB drive. The app does not flash firmware automatically.
 2. Extract the entire app ZIP into a writable folder. Run `DS5Light.exe`, keeping `_internal` beside it. GitHub's automatic **Source code** archives are not the executable package.
@@ -163,14 +163,14 @@ DS5Light는 DS5Dongle-Studio 펌웨어의 오디오 햅틱 기능을 보완하�
 
 ## 다운로드와 시작
 
-**릴리즈 v1.1.0 · DS5Light v1.1.0 · Studio 펌웨어 v49**
+**릴리즈 v1.1.1 · DS5Light v1.1.1 · Studio 펌웨어 v50**
 
-[Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.1.0)에서 첨부 파일을 받으세요.
+[Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.1.1)에서 첨부 파일을 받으세요.
 
 | 파일 | 용도 |
 | --- | --- |
-| `ds5-studio-light_v49.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
-| `DS5Light-win-x64-v1.1.0.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
+| `ds5-studio-light_v50.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
+| `DS5Light-win-x64-v1.1.1.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
 
 1. 현재 동글 설정과 슬롯을 백업합니다. 펌웨어 설치 시 Pico 2 W를 BOOTSEL 모드로 연결하고 USB 드라이브에 UF2를 복사하세요. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
 2. 앱 ZIP 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행합니다. `_internal` 폴더를 함께 유지하세요. GitHub의 자동 **Source code** 압축 파일은 실행 배포본이 아닙니다.

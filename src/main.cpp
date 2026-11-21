@@ -670,8 +670,9 @@ static inline float flick_tiered(float in) {
 // Returns the yaw change in radians for this tick.
 static float flick_stick_step(float sx, float sy, float dt) {
     float result = 0.0f;
-    const float len     = sqrtf(sx * sx + sy * sy);
-    const float lastLen = sqrtf(g_fs_last_x * g_fs_last_x + g_fs_last_y * g_fs_last_y);
+    constexpr float threshold_squared = FLICK_THRESHOLD * FLICK_THRESHOLD;
+    const bool active = sx * sx + sy * sy >= threshold_squared;
+    const bool was_active = g_fs_last_x * g_fs_last_x + g_fs_last_y * g_fs_last_y >= threshold_squared;
 
     // Scale a full sideways push to the configured angle. Unscaled, Flick Stick
     // is absolute: push right and you turn 90 degrees, which is the whole reason
@@ -681,8 +682,8 @@ static float flick_stick_step(float sx, float sy, float dt) {
     const Config_body &fcfg = get_config();
     const float fscale = (float) (fcfg.flick_angle ? fcfg.flick_angle : 90) / 90.0f;
 
-    if (len >= FLICK_THRESHOLD) {
-        if (lastLen < FLICK_THRESHOLD) {
+    if (active) {
+        if (!was_active) {
             g_fs_progress = 0.0f;                    // flick start
             g_fs_size = atan2f(-sx, sy) * fscale;    // angle from forward, scaled
         } else {
@@ -690,7 +691,7 @@ static float flick_stick_step(float sx, float sy, float dt) {
             const float la = atan2f(-g_fs_last_x, g_fs_last_y);
             result += flick_tiered(wrap_pi(a - la)) * fscale;  // turn
         }
-    } else if (lastLen >= FLICK_THRESHOLD) {
+    } else if (was_active) {
         flick_zero_smoothing();                      // released: drop the tail
     }
 
@@ -898,7 +899,7 @@ void gyro_mouse_task() {
                 float t = (mag - dz) / (1.0f - dz);
                 if (t > 1.0f) t = 1.0f;
                 const float curve = (float) cfg.stick_mouse_curve / 10.0f;
-                const float scaled = powf(t, curve);
+                const float scaled = cfg.stick_mouse_curve == 10 ? t : powf(t, curve);
                 const float sens_x = (cfg.stick_mouse_sens ? (float) cfg.stick_mouse_sens
                                                            : STICK_MOUSE_SENS_DEFAULT);
                 // 0 means "follow X", so one knob still works. The curve and the

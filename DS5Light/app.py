@@ -438,7 +438,11 @@ class HapticSlider(tk.Canvas):
         if self.step is not None:
             index=int((value-self.minimum)/self.step+.5)
             value=self.minimum+index*self.step
-        self.variable.set(round(value,1)); self.command()
+        value = round(value, 1)
+        if value == self.variable.get():
+            return
+        self.variable.set(value)
+        self.command()
 
     def _click(self,event):
 
@@ -842,7 +846,8 @@ class App:
 
         self.game_page=tk.Frame(self.pages,bg=BG); self.device_page=tk.Frame(self.pages,bg=BG)
 
-        self.game_page.grid(row=0,column=0,sticky='nsew'); self.device_page.grid(row=0,column=0,sticky='nsew')
+        self.game_page.grid(row=0,column=0,sticky='nsew')
+        self.device_page.grid(row=0,column=0,sticky='nsew')
 
         self.game_page.configure(height=620); self.game_page.grid_propagate(False)
 
@@ -852,7 +857,9 @@ class App:
 
         self.studio_settings=StudioSettings(self,self.studio_page)
 
-        self.tabs=TabStrip(tab_area,[_ui_tr('오디오햅틱'),_ui_tr('설정·진단'),_ui_tr('Studio설정')],self.select_tab); self.tabs.grid(row=0,column=0,sticky='ew',pady=(0,16))
+        self.tabs=TabStrip(tab_area,[_ui_tr('오디오햅틱'),_ui_tr('설정·진단'),_ui_tr('Studio설정')],self.select_tab)
+        tab_offset=px(tab_area,10)
+        self.tabs.grid(row=0,column=0,sticky='ew',pady=(tab_offset,max(0,16-tab_offset)))
 
         self.pages.rowconfigure(0,weight=1); self.pages.columnconfigure(0,weight=1)
 
@@ -976,7 +983,7 @@ class App:
         self.filter_help_icon(gain_heading,_ui_tr('앱이 오디오를 전송할 때만 적용되며 프로필은 바꾸지 않습니다. 반응을 먼저 맞춘 뒤 세기를 조절하세요. 기본 1x. Studio 오디오햅틱 세기와 함께 높이면 포화될 수 있습니다.')).pack(side='left',padx=(5,0))
         self.gain_value=ttk.Label(gain_heading,text='1x',foreground=ACCENT)
         self.gain_value.pack(side='right')
-        self.gain_slider=HapticSlider(self.gain_frame,self.gain,self.update_controls,
+        self.gain_slider=HapticSlider(self.gain_frame,self.gain,lambda: self.update_controls(slider=True),
                                      minimum=100,maximum=round(HAPTIC_GAIN_MAX*100),step=100,
                                      reference=100,background=CARD,width=200)
         self.gain_slider.pack(fill='x',expand=True,pady=(SPACE,0))
@@ -1002,7 +1009,7 @@ class App:
 
         self.filter_widgets=[]
 
-        filter_rows=ttk.Frame(right);filter_rows.pack(fill='both',expand=True)
+        filter_rows=ttk.Frame(right);filter_rows.pack(fill='both',expand=True,pady=(px(right,16),0))
         filter_rows.columnconfigure(0,weight=1)
         for index,(label,var,key) in enumerate([(_ui_tr('배경 억제량'),self.strength,'strength'),(_ui_tr('충격 보존'),self.impact,'impact')]):
 
@@ -1021,12 +1028,15 @@ class App:
             value=ttk.Label(row);value.pack(side='right')
 
             ticks=((30,_ui_tr('약하게')),(55,_ui_tr('표준')),(80,_ui_tr('강하게'))) if key=='strength' else ()
-            slider=HapticSlider(group,var,self.update_controls,ticks=ticks);slider.pack(fill='x')
+            slider=HapticSlider(group,var,lambda: self.update_controls(slider=True),ticks=ticks);slider.pack(fill='x')
 
             if key=='strength':self.scale=slider;self.value_label=value
 
             else:self.impact_slider=slider;self.impact_label=value
 
+            HoverHint(slider, lambda help_text=description: help_text if self.filter_on.get()
+                      else ('오디오햅틱 필터를 켜면 조절할 수 있습니다.' if LANGUAGE == 'ko'
+                            else 'Turn on the Audio Haptics Filter to adjust this option.'))
             self.filter_widgets.append(slider)
 
         self.device_page.columnconfigure(0,weight=1);self.device_page.rowconfigure(3,weight=1)
@@ -1475,9 +1485,16 @@ class App:
             controls = replace(controls, rear=True, lfe=True, center=True, limiter='hard')
         return controls
 
-    def update_controls(self):
+    def update_controls(self, *, slider=False):
         controls=self._read_controls()
         load_error=None
+        if (self.engine and not self._stopping and self.studio.rear_control_required()
+                and self.engine.studio_live == controls.bypass):
+            self.controls = controls
+            self.stop(message=('필터 변경으로 Studio 출력 경로가 바뀌었습니다. 다시 시작하세요.'
+                               if LANGUAGE == 'ko' else 'The filter changed the Studio output route. Start capture again.'),
+                      reason='invalid_route')
+            return
         if self.engine and self.engine.controls!=controls:
             previous=self.engine.controls
             if controls.mode=='normal' and not controls.bypass and (previous.bypass or previous.mode!='normal'):
@@ -1490,12 +1507,29 @@ class App:
             self.engine.controls=controls
         if controls!=self.controls:self.controls=controls
 
-        self.render()
+        if slider and load_error is None:
+            self._render_slider_values()
+        else:
+            self.render()
         if load_error is not None:
             messagebox.showerror(_ui_tr('실행 실패'),str(load_error),parent=self.root)
 
+    def _render_slider_values(self):
+        foreground = FG if self.filter_on.get() else DISABLED
+        self.value_label.configure(text=f'{self.strength.get():.0f}%', foreground=foreground)
+        self.impact_label.configure(text=f'{self.impact.get():.0f}%', foreground=foreground)
+        self.gain_value.configure(text=f'{self.gain.get()/100:g}x')
+
+    def _engine_display_state(self):
+        engine = self.engine
+        return (engine, getattr(engine, 'capture_channels', None),
+                getattr(engine, 'capture_format', None), getattr(engine, 'output_name', None),
+                getattr(engine, 'capture_endpoint_name', None))
+
     def render(self):
 
+        self._last_engine_display = self._engine_display_state()
+        self._render_slider_values()
         ch=self.capture_channels(); active=bool(self.engine); filtering=self.filter_on.get()
 
         native=self.studio.haptics_blocked
@@ -1510,11 +1544,10 @@ class App:
 
             self.device_channel_cache[self.source.get()]=ch
 
-        mix_supported=getattr(self.engine,'mix_supported',True)
         opened=getattr(self.engine,'capture_format',None)
         output=getattr(self.engine,'output_name',None)
         target=self.active_process_name if process_scope else getattr(self.engine,'capture_endpoint_name',None)
-        state=(ch,active,self._stopping,filtering,native,self.scope.get(),self.channel.get(),self.source.get(),self.destination.get(),self.mode.get(),round(self.strength.get(),3),round(self.gain.get(),3),round(self.impact.get(),3),self.bg.get(),self.transient.get(),self.rear.get(),self.lfe.get(),self.center.get(),self.limiter.get(),mix_supported,opened,output,target)
+        state=(ch,active,self._stopping,filtering,native,self.scope.get(),self.channel.get(),self.source.get(),self.destination.get(),opened,output,target,self._process_refresh_running,self.studio.busy,self.studio.operation,self.studio_settings.busy,self._close_requested,power_blocked(self))
 
         if state==self.last_render: return
 
@@ -1527,12 +1560,6 @@ class App:
         self.filter_badge.configure(text=_ui_tr('켜짐') if filtering else _ui_tr('꺼짐'),foreground=ACCENT if filtering else MUTED)
 
         for slider in self.filter_widgets: slider.set_enabled(filtering)
-
-        self.value_label.configure(text=f'{self.strength.get():.0f}%',foreground=FG if filtering else DISABLED)
-
-        self.impact_label.configure(text=f'{self.impact.get():.0f}%',foreground=FG if filtering else DISABLED)
-
-        self.gain_value.configure(text=f'{self.gain.get()/100:g}x')
 
         self._update_binding_display()
 
@@ -2409,7 +2436,7 @@ class App:
             self.status.set(tr('Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널로 변경하세요.'))
             self.last_render=None;self.render();return
 
-        exclusive=self.studio.rear_control_required()
+        exclusive=self.studio.rear_control_required() and self.filter_on.get()
         pinned_resume=(self.run_intent.profile_paused and self.run_intent.can_resume(self._run_route())
 
                        and self.studio.binding.snapshot().endpoint_id is not None)
@@ -2714,10 +2741,10 @@ class App:
         if self.engine and self.studio.native_mix_conflict():
             self.stop(message=tr('Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널로 변경하세요.'),reason='invalid_route')
         elif (self.engine and not self.studio.haptics_blocked
-              and getattr(self.engine,'studio_live',False)!=self.studio.rear_control_required()):
+              and getattr(self.engine,'studio_live',False)!=(self.studio.rear_control_required() and self.filter_on.get())):
             self.stop(message=_ui_tr('Studio 출력 경로가 변경되었습니다. 다시 시작하세요.'),reason='invalid_route')
 
-        self.studio.enforce_haptics_policy();self.studio.render();self.last_render=None;self.render()
+        self.studio.enforce_haptics_policy();self.last_render=None;self.render()
 
 
 
@@ -2802,7 +2829,7 @@ class App:
 
             self.battery.generation+=1;self.battery.state='disconnected';self.battery.value=None
 
-            self.run_intent.stop('controller_disconnected');self.studio.render();self.last_render=None;self.render()
+            self.run_intent.stop('controller_disconnected');self.last_render=None;self.render()
 
         # Recover controls if initialization or a running backend exits unexpectedly.
 
@@ -2892,7 +2919,8 @@ class App:
 
             if self.status.get()!=engine_status:self.status.set(engine_status)
 
-            self.render()
+            if self._engine_display_state() != self._last_engine_display:
+                self.render()
 
         self._update_diagnostics()
 

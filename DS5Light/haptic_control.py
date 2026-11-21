@@ -44,14 +44,14 @@ class HapticControlDsp:
         self.direction = np.empty(2, dtype=np.float32) if stereo else None
         self.bands = np.empty(HAPTIC_BAND_COUNT, dtype=np.float32) if shape else None
 
-    def process(self, stereo, controls, *, now, band_features=None, allow_direction=True):
+    def process(self, stereo, controls, *, now, band_features=None, allow_direction=True, rear_only=False):
         direction = self.direction if allow_direction else None
         filtered = self.processor.process(stereo, controls, now=now,
                                           band_features=band_features, haptic_evidence=self.evidence,
-                                          haptic_direction=direction, haptic_bands=self.bands)
+                                          haptic_direction=direction, haptic_bands=self.bands, rear_only=rear_only)
         if not len(filtered):
             return filtered, np.empty((0, 2))
-        balance = 0.0
+        balance = self.processor.sustained_balance if rear_only and direction is not None else 0.0
         if direction is not None:
             left, right = direction
             total = left + right

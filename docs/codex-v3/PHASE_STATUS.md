@@ -432,3 +432,7 @@ Local handoff artifacts are `work/studio-phase6-intensity/dist/DS5Light/DS5Light
 ### v1.1.0 / Studio v49 publication decision — 2026-11-21
 
 The user authorized building and publishing the current development source with inspection and test execution excluded for this release. App and firmware versions advance to 1.1.0 and 49. The README and English/Korean release notes describe touchpad mouse settings and the changed Mix/Replace presets, including review/apply recommendations and destination-slot overwrite behavior. Previous validation records retain their original scope. No new runtime, hardware or regression result is claimed by this release action.
+
+### 2026-11-22 — v1.1.1 / Studio v50 release
+
+The user requested a release from the current source. Publish DS5Light v1.1.1 and Studio v50 for Pico 2 W, including the current rear-control, buffering, native-mix, UI and input-processing changes. Inspection and test execution remain excluded for this release at user direction. Prior evidence retains its original scope.

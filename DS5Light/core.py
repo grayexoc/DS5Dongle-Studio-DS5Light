@@ -87,6 +87,8 @@ class Processor:
         self._coefficient_controls = None
         self._slow_times = np.array([.045,.025,.020,.015])
         self._direction_energy = None
+        self._sustained_direction_time = 0.0
+        self.sustained_balance = 0.0
         self._capacity = BLOCK
         self._bands = np.empty((4, self._capacity, 2), dtype=np.float32)
         self._ramp = np.empty((4, self._capacity), dtype=np.float64)
@@ -128,7 +130,7 @@ class Processor:
         return ramp
 
     def process(self, x, controls=Controls(), rumble=RumbleSample(), now=0., *,
-                band_features=None, haptic_evidence=None, haptic_direction=None, haptic_bands=None):
+                band_features=None, haptic_evidence=None, haptic_direction=None, haptic_bands=None, rear_only=False):
         x = select_stereo(x)
         if not np.isfinite(x).all():
             raise ValueError('비정상 오디오 값: 무음 실패 정책 필요')
@@ -167,6 +169,7 @@ class Processor:
             self._slow_alpha = 1-np.exp(-dt/self._slow_times)
             self._envelope_size = n
         fast_a, slow_a = self._fast_alpha, self._slow_alpha
+        self.sustained_balance = 0.0
         if haptic_direction is not None:
             haptic_direction.fill(0)
             left = bands[:, :, 0]
@@ -177,8 +180,23 @@ class Processor:
                 self._direction_energy = side_energy.copy()
             side_change = side_energy - self._direction_energy
             self._direction_energy += slow_a[:, None] * side_change
+            if rear_only and controls.mode == 'normal' and not controls.bypass:
+                # Require persistent low-band imbalance before steering the background.
+                left, right = self._direction_energy[:HAPTIC_BAND_COUNT].sum(axis=0)
+                ratio = (right - left) / max(left + right, 1e-10)
+                if abs(ratio) >= .6:
+                    direction = 1 if ratio > 0 else -1
+                    elapsed = max(0., direction * self._sustained_direction_time) + dt
+                    self._sustained_direction_time = direction * min(elapsed, .04)
+                    if elapsed >= .04:
+                        self.sustained_balance = ratio * .30
+                else:
+                    self._sustained_direction_time = 0.
+            else:
+                self._sustained_direction_time = 0.
         else:
             self._direction_energy = None
+            self._sustained_direction_time = 0.
         if self.age == 0:
             self.fast_energy = energy.copy()
             self.slow_energy = energy.copy()
@@ -257,10 +275,18 @@ class Processor:
             haptic_evidence[:] = 0
             if haptic_bands is not None:
                 haptic_bands.fill(0)
+            if (rear_only and controls.mode == 'normal' and not controls.bypass
+                    and energy[low].sum() >= energy.sum() * MIN_HAPTIC_ENERGY_SHARE):
+                amplitude = np.sqrt(energy[low])
+                attenuation = 10 ** (-14 * self._strength / 20) if controls.background else 1.0
+                haptic_evidence[0] = np.max(amplitude) * attenuation
             if low_band_hit:
                 amplitude = np.sqrt(energy[low])
                 protected = protection[low] * amplitude * (self.hold[low] > 0)
-                haptic_evidence[0] = np.max(protected)
+                transient_level = np.max(protected)
+                haptic_evidence[0] = max(haptic_evidence[0], transient_level)
+                if transient_level > 0.0:
+                    self.sustained_balance = 0.0
                 haptic_evidence[1] = np.max(onset[low] * amplitude)
                 if haptic_bands is not None:
                     haptic_bands[low] = protected
@@ -268,6 +294,8 @@ class Processor:
                     band = int(np.argmax(protected))
                     if np.max(side_change[band]) > floor[band] * 8:
                         np.maximum(0, side_change[band], out=haptic_direction)
+        if rear_only:
+            return x
         strength = self._strength
         target = 10**((-14*strength*(1-protection))/20)
         if not controls.background or controls.bypass:

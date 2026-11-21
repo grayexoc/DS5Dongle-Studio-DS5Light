@@ -309,6 +309,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         values=self.doc.values
         if key=='disable_usb_sn':return self.edge_serial_visible()
         if key=='haptics_gain':return values.get('auto_haptics_enable')==0
+        if key == 'ah_highpass' and getattr(getattr(self.app, 'engine', None), 'studio_live', False):
+            return False
         if key=='haptics_aa':return values.get('auto_haptics_enable') in (1,2)
         if key in ('rumble_haptic_strength','mix_native_level'):return values.get('auto_haptics_enable')==1
         if key=='mix_native_filter':return values.get('auto_haptics_enable')==1 and values.get('mix_native_level',0)>0

@@ -101,6 +101,32 @@ class HapticControlTests(unittest.TestCase):
                 np.testing.assert_array_equal(base[BLOCK-1::BLOCK, 2:], shaped[BLOCK-1::BLOCK, 2:])
                 self.assertEqual(base[:, 2:].max(), shaped[:, 2:].max())
 
+    def test_live_background_slider_changes_rear_without_impact_boost(self):
+        t = np.arange(RATE) / RATE
+        x = np.repeat((.2 * np.sin(2 * np.pi * 80 * t))[:, None], 2, axis=1)
+        peaks = []
+        for strength in (.30, .55, .80):
+            pcm, _ = process_array(x, controls=Controls(strength=strength, impact=0),
+                                   studio_pcm16=True, live_pcm_scale=True)
+            peaks.append(pcm[RATE//2:, 2:].max())
+        self.assertGreater(peaks[0], peaks[1])
+        self.assertGreater(peaks[1], peaks[2])
+        self.assertGreater(peaks[2], 0)
+
+    def test_live_sustained_direction_requires_stereo_and_preserves_center(self):
+        t = np.arange(RATE) / RATE
+        tone = .08 * np.sin(2 * np.pi * 80 * t)
+        left = np.column_stack((tone, np.zeros_like(tone)))
+        options = dict(studio_pcm16=True, live_pcm_scale=True)
+        directed, _ = process_array(left, stereo_control=True, **options)
+        downmix, _ = process_array(left, stereo_control=False, **options)
+        center, _ = process_array(np.column_stack((tone, tone)), stereo_control=True, **options)
+        steady = slice(RATE // 2, RATE)
+        self.assertGreater(np.median(directed[steady, 2]), 1.5 * np.median(directed[steady, 3]))
+        np.testing.assert_array_equal(directed[steady, 2], downmix[steady, 2])
+        np.testing.assert_array_equal(downmix[:, 2], downmix[:, 3])
+        np.testing.assert_array_equal(center[:, 2], center[:, 3])
+
     def test_dsp_only_preserves_front_audio_but_rejects_high_only_rear_control(self):
         elapsed = np.arange(RATE) / RATE - .5
         for hz in (700, 750, 1000, 3300):

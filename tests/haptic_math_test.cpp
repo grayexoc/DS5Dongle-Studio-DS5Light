@@ -58,6 +58,47 @@ struct Pipeline {
 };
 
 int main() {
+    using haptic_math::quantize_native;
+    if (quantize_native(0) != 0 || quantize_native(.49f) != 0 ||
+        quantize_native(-.49f) != 0 || quantize_native(.5f) != 1 ||
+        quantize_native(-.5f) != -1 || quantize_native(254) != 127 ||
+        quantize_native(-254) != -128) return 1;
+
+    // Compare quantizers on the same samples at the resampler output.
+    for (float peak : {0.8f, 12.0f, 254.0f}) {
+        int old_zero = 0, new_zero = 0, old_rail = 0, new_rail = 0;
+        double old_error = 0, new_error = 0;
+        for (int i = 0; i < 3000; ++i) {
+            const float input = peak * std::sin(2.0 * haptic_math::pi * 90 * i / 3000);
+            const auto old_sample = std::clamp(static_cast<int>(input), -128, 127);
+            const auto new_sample = quantize_native(input);
+            const float reference = std::clamp(input, -128.0f, 127.0f);
+            old_zero += old_sample == 0;
+            new_zero += new_sample == 0;
+            old_rail += old_sample == -128 || old_sample == 127;
+            new_rail += new_sample == -128 || new_sample == 127;
+            old_error += std::fabs(old_sample - reference);
+            new_error += std::fabs(new_sample - reference);
+        }
+        if (new_error >= old_error || new_zero > old_zero) return 1;
+        std::printf("Native peak %.1f: zeros %d -> %d, MAE %.4f -> %.4f, rails %d -> %d\n",
+                    peak, old_zero, new_zero, old_error / 3000, new_error / 3000, old_rail, new_rail);
+    }
+
+    NativeMixLowpass native_filter;
+    float left = -0.5f, right = 0.25f;
+    native_filter.process(left, right, 0.25f);
+    if (left != -0.5f || right != 0.25f) return 1;
+    left = 0.5f;
+    right = -0.25f;
+    native_filter.process(left, right, 0.25f);
+    if (left != -0.25f || right != 0.125f) return 1;
+    native_filter.reset();
+    left = 0.75f;
+    right = -0.75f;
+    native_filter.process(left, right, 0.25f);
+    if (left != 0.75f || right != -0.75f) return 1;
+
     float sine_error=0,clip_error=0,previous=-1;
     for (int i=0;i<=2000000;++i) {
         const float phase=haptic_math::phase_end*i/2000000;

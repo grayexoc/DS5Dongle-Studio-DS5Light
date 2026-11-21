@@ -55,13 +55,19 @@ public static class ExclusiveProbe {
                 int result = audio.IsFormatSupported(1, ptr, out closest); if (result != 0) throw new InvalidOperationException($"Exclusive IsFormatSupported HRESULT=0x{result:X8}");
             } finally { Marshal.FreeHGlobal(ptr); }
             Check(audio.GetDevicePeriod(out long normal, out long minimum));
-            int init = audio.Initialize(1, 0, Math.Max(normal * 4, minimum), 0, ref format, IntPtr.Zero); if (init < 0) throw new InvalidOperationException($"Exclusive Initialize HRESULT=0x{init:X8}");
+            long requestedDuration = Math.Max(normal * 4, minimum);
+            int init = audio.Initialize(1, 0, requestedDuration, 0, ref format, IntPtr.Zero); if (init < 0) throw new InvalidOperationException($"Exclusive Initialize HRESULT=0x{init:X8}");
             iid = typeof(Renderer).GUID;
             Check(audio.GetService(ref iid, out service));
             var render = (Renderer)service;
             Check(audio.GetBufferSize(out uint capacity));
-            render.GetBuffer(capacity, out _);
-            render.ReleaseBuffer(capacity, 2);
+            // The driver can allocate more than requested. Limit queued audio on
+            // the live path while retaining at least 40 ms when capacity allows.
+            long targetDuration = Math.Max(requestedDuration, 400000);
+            uint target = live ? (uint)Math.Min(capacity, (targetDuration * 48000 + 9999999) / 10000000)
+                               : capacity;
+            render.GetBuffer(target, out _);
+            render.ReleaseBuffer(target, 2);
             Check(audio.Start());
             started = true;
             Console.WriteLine("EXCLUSIVE_STARTED");
@@ -101,7 +107,7 @@ public static class ExclusiveProbe {
                     position = 0;
                 }
                 Check(audio.GetCurrentPadding(out uint padding));
-                uint available = capacity - padding;
+                uint available = padding < target ? target - padding : 0;
                 if (available != 0) {
                     if (pcm == null) {
                         render.GetBuffer(available, out _);
