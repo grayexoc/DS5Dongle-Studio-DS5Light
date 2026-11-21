@@ -5006,3 +5006,4 @@ EN.update({'극저음 차단': 'Haptic high-pass',
 FIELD_LABELS['ah_highpass'] = 'Haptic high-pass'
 FIELD_HELP['ah_highpass'] = 'Reduces very low frequencies in audio-derived haptics. Off by default.'
 EN['복원 대상 펌웨어에서 극저음 차단을 지원하지 않습니다.'] = 'The target firmware does not support haptic high-pass.'
+EN.update({'약하게': 'Light', '표준': 'Standard', '강하게': 'Strong'})

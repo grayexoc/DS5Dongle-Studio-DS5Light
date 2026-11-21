@@ -402,9 +402,11 @@ class HapticSlider(tk.Canvas):
 
     """Compact gold range control matching the app's visual theme."""
 
-    def __init__(self,parent,variable,command,maximum=100,reference=None,background=CARD,width=200,*,minimum=0,step=None):
+    def __init__(self,parent,variable,command,maximum=100,reference=None,background=CARD,width=200,*,minimum=0,step=None,ticks=()):
 
-        super().__init__(parent,width=px(parent,width),height=px(parent,36 if reference is not None else 24),bg=background,highlightthickness=0,borderwidth=0,takefocus=1,cursor='hand2')
+        self.ticks = ticks
+        self._logical_height = 36 if reference is not None or ticks else 24
+        super().__init__(parent,width=px(parent,width),height=px(parent,self._logical_height),bg=background,highlightthickness=0,borderwidth=0,takefocus=1,cursor='hand2')
 
         self.variable=variable; self.command=command; self.enabled=True
 
@@ -422,7 +424,7 @@ class HapticSlider(tk.Canvas):
 
     def _scale_slider(self):
         self.pad=max(px(self,9),(self.label_font.measure(f'{self.maximum}%')+1)//2+px(self,2)) if self.reference is not None else px(self,9)
-        self.configure(width=px(self,self._logical_width),height=px(self,36 if self.reference is not None else 24));self.draw()
+        self.configure(width=px(self,self._logical_width),height=px(self,self._logical_height));self.draw()
 
     def _set_from_x(self,x):
 
@@ -487,7 +489,12 @@ class HapticSlider(tk.Canvas):
 
         self.create_oval(knob-px(self,2),y-px(self,2),knob+px(self,2),y+px(self,2),fill=edge,outline=edge)
 
-        if self.step is not None:
+        if self.ticks:
+            for point, label in self.ticks:
+                x=left+(right-left)*(point-self.minimum)/span
+                self.create_line(x,px(self,19),x,px(self,23),fill=MUTED)
+                self.create_text(x,px(self,23),text=label,anchor='n',fill=MUTED,font=self.label_font)
+        elif self.step is not None:
             for index,point in enumerate(range(self.minimum,self.maximum+1,self.step),start=1):
                 x=left+(right-left)*(point-self.minimum)/span
                 self.create_line(x,px(self,19),x,px(self,23),fill=ACCENT if point==self.reference else MUTED)
@@ -995,9 +1002,13 @@ class App:
 
         self.filter_widgets=[]
 
-        for label,var,key in [(_ui_tr('배경 억제량'),self.strength,'strength'),(_ui_tr('충격 보존'),self.impact,'impact')]:
+        filter_rows=ttk.Frame(right);filter_rows.pack(fill='both',expand=True)
+        filter_rows.columnconfigure(0,weight=1)
+        for index,(label,var,key) in enumerate([(_ui_tr('배경 억제량'),self.strength,'strength'),(_ui_tr('충격 보존'),self.impact,'impact')]):
 
-            row=ttk.Frame(right); row.pack(fill='x',pady=(SPACE,0))
+            filter_rows.rowconfigure(index,weight=1,uniform='filter_rows')
+            group=ttk.Frame(filter_rows);group.grid(row=index,column=0,sticky='nsew',pady=(SPACE,0))
+            row=ttk.Frame(group);row.pack(fill='x')
 
             ttk.Label(row,text=label,style='Muted.TLabel').pack(side='left')
 
@@ -1009,7 +1020,8 @@ class App:
 
             value=ttk.Label(row);value.pack(side='right')
 
-            slider=HapticSlider(right,var,self.update_controls);slider.pack(fill='x')
+            ticks=((30,_ui_tr('약하게')),(55,_ui_tr('표준')),(80,_ui_tr('강하게'))) if key=='strength' else ()
+            slider=HapticSlider(group,var,self.update_controls,ticks=ticks);slider.pack(fill='x')
 
             if key=='strength':self.scale=slider;self.value_label=value
 

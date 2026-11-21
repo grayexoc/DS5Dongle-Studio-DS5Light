@@ -428,7 +428,9 @@ class ModifiedUITests(unittest.TestCase):
         app=self.ui
         self.assertEqual(len(app.tabs.labels),3)
         gain_card=app.gain_frame.master
-        filter_card=app.impact_slider.master.master
+        filter_card=app.impact_slider.master.master.master.master
+        self.assertEqual(app.scale.master.winfo_height(),app.impact_slider.master.winfo_height())
+        self.assertEqual(tuple(point for point,_ in app.scale.ticks),(30,55,80))
         self.assertEqual(gain_card.winfo_rooty()+gain_card.winfo_height(),
                          filter_card.winfo_rooty()+filter_card.winfo_height())
         for scope in ('device','process'):

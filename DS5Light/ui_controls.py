@@ -404,7 +404,7 @@ class SectionTitle(tk.Canvas):
             width=self.font.measure(character)+self.tracking
             return width*.5 if character.isspace() else width
         vector=self.number in ('camera','filter','channels','sliders','input','output')
-        icon=px(self,18);gap=px(self,4)
+        icon=px(self,18);gap=px(self,8)
         number_width=icon if vector else sum(advance(c) for c in self.number)
         height=self.font.metrics('linespace')+px(self,4)
         self.configure(width=number_width+gap+sum(advance(c) for c in self.title)+px(self,4),height=height)
