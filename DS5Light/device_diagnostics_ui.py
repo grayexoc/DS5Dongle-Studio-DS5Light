@@ -338,7 +338,7 @@ class DeviceDiagnosticsDialog:
                      wraplength=550, justify='left').pack(fill='x', padx=12, pady=8)
             frame = ttk.Frame(dialog)
             frame.pack(fill='both', expand=True, padx=12)
-            output_list = tk.Listbox(frame, width=70, height=min(10, max(1, len(rows))))
+            output_list = tk.Listbox(frame, width=70, height=min(10, max(1, len(rows))), activestyle='underline')
             output_list.pack(side='left', fill='both', expand=True)
             scroll = ttk.Scrollbar(frame, command=output_list.yview)
             scroll.pack(side='right', fill='y')

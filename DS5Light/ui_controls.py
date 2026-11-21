@@ -334,12 +334,13 @@ def circle_image(master, color, size=14, radio=False, selected=False):
 
 
 class RadioChoice(tk.Canvas):
-    def __init__(self,parent,text,value,variable,command,background,foreground,muted,accent,disabled):
+    def __init__(self,parent,text,value,variable,command,background,foreground,muted,accent,disabled,tracking=0):
         self.font=tkfont.Font(family='맑은 고딕',size=10)
         super().__init__(parent,width=self.font.measure(text)+px(parent,30),height=max(px(parent,28),self.font.metrics('linespace')+px(parent,8)),bg=background,
                          highlightthickness=0,highlightbackground=background,highlightcolor=background,
                          takefocus=1,borderwidth=0,cursor='hand2')
         self.text=text; self.value=value; self.variable=variable; self.command=command
+        self.tracking=tracking
         self.foreground=foreground; self.disabled=disabled; self.enabled=True
         self._accent,self._muted=accent,muted;self._icon_scale=None
         widget_trace(self,self.variable,lambda *_:self.draw())
@@ -364,11 +365,18 @@ class RadioChoice(tk.Canvas):
                 for enabled in (True,False) for selected in (True,False)}
             self._icon_scale=scale
         height=max(px(self,28),self.font.metrics('linespace')+px(self,8))
-        self.configure(width=self.font.measure(self.text)+px(self,30),height=height)
+        tracking=self.tracking*scale
+        text_width=self.font.measure(self.text)+max(0,len(self.text)-1)*tracking
+        self.configure(width=round(text_width)+px(self,30),height=height)
         self.delete('all')
         self.create_image(px(self,11),height/2,image=self.icons[(self.enabled,self.variable.get()==self.value)])
-        self.create_text(px(self,26),height/2,text=self.text,anchor='w',font=self.font,
-                         fill=self.foreground if self.enabled else self.disabled)
+        color=self.foreground if self.enabled else self.disabled
+        if tracking:
+            for index,character in enumerate(self.text):
+                x=px(self,26)+self.font.measure(self.text[:index])+index*tracking
+                self.create_text(x,height/2,text=character,anchor='w',font=self.font,fill=color)
+        else:
+            self.create_text(px(self,26),height/2,text=self.text,anchor='w',font=self.font,fill=color)
 
 
 class CircleCheck(RadioChoice):

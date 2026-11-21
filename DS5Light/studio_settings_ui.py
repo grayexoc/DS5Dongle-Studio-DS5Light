@@ -137,9 +137,6 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         middle=tk.Frame(self.parent,bg=BG);middle.grid(row=1,column=0,sticky='nsew');middle.columnconfigure(1,weight=1);middle.rowconfigure(0,weight=1)
         nav=tk.Frame(middle,bg=BG);nav.grid(row=0,column=0,sticky='ns',padx=(0,12));self.nav=[]
         style=ttk.Style(self.parent)
-        # Eliminate Button.focus from all inherited button styles, including
-        # normal/Accent/navigation buttons in Studio and its editor dialogs.
-        style.layout('TButton',style.layout('Filter.TButton'))
         style.configure('Disconnected.Studio.TButton',background='#602d30',foreground='#f0c2c4',bordercolor='#a44b52')
         style.map('Disconnected.Studio.TButton',background=[('active','#79363c'),('!disabled','#602d30')],foreground=[('!disabled','#f0c2c4')],bordercolor=[('!disabled','#a44b52')])
         style.configure('StudioNav.TButton',font=(_ui_tr('맑은 고딕'),9),padding=(6,6),foreground=MUTED,background=CARD)
@@ -154,7 +151,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             b=ttk.Button(nav,text=self.nav_icons[i]+'  '+title,width=13,command=lambda i=i:self.select_category(i),style='StudioNav.TButton');b.pack(fill='x',pady=(0,5));self.nav.append(b)
         right=tk.Frame(middle,bg=BG);right.grid(row=0,column=1,sticky='nsew');right.columnconfigure(0,weight=1);right.rowconfigure(0,weight=1)
         self.search=tk.StringVar();entry=ttk.Entry(nav,style='Studio.TEntry',textvariable=self.search,width=13);entry.pack(fill='x',pady=(12,0));self.search_entry=entry
-        self.web_warning=tk.Label(nav,text=ui_text(_ui_tr('⚠ 브라우저에서 Studio 웹 설정이 켜져 있으면 조회 및 저장이 충돌할 수 있습니다.'),'⚠ Studio in a browser may conflict with reading or saving.'),bg=BG,fg=GOLD,wraplength=135,justify='left',anchor='w',font=(_ui_tr('맑은 고딕'),8));self.web_warning.pack(fill='x',pady=(12,0))
+        self.web_warning=tk.Label(nav,text=ui_text(_ui_tr('⚠ 브라우저에서 Studio 웹 설정이 켜져 있으면 조회 및 저장이 충돌할 수 있습니다.'),'⚠ Studio web settings may interrupt reads or saves.'),bg=BG,fg=GOLD,wraplength=135,justify='left',anchor='w',font=(_ui_tr('맑은 고딕'),8));self.web_warning.pack(fill='x',pady=(12,0))
         self.search_hint=tk.Label(entry,text=ui_text(_ui_tr('설정 검색'),'Search settings'),bg='#111111',fg='#77736a',font=(_ui_tr('맑은 고딕'),9),cursor='xterm')
         def hint(*_):
             if self.search.get() or entry.focus_get() is entry:self.search_hint.place_forget()
@@ -181,8 +178,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         actions=tk.Frame(footer.content,bg=CARD);actions.grid(row=0,column=1,rowspan=2,sticky='e')
         self.revert_button=ttk.Button(actions,text=ui_text(_ui_tr('되돌리기'),'Revert'),command=self.revert,width=8);self.revert_button.pack(side='left',padx=(0,6))
         FieldTip(self.revert_button,_ui_tr('마지막 조회 또는 적용 이후의 미적용 편집을 되돌립니다. 이미 장치에 적용하거나 저장한 값은 되돌리지 않습니다.'))
-        self.apply_button=ttk.Button(actions,text=ui_text(_ui_tr('임시 적용'),'Apply temporarily'),command=lambda:self.apply(False),width=9);self.apply_button.pack(side='left',padx=(0,6))
-        self.save_button=ttk.Button(actions,text=ui_text(_ui_tr('현재 프로필에 저장'),'Save to profile'),command=lambda:self.apply(True),style='Accent.TButton',width=17);self.save_button.pack(side='left')
+        self.apply_button=ttk.Button(actions,text=ui_text(_ui_tr('임시 적용'),'Apply'),command=lambda:self.apply(False),width=ui_text(9,0));self.apply_button.pack(side='left',padx=(0,6))
+        self.save_button=ttk.Button(actions,text=ui_text(_ui_tr('현재 프로필에 저장'),'Save to profile'),command=lambda:self.apply(True),style='Accent.TButton',width=ui_text(17,0));self.save_button.pack(side='left')
         FieldTip(self.apply_button,_ui_tr('현재 프로필의 설정과 매크로 사용 체크를 지금 연결에만 적용합니다. 유지하려면 현재 프로필에 저장하세요. 공유 매크로 정의는 전송하지 않습니다.'))
         FieldTip(self.save_button,_ui_tr('현재 슬롯과 Pico 시작 설정에 저장합니다.\n다른 앱의 Pico 오디오 출력을 중지하세요.\n공용 매핑 동작은 편집 완료 시 자동 저장됩니다.'))
         self.render_fields();self.update_state()
@@ -1264,9 +1261,13 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         box=self.card(_ui_tr('Pico 매핑·매크로'))
         ttk.Button(box,text=_ui_tr('매핑 목록 새로 고침'),command=self.read_macro_table).grid(row=1,column=0,sticky='w',pady=(0,8))
         ttk.Button(box,text=_ui_tr('+ 매핑·매크로 추가'),style='Accent.TButton',command=self.new_macro,state='normal' if self.loaded and not self.busy else 'disabled').grid(row=1,column=1,sticky='e',pady=(0,8))
-        notes=tk.Frame(box,bg=CARD);notes.grid(row=2,column=0,columnspan=2,sticky='w',pady=(0,8))
+        notes=tk.Frame(box,bg=CARD);notes.grid(row=2,column=0,columnspan=2,sticky='ew' if LANGUAGE=='en' else 'w',pady=(0,8))
         tk.Label(notes,text=_ui_tr('등록·편집·삭제·가져오기·시프트키 변경 시 자동 저장합니다.'),bg=CARD,fg=GOLD,anchor='w').pack(anchor='w')
-        tk.Label(notes,text=_ui_tr('동작 변경은 모든 프로필에 영향을 줍니다.\n사용 체크는 현재 프로필에 별도로 저장합니다.'),bg=CARD,fg=GOLD,wraplength=420,justify='left').pack(anchor='w')
+        shared_note=tk.Label(notes,text=_ui_tr('동작 변경은 모든 프로필에 영향을 줍니다.\n사용 체크는 현재 프로필에 별도로 저장합니다.'),bg=CARD,fg=GOLD,wraplength=420,justify='left',anchor='w')
+        shared_note.pack(anchor='w',fill='x' if LANGUAGE=='en' else 'none')
+        if LANGUAGE=='en':
+            shared_note.configure(width=1)
+            shared_note.bind('<Configure>',self.fit_slot_label,add='+')
         if self.shared_changes_pending() and not self.busy:
             ttk.Button(box,text=_ui_tr('미저장 매핑 내보내기'),command=self.export_macros).grid(row=3,column=1,sticky='e',pady=(0,12))
         self.macro_warning=tk.StringVar();self.macro_warning_label=tk.Label(box,textvariable=self.macro_warning,bg=CARD,fg=GOLD,wraplength=430,justify='left',anchor='w')

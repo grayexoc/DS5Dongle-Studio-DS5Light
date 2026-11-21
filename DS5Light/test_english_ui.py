@@ -36,6 +36,19 @@ class EnglishUI(unittest.TestCase):
  def test_help_and_catalog(self):
   for key in EDITABLE:self.assertFalse(kr.search(help_text(key)),key)
   for source in EN:self.assertFalse(kr.search(text(source)),source)
+ def test_studio_actions_and_audio_mode_fit_at_minimum_width(self):
+  from tkinter import font,ttk
+  ui=self.editor()
+  self.root.geometry('860x860+0+0');self.root.deiconify();self.root.update_idletasks()
+  style=ttk.Style(self.root)
+  for button in (ui.apply_button,ui.save_button):
+   name=button.cget('style') or button.winfo_class()
+   measure=font.Font(root=self.root,font=style.lookup(name,'font') or 'TkDefaultFont').measure
+   self.assertGreaterEqual(button.winfo_width(),measure(button.cget('text'))+8)
+  selector=ui.field_views['auto_haptics_enable'][1][0]
+  measure=font.nametofont('TkTextFont').measure
+  for option in selector.cget('values'):
+   self.assertGreaterEqual(selector.winfo_width(),measure(option)+24,option)
 
 class TemplateTests(unittest.TestCase):
  def test_arguments_preserved(self):
@@ -95,3 +108,47 @@ class EnglishRevisionTests(unittest.TestCase):
   # The complete editor is exercised by EnglishUI; check the previously hidden captions too.
   for key in ('시프트 레이어에서 사용','전환 신호음','프로필 {0}번'):
    self.assertFalse(kr.search(text(key)),key)
+
+
+@skipUnless(localization.LANGUAGE=='en', 'English presentation checks')
+class EnglishMinimumDpiTests(unittest.TestCase):
+ tearDown=fixture.NativeUITests.tearDown
+ editor=fixture.NativeUITests.editor
+ def setUp(self):
+  from unittest.mock import patch
+  dpi=patch('ui_dpi._window_dpi',return_value=120)
+  dpi.start()
+  self.addCleanup(dpi.stop)
+  fixture.NativeUITests.setUp(self)
+ def test_reported_controls_fit_at_125_percent(self):
+  from tkinter import font
+  from ui_dpi import ui_scale
+  width,height=self.root.minsize()
+  self.root.geometry(f'{width}x{height}+0+0')
+  self.root.deiconify();self.root.update()
+  self.assertEqual(ui_scale(self.root),1.25)
+  for check in self.ui.advanced_checks:
+   self.assertTrue(check.winfo_viewable(),check.text)
+   left,top,right,bottom=check.bbox('all')
+   self.assertGreaterEqual(min(left,top),0,check.text)
+   self.assertLessEqual(right,check.winfo_width(),check.text)
+   self.assertLessEqual(bottom,check.winfo_height(),check.text)
+  ui=self.editor()
+  def labels(parent):
+   for child in parent.winfo_children():
+    if child.winfo_class()=='Label':yield child
+    yield from labels(child)
+  for category,prefix in ((3,'Hold DualSense level'),(4,'Shared mappings.')):
+   ui.select_category(category);self.root.update_idletasks()
+   label=next(w for w in labels(ui.body) if w.cget('text').startswith(prefix))
+   assigned_font=font.Font(root=self.root,font=label.cget('font'))
+   lines=label.cget('text').splitlines()
+   self.assertLessEqual(max(map(assigned_font.measure,lines)),label.winfo_width())
+   self.assertLess(label.winfo_height(),(len(lines)+1)*assigned_font.metrics('linespace'))
+  ui.doc.macros={str(i):[0]*35 for i in range(32)}
+  ui.doc.macro_baseline={k:list(v) for k,v in ui.doc.macros.items()}
+  ui.new_macro();editor=ui.macro_editor
+  editor.buttons[0].set(True);editor.go_step(1);self.root.update_idletasks()
+  for title,button in editor.output_kind_buttons:
+   self.assertTrue(button.winfo_viewable(),title)
+   self.assertGreaterEqual(button.winfo_width(),button.winfo_reqwidth(),title)

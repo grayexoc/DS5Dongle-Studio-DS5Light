@@ -1,5 +1,6 @@
 """Two-step local macro editor with verified Pico save on completion."""
 from studio_i18n import text as _ui_tr
+from localization import LANGUAGE
 import tkinter as tk
 import copy
 from tkinter import ttk
@@ -48,7 +49,11 @@ class MacroEditor(InlineCapture):
         for i,text in enumerate((_ui_tr('⌘ 실행 조건'),_ui_tr('▶ 실행 동작'))):
             button=ttk.Button(stepbar,text=text,command=lambda i=i:self.go_step(i),style='Filter.TButton');button.grid(row=0,column=i,sticky='ew',padx=(0,6));stepbar.columnconfigure(i,weight=1);self.step_buttons.append(button)
         self.summary=tk.StringVar(value=_ui_tr('입력과 실행할 동작을 선택하세요.'))
-        tk.Label(top,textvariable=self.summary,bg=BG,fg=GOLD,wraplength=660,anchor='w',justify='left').grid(row=3,column=0,columnspan=2,sticky='ew',pady=(10,0))
+        summary=tk.Label(top,textvariable=self.summary,bg=BG,fg=GOLD,wraplength=660,anchor='w',justify='left')
+        summary.grid(row=3,column=0,columnspan=2,sticky='ew',pady=(10,0))
+        if LANGUAGE=='en':
+            summary.configure(width=1)
+            summary.bind('<Configure>',ui.fit_slot_label,add='+')
         self.build_capture(top,4)
         host=tk.Frame(d,bg=BG);host.grid(row=1,column=0,sticky='nsew',padx=18);host.columnconfigure(0,weight=1);host.rowconfigure(0,weight=1)
         self.canvas=tk.Canvas(host,bg=BG,highlightthickness=0,width=1,height=450)
@@ -111,10 +116,16 @@ class MacroEditor(InlineCapture):
         two=self.card(_ui_tr('▶ 실행 동작'));self.output_kind_control=tk.Frame(two,bg=CARD);self.output_kind_buttons=[]
         for i,title in enumerate(OUTPUTS.values()):
             button=ttk.Button(self.output_kind_control,text=title,command=lambda title=title:self.output_kind.set(title),style='Filter.TButton')
-            button.grid(row=0,column=i,sticky='ew',padx=(0,5))
-            self.output_kind_control.columnconfigure(i,weight=1,uniform='out')
+            row,column=(1+i//2,i%2) if LANGUAGE=='en' else (0,i)
+            button.grid(row=row,column=column,sticky='ew',padx=(0,5),pady=(0,4) if LANGUAGE=='en' else 0)
+            self.output_kind_control.columnconfigure(column,weight=1,uniform='out')
             self.output_kind_buttons.append((title,button))
-        self.form(two,1,_ui_tr('출력 종류'),_ui_tr('스틱 방향 매핑은 키보드로 출력합니다.'),self.output_kind_control)
+        output_tip=_ui_tr('스틱 방향 매핑은 키보드로 출력합니다.')
+        if LANGUAGE=='en':
+            self.output_kind_control.grid(row=1,column=0,columnspan=2,sticky='ew',pady=6)
+            self.caption(self.output_kind_control,_ui_tr('출력 종류'),output_tip).grid(row=0,column=0,columnspan=2,sticky='w',pady=(0,6))
+        else:
+            self.form(two,1,_ui_tr('출력 종류'),output_tip,self.output_kind_control)
         self.output_area=tk.Frame(two,bg=CARD);self.output_area.columnconfigure(1,weight=1);self.output_area.grid(row=2,column=0,columnspan=2,sticky='ew')
         self.output_control=ControllerChoice(self.output_area,textvariable=self.output,values=[]);self.form(self.output_area,0,_ui_tr('실행할 동작'),_ui_tr('원래 버튼 대신 보낼 단일 버튼 또는 마우스 동작입니다. 듀얼센스 출력 조합키는 현재 펌웨어 형식에서 지원하지 않습니다.'),self.output_control)
         self.output_record=ttk.Button(self.output_area,text=_ui_tr('버튼을 직접 눌러 지정'),command=lambda:self.start_capture('output'));self.output_record.grid(row=1,column=1,sticky='e',pady=6)
@@ -151,14 +162,23 @@ class MacroEditor(InlineCapture):
         self.save_hint=_ui_tr('완료하면 미저장 공용 매핑을 모두 Pico에 저장합니다. 프로필 사용 여부는 다음 확인창에서 저장합니다.')
         feedback_label=tk.Label(footer,textvariable=self.feedback,bg=BG,fg=GOLD,wraplength=560,justify='right',anchor='e')
         feedback_label.grid(row=0,column=0,columnspan=2,sticky='ew',pady=(0,10))
-        widget_trace(feedback_label,self.feedback,lambda *_:feedback_label.configure(
-            wraplength=0 if self.feedback.get()==self.save_hint else 560,
-            font=(_ui_tr('맑은 고딕'),8 if self.feedback.get()==self.save_hint else 10)))
+        def fit_feedback(*_):
+            save_hint=self.feedback.get()==self.save_hint
+            wrap=0 if save_hint else 560
+            if LANGUAGE=='en':
+                padding=int(footer.cget('padx'))
+                available=footer.winfo_width()-2*padding
+                wrap=available if available>0 else 560
+            feedback_label.configure(wraplength=wrap,font=(_ui_tr('맑은 고딕'),8 if save_hint else 10))
+        if LANGUAGE=='en':
+            feedback_label.configure(width=1)
+            footer.bind('<Configure>',fit_feedback,add='+')
+        widget_trace(feedback_label,self.feedback,fit_feedback)
         actions=tk.Frame(footer,bg=BG);actions.grid(row=1,column=1,sticky='e')
         ttk.Button(actions,text=_ui_tr('취소'),command=self.close,width=12).pack(side='left',padx=(0,8))
         self.previous=ttk.Button(actions,text=_ui_tr('이전'),command=lambda:self.go_step(self.step-1),width=10);self.previous.pack(side='left',padx=(0,8))
         self.next_button=ttk.Button(actions,text=_ui_tr('다음'),command=lambda:self.go_step(self.step+1),width=14);self.next_button.pack(side='left',padx=(0,8))
-        self.save=ttk.Button(actions,text=_ui_tr('완료 · Pico 저장'),command=self.commit,width=18,style='Accent.TButton');self.save.pack(side='left')
+        self.save=ttk.Button(actions,text=_ui_tr('완료 · Pico 저장'),command=self.commit,width=0 if LANGUAGE=='en' else 18,style='Accent.TButton');self.save.pack(side='left')
         self.variables=[self.name,self.kind,self.mode,self.output_kind,self.output,self.hold,self.threshold,self.release,self.hide,self.always,self.layer,self.chime,self.gesture,*self.buttons,*self.keys]
         for variable in self.variables:widget_trace(d,variable,self.refresh)
         self.last_kind=old['kind'];self.last_output_kind=old['output_kind'];self.refresh()

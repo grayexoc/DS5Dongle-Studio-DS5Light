@@ -30,7 +30,7 @@ class LocalizationTests(unittest.TestCase):
                 self.assertEqual(L.display_device('Actual device name'),'Actual device name')
     def test_dynamic_status_translation(self):
         with patch.object(L,'LANGUAGE','en'):
-            self.assertEqual(L.tr('게임 전용 PID 123'),'Game-only PID 123')
+            self.assertEqual(L.tr('게임 전용 PID 123'),'Process PID 123')
             self.assertEqual(L.tr('연결됨 · 기존 브리지 전송'),'Connected · Original bridge transport')
     def test_all_display_literals_covered(self):
         import ast

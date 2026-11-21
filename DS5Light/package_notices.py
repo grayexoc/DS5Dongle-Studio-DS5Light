@@ -1,5 +1,5 @@
 """Collect actual frozen-package notices; native linkage still needs review."""
-import argparse,hashlib,json,shutil,sys
+import argparse,hashlib,json,shutil,ssl,sys
 from importlib.metadata import distribution,packages_distributions
 from pathlib import Path
 from PyInstaller.archive.readers import CArchiveReader
@@ -12,6 +12,23 @@ def collect(exe,target):
     names={'numpy','scipy','PyAudioWPatch','hidapi','pyinstaller','pyinstaller-hooks-contrib'}
     for module in archive.toc: names.update(mapping.get(module.split('.')[0],[]))
     if (exe.parent/'_internal/win32').exists(): names.add('pywin32')
+    base=Path(sys.base_prefix)
+    runtime={}
+    for name,supplier in (
+        ('python312.dll',base/'python312.dll'),
+        ('libssl-3-x64.dll',base/'DLLs'/'libssl-3-x64.dll'),
+        ('libcrypto-3-x64.dll',base/'DLLs'/'libcrypto-3-x64.dll'),
+    ):
+        packaged=exe.parent/'_internal'/name
+        if not supplier.is_file():
+            supplier=base/name
+        digest=hashlib.sha256(packaged.read_bytes()).hexdigest()
+        if digest!=hashlib.sha256(supplier.read_bytes()).hexdigest():
+            raise RuntimeError(f'Packaged runtime DLL differs from build Python: {name}')
+        runtime[name]=digest
+    (target/'runtime.json').write_text(json.dumps(
+        dict(python=sys.version.split()[0],openssl=ssl.OPENSSL_VERSION,dll_sha256=runtime),
+        indent=2),encoding='utf-8')
     manifest=[]
     for name in sorted(names):
         d=distribution(name); found=[]
@@ -34,7 +51,7 @@ def collect(exe,target):
         if p.is_file():
             dst=target/'TclTk'/p.relative_to(Path(sys.base_prefix)/'tcl')
             dst.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,dst)
-    for name in ('Apache-2.0.txt','PortAudio-LICENSE.txt','Tcl-8.6.15-license.terms','OpenSSL-3-LICENSE.txt','zlib-LICENSE.txt','Python-3.12.10-CRT-LICENSE.txt','manifest.json'):
+    for name in ('Apache-2.0.txt','PortAudio-LICENSE.txt','Tcl-8.6.15-license.terms','OpenSSL-3-LICENSE.txt','zlib-LICENSE.txt','Python-3.12.16-CRT-LICENSE.txt','manifest.json'):
         dst=target/'upstream'/name;dst.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(Path('licenses/upstream')/name,dst)
     shutil.copytree('licenses/PyAudioWPatch-0.2.12.8',target/'PyAudioWPatch-source-notices',dirs_exist_ok=True)

@@ -439,6 +439,7 @@ class DialogTests(unittest.TestCase):
         output_list = next(w for frame in popup.winfo_children() for w in frame.winfo_children()
                            if isinstance(w, tk.Listbox))
         self.assertIn('4 ch', output_list.get(0))
+        self.assertEqual(output_list.cget('activestyle'), 'underline')
         self.app.use_recovered_pico_output.assert_not_called()
         self.assertTrue(all(str(button.cget('state')) == 'disabled' for button in self.dialog.output_buttons))
 

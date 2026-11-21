@@ -42,6 +42,19 @@ class ModifiedUITests(unittest.TestCase):
             tabs._select_from_keyboard(2)
         self.assertEqual((self.ui.selected_tab,tabs.selected),(1,1))
 
+    def test_main_tabs_use_only_the_solid_box_border_for_focus(self):
+        tabs=self.ui.tabs
+        self.assertFalse(self.ui.studio_settings.built)
+        self.assertNotIn('Button.focus',str(tabs.style.layout('TButton')))
+        with patch.object(tabs,'focus_get',return_value=tabs):
+            for selected in range(len(tabs.labels)):
+                tabs.select(selected)
+                boxes=[item for item in tabs.find_all() if tabs.type(item)=='rectangle'
+                       and not any(tag.startswith('icon-') for tag in tabs.gettags(item))]
+                self.assertEqual(len(boxes),len(tabs.labels))
+                self.assertTrue(all(not tabs.itemcget(box,'dash') for box in boxes))
+                self.assertEqual(tabs.itemcget(boxes[selected],'outline'),ui.FG)
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.root=tk.Tk(); self.root.withdraw()

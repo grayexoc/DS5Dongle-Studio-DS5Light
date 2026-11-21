@@ -8,12 +8,30 @@ $ds5BuildPython = $env:DS5LIGHT_BUILD_PYTHON
 if ($ds5BuildPython) {
     if (!(Test-Path -LiteralPath $ds5BuildPython -PathType Leaf)) { throw 'Invalid build Python path' }
 } else {
-    $ds5BuildPython = '.venv/Scripts/python.exe'
+    $ds5BuildPython = '.venv-build/Scripts/python.exe'
     if (!(Test-Path -LiteralPath $ds5BuildPython)) {
-        py -3.12 -m venv .venv
+        # Keep the release toolchain isolated from the developer's installed Python.
+        $runtimeDirectory = Join-Path $PSScriptRoot '.build-python/cpython-3.12.16-20261110'
+        $runtimePython = Join-Path $runtimeDirectory 'python/python.exe'
+        New-Item -ItemType Directory -Force $runtimeDirectory | Out-Null
+        $runtimeArchive = Join-Path $runtimeDirectory 'runtime.tar.gz'
+        $runtimeUrl = 'https://github.com/astral-sh/python-build-standalone/releases/download/20261110/cpython-3.12.16%2B20261110-x86_64-pc-windows-msvc-install_only.tar.gz'
+        $runtimeHash = 'e23fe5b16926de1d81661b1a97352e89fb167549c55a6825796ccd0f32ec7f1b'
+        if (!(Test-Path -LiteralPath $runtimeArchive) -or (Get-FileHash -LiteralPath $runtimeArchive).Hash -ne $runtimeHash) {
+            curl.exe --fail --location --silent --show-error --output $runtimeArchive $runtimeUrl
+            if ($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath $runtimeArchive).Hash -ne $runtimeHash) { throw 'Build Python download or SHA-256 verification failed' }
+        }
+        tar.exe -xf $runtimeArchive -C $runtimeDirectory
+        if ($LASTEXITCODE -ne 0) { throw 'Build Python extraction failed' }
+        & $runtimePython -m venv .venv-build
         if ($LASTEXITCODE -ne 0) { throw 'Python venv setup failed' }
     }
-    & $ds5BuildPython -m pip install -r requirements-build.txt
+}
+$ds5Runtime = & $ds5BuildPython -I -B -c "import re, sys, ssl, sysconfig; assert sys.version_info[:2] == (3, 12) and sys.version_info[:3] >= (3, 12, 16) and sys.version_info.releaselevel == 'final' and sysconfig.get_platform() == 'win-amd64'; openssl = re.fullmatch(r'OpenSSL 3\.5\.(\d+) .*', ssl.OPENSSL_VERSION); assert openssl and int(openssl[1]) >= 9; print(sys.version.split()[0], ssl.OPENSSL_VERSION)"
+if ($LASTEXITCODE -ne 0) { throw 'Build requires Windows x64 CPython 3.12.16 or later in 3.12 and OpenSSL 3.5.9 or later in 3.5. Clear DS5LIGHT_BUILD_PYTHON to use the project runtime.' }
+Write-Output "Build runtime: $ds5Runtime"
+if (!$env:DS5LIGHT_BUILD_PYTHON) {
+    & $ds5BuildPython -m pip install --disable-pip-version-check -r requirements-build.txt
     if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed' }
 }
 & $ds5BuildPython -m pip check

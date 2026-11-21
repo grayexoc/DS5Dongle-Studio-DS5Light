@@ -55,7 +55,7 @@ New preferences default to PC suppression on, Balanced, 55% suppression, 85% imp
 
 ### Build from source
 
-Run `powershell -ExecutionPolicy Bypass -File build.ps1` with the prerequisites in `requirements-build.txt`. The build uses `app_version.py` for the app title and `DS5Light-win-x64-v<version>.zip`; intermediate output is `dist/DS5Light`. `START.bat` opens that built output. Existing ZIP files are never overwritten; update the app version for a new release. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the release version policy.
+Run `powershell -ExecutionPolicy Bypass -File build.ps1` with the prerequisites in `requirements-build.txt`. The script verifies the pinned Windows x64 build runtime (CPython 3.12.16 with OpenSSL 3.5.9) and creates a project-local build environment. The ZIP records its runtime versions and DLL hashes. The build uses `app_version.py` for the app title and `DS5Light-win-x64-v<version>.zip`; intermediate output is `dist/DS5Light`. `START.bat` opens that built output. Existing ZIP files are never overwritten; update the app version for a new release. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the release version policy.
 
 ## Attributions and licenses
 

@@ -52,7 +52,7 @@
 
 ### 소스 빌드
 
-`requirements-build.txt`의 빌드 의존성을 준비하고 `powershell -ExecutionPolicy Bypass -File build.ps1`을 실행합니다. 앱 제목과 `DS5Light-win-x64-v<버전>.zip`의 버전은 `app_version.py`를 사용합니다. 중간 출력은 `dist/DS5Light`이며 `START.bat`로 실행할 수 있습니다. 기존 ZIP은 덮어쓰지 않으므로 새 릴리즈에는 앱 버전을 올려야 합니다. 버전 정책은 [RELEASE_NOTES.md](RELEASE_NOTES.md)를 참고하세요.
+`requirements-build.txt`의 빌드 의존성을 준비하고 `powershell -ExecutionPolicy Bypass -File build.ps1`을 실행합니다. Windows x64 빌드 런타임(CPython 3.12.16, OpenSSL 3.5.9)의 해시를 확인하고 프로젝트 전용 환경을 준비합니다. ZIP에는 동봉 런타임의 버전과 DLL 해시가 기록됩니다. 앱 제목과 `DS5Light-win-x64-v<버전>.zip`의 버전은 `app_version.py`를 사용합니다. 중간 출력은 `dist/DS5Light`이며 `START.bat`로 실행할 수 있습니다. 기존 ZIP은 덮어쓰지 않으므로 새 릴리즈에는 앱 버전을 올려야 합니다. 버전 정책은 [RELEASE_NOTES.md](RELEASE_NOTES.md)를 참고하세요.
 
 ## 출처와 라이선스
 

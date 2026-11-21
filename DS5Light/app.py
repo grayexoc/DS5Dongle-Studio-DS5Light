@@ -349,11 +349,8 @@ class TabStrip(tk.Canvas):
 
             left=x+1;right=x+width-1;tag=f'tab-{index}'
 
-            self.create_rectangle(left,y,right,bottom,fill=fill,outline=outline,tags=tag)
-            if selected and focused:
-                inset=px(self,3)
-                self.create_rectangle(left+inset,y+inset,right-inset,bottom-inset,
-                                      outline=ACCENT,dash=(2,2),tags='tab-focus')
+            self.create_rectangle(left,y,right,bottom,fill=fill,
+                                  outline=FG if selected and focused else outline,tags=tag)
 
             icon=self.icons[index];icon_width=self.icon_widths[index]
 
@@ -543,7 +540,8 @@ class App:
 
         style.configure('TButton',padding=(12,6),background='#242321',foreground=FG,bordercolor=BORDER,relief='flat')
 
-        style.map('TButton',background=[('disabled','#202020'),('active','#303030')],foreground=[('disabled',DISABLED)])
+        style.map('TButton',background=[('disabled','#202020'),('active','#303030')],foreground=[('disabled',DISABLED)],
+                  bordercolor=[('focus','!disabled',ACCENT)])
 
         style.configure('Accent.TButton',background=ACCENT,foreground='#211a0d',font=(_ui_tr('맑은 고딕'),10,'bold'))
 
@@ -551,12 +549,13 @@ class App:
 
         style.configure('Selected.TButton',background='#332b19',foreground='#f1d58c',bordercolor=ACCENT)
 
-        # Omit Button.focus so these choices never draw a dotted inner rectangle.
+        # Use the border for keyboard focus instead of Tk's dotted inner rectangle.
 
         style.layout('Filter.TButton',[('Button.border',{'sticky':'nswe','children':[
 
             ('Button.padding',{'sticky':'nswe','children':[('Button.label',{'sticky':'nswe'})]})]})])
 
+        style.layout('TButton',style.layout('Filter.TButton'))
         style.layout('Footer.TButton',style.layout('Filter.TButton'))
 
         style.configure('Accent.Footer.TButton',background=ACCENT,foreground='#211a0d',font=(_ui_tr('맑은 고딕'),10,'bold'))
@@ -1069,11 +1068,12 @@ class App:
 
         for text,var in [(_ui_tr('배경 대역 억제'),self.bg),(_ui_tr('변화량 보호'),self.transient)]:
 
-            group=ttk.Frame(self.advanced);group.pack(side='left',padx=(0,SPACE))
+            group=ttk.Frame(self.advanced);group.pack(side='left',padx=(0,4 if LANGUAGE=='en' else SPACE))
 
             check=CircleCheck(group,text=text,variable=var,command=self.update_controls,
 
-                              background=CARD,foreground=FG,muted=BORDER,accent=ACCENT,disabled=DISABLED)
+                              background=CARD,foreground=FG,muted=BORDER,accent=ACCENT,disabled=DISABLED,
+                              tracking=-0.35 if LANGUAGE=='en' else 0)
 
             check.pack(side='left');self.filter_widgets.append(check);self.advanced_checks.append(check)
 
