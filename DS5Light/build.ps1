@@ -44,6 +44,8 @@ $ds5DataFiles = @(
     'assets/dualsense-controls.svg;assets',
     'assets/diagnostic-controller.svg;assets',
     'assets/edge;assets/edge',
+    'native/StudioExclusiveRender.cs;native',
+    'native/StudioExclusiveRender.ps1;native',
     'vendor/ds5audio_original.py;vendor',
     'vendor/LICENSE-Studio.txt;vendor',
     'vendor/tksvg0.16/pkgIndex.tcl;vendor/tksvg0.16',
@@ -60,16 +62,19 @@ Get-ChildItem -LiteralPath $ds5Internal -File | Where-Object { $_.Name -eq 'ucrt
     if ($_.DirectoryName -ne $ds5Internal) { throw 'Unexpected DLL location' }
     Remove-Item -LiteralPath $_.FullName
 }
-& $ds5BuildPython package_notices.py
+$ds5LicenseOutput = 'dist/DS5Light/LICENSES'
+New-Item -ItemType Directory -Force -Path $ds5LicenseOutput | Out-Null
+Copy-Item LICENSE.txt,LICENSE_EN.txt,DISTRIBUTION_POLICY_KO.md,SOURCES.md -Destination $ds5LicenseOutput
+& $ds5BuildPython package_notices.py --target "$ds5LicenseOutput/THIRD_PARTY" --inventory reports/binary_inventory.json
 if ($LASTEXITCODE -ne 0) { throw '라이선스 고지 준비 실패' }
-# Copy release documents and the three user-provided Studio profiles.
-Copy-Item MAPPING_GUIDE_KO.md,DPI_LAYOUT_KO.md,LICENSE.txt,LICENSE_EN.txt,README.txt,DISTRIBUTION_POLICY_KO.md,default_config.json,README_KO.txt,SOURCES.md,README.md,PRODUCT_KO.md,SETUP.md,SETUP_KO.md,RELEASE_NOTES.md -Destination dist/DS5Light
+# Ship one bilingual start guide and keep the three editable Studio profiles accessible.
+Copy-Item -LiteralPath 'PACKAGE_README.md' -Destination 'dist/DS5Light/README.md'
+Copy-Item -LiteralPath 'default_config.json' -Destination 'dist/DS5Light'
 $ds5PresetOutput = Join-Path $PSScriptRoot 'dist/DS5Light/Studio Presert'
 New-Item -ItemType Directory -Force -Path $ds5PresetOutput | Out-Null
 foreach ($ds5PresetName in @('DS_Native.json','Audio_Haptic_01.json','Audio_Haptic_02.json')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Studio Presert/$ds5PresetName") -Destination $ds5PresetOutput
 }
-Copy-Item -LiteralPath 'Studio Presert/README.txt','Studio Presert/README_KO.txt' -Destination $ds5PresetOutput
 $ds5RetiredRecommendations = Join-Path $PSScriptRoot 'dist/DS5Light/recommend-slots.json'
 if (Test-Path -LiteralPath $ds5RetiredRecommendations) { Remove-Item -LiteralPath $ds5RetiredRecommendations }
 $ds5RetiredSlots = Join-Path $PSScriptRoot 'dist/DS5Light/ds5dongle-slots.json'

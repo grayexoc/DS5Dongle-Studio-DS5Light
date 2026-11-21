@@ -36,6 +36,24 @@ class EnglishUI(unittest.TestCase):
  def test_help_and_catalog(self):
   for key in EDITABLE:self.assertFalse(kr.search(help_text(key)),key)
   for source in EN:self.assertFalse(kr.search(text(source)),source)
+ def test_haptic_highpass_labels_fit_at_minimum_size(self):
+  self.root.tk.call('tk', 'scaling', 120/72)
+  width,height=self.root.minsize()
+  self.root.geometry(f'{width}x{height}')
+  ui=self.editor()
+  group=('Auto-Haptics & Speaker Effect Leak','주파수·반응 세부 조정')
+  ui.toggle_option_group(group)
+  self.root.deiconify()
+  self.root.update()
+  _,controls,_=ui.field_views['ah_highpass']
+  slider=controls[0]
+  self.assertTrue(slider.winfo_viewable())
+  labels=[item for item in slider.find_all() if slider.type(item)=='text']
+  self.assertEqual([slider.itemcget(item,'text') for item in labels],['Off','15 Hz','25 Hz'])
+  for item in labels:
+   left,_,right,_=slider.bbox(item)
+   self.assertGreaterEqual(left,0)
+   self.assertLessEqual(right,slider.winfo_width())
 
 class TemplateTests(unittest.TestCase):
  def test_arguments_preserved(self):

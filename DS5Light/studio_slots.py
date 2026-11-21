@@ -6,6 +6,15 @@ import secrets
 import time
 import threading
 _DEVICE_LOCK=threading.Lock()
+
+
+def profile_matches_revision(profile, revision):
+    token = profile.get('config_token', '')
+    return (isinstance(token, str) and len(token) == 16
+            and type(revision) is int and 0 <= revision <= 0xffffffff
+            and token[:8] == revision.to_bytes(4, 'little').hex())
+
+
 @dataclass(frozen=True)
 class Slot:
     index: int
@@ -86,6 +95,8 @@ class StudioClient:
                 profile['auto_haptics_enable'] = mode
                 if mode == 1:
                     profile.update(mix_native_level=mix_level, ah_dsp_source=dsp_source)
+                elif mode == 2:
+                    profile['ah_dsp_source'] = dsp_source
         if include_revision and len(raw)>=46 and raw[30:34]==b'REV1':
             profile['config_token']=raw[34:42].hex()
         return profile
@@ -125,7 +136,7 @@ class StudioClient:
                 except OSError:pass
                 return None
             mix_level=optional_field(0x55,100) if mode==1 else None
-            dsp_source=optional_field(0x64,1) if mix_level else None
+            dsp_source=optional_field(0x64,1) if mode==2 or mix_level else None
             after=self.profile(include_mute=True,include_state=True)
             if 'auto_haptics_enable' in after:return after
             if all(before[key]==after[key] for key in ('index','name','edited')):

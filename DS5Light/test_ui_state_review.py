@@ -44,6 +44,7 @@ class StateReviewTests(unittest.TestCase):
         self.assertEqual(overlay.winfo_manager(),'place')
         self.assertEqual(overlay.label.cget('text'),'전역 캡쳐')
         app.scope.set('process');app.render()
+        self.assertEqual(overlay.master.winfo_manager(),'grid')
         self.assertEqual(overlay.winfo_manager(),'')
         with patch('app.start_thread') as launch:
             app.studio.operation='discover'

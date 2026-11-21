@@ -28,7 +28,7 @@ def read_current(identity,previous=None,full=False):
                 device.close();raise
         try:
             client=StudioClient(device)
-            header=client.profile(include_mute=True,include_state=True)
+            header=client.profile(include_mute=True,include_state=True,include_revision=True)
             old={k:previous.get(k) for k in ('index','name','edited')} if previous else None
             stamp={k:header[k] for k in ('index','name','edited')}
             extended='auto_haptics_enable' in header
@@ -39,8 +39,10 @@ def read_current(identity,previous=None,full=False):
                 profile=client.profile_state(header)
             else:
                 profile=dict(header,auto_haptics_enable=previous['auto_haptics_enable'])
-            if not extended and stamp==old and previous.get('auto_haptics_enable')==profile.get('auto_haptics_enable')==1:
-                for key in ('mix_native_level','ah_dsp_source'):
+            if not extended and stamp==old and previous.get('auto_haptics_enable')==profile.get('auto_haptics_enable'):
+                mode = profile['auto_haptics_enable']
+                keys = {1: ('mix_native_level', 'ah_dsp_source'), 2: ('ah_dsp_source',)}.get(mode, ())
+                for key in keys:
                     if key in previous:profile.setdefault(key,previous[key])
             return dict(path=target['path'] if target else identity.hid_path,row=target,profile=profile,
                         full=checked,extended=extended)

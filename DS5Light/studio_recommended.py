@@ -22,10 +22,10 @@ AUDIO_HAPTIC_FIELDS=frozenset((
 PRESETS=(
     ('DS_Native.json',_ui_tr('네이티브 프리셋'),
      _ui_tr('별도 설정을 하지 않았다면 기본값과 같아 적용할 필요가 없습니다. 오디오햅틱을 끄고 게임의 네이티브 햅틱·일반 진동을 사용합니다. 게임·연결 방식이 지원해야 하며 DS5Light 전송은 정지합니다.')),
-    ('Audio_Haptic_01.json',_ui_tr('오디오햅틱 안정형'),
-     _ui_tr('배경 반응을 줄이는 안정형입니다. 작은 소리 차단 25, 기울기 24dB, 대역 분리 50Hz를 사용합니다. 약한 효과음도 줄 수 있으며 음악·대사를 따로 구분하지는 못합니다.')),
-    ('Audio_Haptic_02.json',_ui_tr('오디오햅틱 반응형'),
-     _ui_tr('안정형보다 반응을 살립니다. 작은 소리 차단 16, 부드러움 32, 저역 통과 100Hz, 대역 분리 60Hz, 고음 세기 60%입니다. 배경음에도 반응하며 음악·대사를 따로 구분하지는 못합니다.')),
+    ('Audio_Haptic_01.json',_ui_tr('오디오햅틱 믹스'),
+     _ui_tr('오디오햅틱을 네이티브 햅틱 원본과 섞습니다. Rear에 네이티브 신호가 들어오는 게임에서 사용하세요. 앱 필터를 켜고 앱 강도 100%부터 시작하세요.')),
+    ('Audio_Haptic_02.json',_ui_tr('오디오햅틱 대체'),
+     _ui_tr('Front 입력에서 만든 오디오햅틱만 사용합니다. 앱 필터 켬, 배경 억제량 55%, 앱 강도 100% 기준입니다.')),
 )
 COMMON_HELP=_ui_tr('\n\n현재 Pico 설정에서 Studio의 오디오햅틱 항목만 추천값으로 바꿔 선택한 슬롯에 저장합니다. 장치·자이로·트리거 등 다른 설정과 매크로는 유지합니다.')
 
@@ -44,7 +44,7 @@ def load_preset(filename):
     validate_changes({},fields)
     name=data.get('name','')
     if not isinstance(name,str) or not name or '\x00' in name or len(name.encode('utf-8'))>16:raise ValueError(_ui_tr('추천 프리셋 이름이 올바르지 않습니다.'))
-    return ('Audio Haptic 02' if filename=='Audio_Haptic_02.json' else name),fields
+    return name,fields
 
 
 def equal_value(a,b):

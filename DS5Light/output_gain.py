@@ -1,4 +1,4 @@
-"""Final PCM output level: 100% is exact unity, changes slew over at most 40 ms."""
+"""Final PCM output level: 100% is exact unity, large changes slew over at most 60 ms."""
 
 from studio_i18n import text as _ui_tr
 import math
@@ -22,7 +22,10 @@ class OutputGain:
 
         self.capacity=480
 
-        self.positions=np.arange(1,self.capacity+1,dtype=np.float32)
+        self.positions=np.arange(1,self.capacity+1,dtype=np.float64)
+        self._slew_target=None
+        self._slew_start=1.0
+        self._slew_frames=0
 
         self._work=None
         self._slew_work=None
@@ -31,15 +34,18 @@ class OutputGain:
 
 
 
-    def process(self,data,target):
+    def process(self,data,target, *, rear_peak=None):
 
         if type(target) not in (int,float) or not math.isfinite(target) or not 0<=target<=HAPTIC_GAIN_MAX:
 
             raise ValueError(_ui_tr('진동 세기 범위 오류'))
 
-        if target==self.current==1.0 or not data: return data
+        if target==self.current:
+            self._slew_target=None
 
-        if target==self.current==0.0:
+        if not data or (rear_peak is None and target==self.current==1.0): return data
+
+        if rear_peak is None and target==self.current==0.0:
 
             if len(data)%8:raise ValueError(_ui_tr('4채널 PCM 길이 오류'))
 
@@ -53,7 +59,7 @@ class OutputGain:
 
         if n>self.capacity:
 
-            self.capacity=n; self.positions=np.arange(1,n+1,dtype=np.float32)
+            self.capacity=n; self.positions=np.arange(1,n+1,dtype=np.float64)
 
         if self._work is None or len(self._work)<n:
 
@@ -69,7 +75,8 @@ class OutputGain:
 
             # A settled level needs no per-sample slew array or maximum scan.
 
-            np.multiply(y,np.float32(target),out=y)
+            gain_channels = y if rear_peak is None else y[:, 2:]
+            np.multiply(gain_channels,np.float32(target),out=gain_channels)
 
             amplified=target>1
 
@@ -81,20 +88,31 @@ class OutputGain:
 
             maximum_step=1.5/(48000*.03)
 
-            steps=self.positions[:n]*maximum_step
-
-            gains=self.current+np.clip(target-self.current,-steps,steps)
+            if target!=self._slew_target:
+                self._slew_target=target
+                self._slew_start=self.current
+                self._slew_frames=0
+            # Derive the ramp from its original sample position so regrouping
+            # 240- and 480-frame transport blocks cannot change PCM rounding.
+            steps=(self.positions[:n]+self._slew_frames)*maximum_step
+            gains=self._slew_start+np.clip(target-self._slew_start,-steps,steps)
+            self._slew_frames+=n
 
             self.current=float(gains[-1])
 
             if abs(self.current-target)<1e-6: self.current=float(target)
 
             np.copyto(y,x)
-            np.multiply(y,gains[:,None],out=y)
+            gain_channels = y if rear_peak is None else y[:, 2:]
+            np.multiply(gain_channels,gains[:,None],out=gain_channels)
 
             amplified=target>1 or np.max(gains)>1
 
-        if amplified:
+        if rear_peak is not None:
+            rear = y[:, 2:]
+            self.limited_samples += int(np.count_nonzero(rear > rear_peak))
+            np.clip(rear, 0, rear_peak, out=rear)
+        elif amplified:
 
             self.limited_samples+=int(np.count_nonzero((y>32767)|(y<-32768)))
 
@@ -111,4 +129,5 @@ class OutputGain:
     def reconnect(self):
 
         self.current=0.0
+        self._slew_target=None
 

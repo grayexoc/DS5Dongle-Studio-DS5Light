@@ -1,17 +1,20 @@
 """Explicit device checks in a modal dialog; idle application does no extra work."""
 from thread_start import start_thread
+from dataclasses import asdict
 import json
+import math
 import os
 import queue
 import threading
 import time
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox, simpledialog
 from ui_controls import RoundedCard
 from pathlib import Path
 
 from studio_i18n import text as tr
 from studio_power import blocked
+from studio_settings_protocol import PartialApplyError
 from device_diagnostics import (collect_snapshot, measure_reports, run_output_test,
                                 with_selected_device, RUMBLE_TEST_MODES, audio_recovery_candidates,
                                 finish_speaker_measurement, audio_signal_guidance)
@@ -26,6 +29,14 @@ class DeviceDiagnosticsDialog:
     def __init__(self, app):
         self.app = app
         self.busy = False
+        self.preview_visible = False
+        self.preview_epoch = 0
+        self.optimizer_result = None
+        self.route_receipt = None
+        self.intensity_receipt = None
+        self.signal_result = None
+        self.signal_context = None
+        self.pc_gain_restore = None
         self.closing = False
         self.cancel = threading.Event()
         self.results = queue.SimpleQueue()
@@ -72,12 +83,16 @@ class DeviceDiagnosticsDialog:
         content.rowconfigure(0, weight=1)
         left_host = self.card(content, '')
         left_host.grid(row=0, column=0, sticky='nsew', padx=(0, 12))
-        left = left_host.content
+        diagram_host = left_host.content
         right = tk.Frame(content, bg='#101010')
         right.grid(row=0, column=1, sticky='nsew')
-        self.diagram = tk.Canvas(left, height=205, bg='#151515', highlightthickness=0)
-        self.diagram.pack(fill='both', expand=True, pady=(0, 8))
+        diagram_host.columnconfigure(0, weight=1)
+        diagram_host.rowconfigure(0, weight=1)
+        self.diagram = tk.Canvas(diagram_host, height=205, bg='#151515', highlightthickness=0)
+        self.diagram.grid(row=0, column=0, sticky='nsew', pady=(0, 8))
         self.diagram.bind('<Configure>', lambda _: self.draw_controller())
+        left = tk.Frame(diagram_host, bg='#151515')
+        left.grid(row=1, column=0, sticky='ew')
         self.buttons = []
         for title, actions in [
             ('∿ 햅틱', [('왼쪽', 'haptic_left'), ('오른쪽', 'haptic_right')]),
@@ -103,6 +118,33 @@ class DeviceDiagnosticsDialog:
         self.output_buttons=list(self.buttons)
         tk.Label(left, text=tr('각 시험 최대 2초 · 오디오햅틱 끔 프로필 필요'),
                  bg='#151515', fg='#aaa393', anchor='w').pack(fill='x', pady=(6, 0))
+        self.signal_button = ttk.Button(left, text=tr('WAV DSP 신호 비교'),
+            command=self.signal_preview, style='Diagnostic.TButton')
+        self.signal_button.pack(fill='x', pady=(6, 0))
+        self.buttons.append(self.signal_button)
+        self.pc_gain_button = ttk.Button(left, text=tr('PC 게인 후보 적용'), command=self.apply_pc_gain,
+                                         style='Diagnostic.TButton', state='disabled')
+        self.buttons.append(self.pc_gain_button)
+        self.studio_tools_button = ttk.Button(left, text=tr('Studio 개발 진단 열기'),
+            command=self.toggle_studio_tools, style='Diagnostic.TButton')
+        self.studio_tools_button.pack(fill='x', pady=(6, 0))
+        self.studio_tools = tk.Frame(left, bg='#151515')
+        self.exclusive_button = ttk.Button(self.studio_tools, text=tr('Studio 독점 WAV 재생'),
+            command=self.exclusive_replay, style='Diagnostic.TButton')
+        self.exclusive_button.pack(fill='x', pady=(6, 0))
+        self.buttons.append(self.exclusive_button)
+        self.preview_button = ttk.Button(self.studio_tools, text=tr('DSP Only 최적화 미리보기'),
+            command=self.optimizer_preview, style='Diagnostic.TButton')
+        self.preview_button.pack(fill='x', pady=(6, 0))
+        self.buttons.append(self.preview_button)
+        self.route_button = ttk.Button(self.studio_tools, text=tr('후보 적용'), command=self.optimizer_write,
+                                       style='Diagnostic.TButton', state='disabled')
+        self.route_button.pack(fill='x', pady=(4, 0))
+        self.buttons.append(self.route_button)
+        self.intensity_button = ttk.Button(self.studio_tools, text=tr('Studio 강도 후보 적용'),
+            command=self.optimizer_intensity_write, style='Diagnostic.TButton', state='disabled')
+        self.intensity_button.pack(fill='x', pady=(4, 0))
+        self.buttons.append(self.intensity_button)
         state_host = self.card(right, tr('▣ 장치 상태'))
         state_host.pack(fill='x', pady=(0, 12))
         state = state_host.content
@@ -238,11 +280,12 @@ class DeviceDiagnosticsDialog:
     def available(self, kind):
         a = self.app
         if self.busy or a._closing or a._close_requested:return False
-        if ((kind == 'test' and a.engine) or a._stopping or a.studio.busy or a.studio_settings.busy
+        if ((kind in ('test', 'exclusive_replay', 'optimizer_preview', 'optimizer_write',
+                     'intensity_write', 'signal_preview') and a.engine) or a._stopping or a.studio.busy or a.studio_settings.busy
                 or getattr(a.studio_settings, 'recording', False) or blocked(a)):
             self.status.set(tr('DS5Light 오디오와 다른 장치 작업을 정지한 뒤 시도하세요.'))
             return False
-        if kind != 'audio_outputs' and not a.studio.binding.snapshot().hid_path:
+        if kind not in ('audio_outputs', 'signal_preview') and not a.studio.binding.snapshot().hid_path:
             self.status.set(tr('Pico를 먼저 조회하세요.'))
             return False
         return True
@@ -252,18 +295,23 @@ class DeviceDiagnosticsDialog:
         if not self.stop_input_monitor():
             self.status.set(tr('입력 조회 종료를 기다린 뒤 다시 시도하세요.'));return
         self.busy = True
+        self.preview_visible = False
+        if kind == 'optimizer_preview':
+            self.optimizer_result = None
+        elif kind == 'signal_preview':
+            self.signal_result = None
         self.cancel.clear()
         for button in self.confirm_buttons:button.configure(state='disabled')
         identity = self.app.studio.binding.snapshot()
         for button in self.buttons:button.configure(state='disabled')
-        self.stop_button.configure(state='normal')
+        self.stop_button.configure(state='disabled' if kind in ('optimizer_write', 'intensity_write') else 'normal')
         self.status.set(tr({'timing': '입력 수신 검사 중 · 5초간 기다리세요.',
                             'speaker_meter': '오디오 재생을 유지하고 5초간 기다리세요.'}.get(kind, '진단 작업 중…')))
         def work():
             try:
                 binding = self.app.studio.binding
                 started = time.monotonic()
-                if kind == 'audio_outputs':
+                if kind in ('audio_outputs', 'signal_preview'):
                     value = operation(None, identity)
                 else:
                     value = with_selected_device(binding, identity,
@@ -278,10 +326,308 @@ class DeviceDiagnosticsDialog:
                 if kind in ('snapshot', 'speaker_meter') and binding.snapshot() != identity:
                     raise RuntimeError('선택한 Pico가 변경됐습니다. 상태를 다시 조회하세요.')
                 self.results.put((kind, value, None))
+            except PartialApplyError as exc:
+                self.results.put((kind, None, exc))
             except Exception as exc:self.results.put((kind, None, str(exc)))
         try:start_thread(threading.Thread(target=work, name='DS5Light-device-diagnostics', daemon=True))
         except Exception as exc:self.results.put((kind,None,str(exc)))
         self.job = self.window.after(100, self.poll)
+
+    def exclusive_replay(self):
+        if not self.available('exclusive_replay'):
+            return
+        path = filedialog.askopenfilename(parent=self.window,
+            title=tr('Studio 재생용 WAV 선택 · 스테레오는 처음 1.5초'), filetypes=[('WAV', '*.wav')])
+        if not path:
+            return
+
+        controls = self.app.controls
+
+        def operation(device, identity):
+            from audio import devices
+            from studio_replay import play_exclusive_on_endpoint, verified_endpoint
+            from studio_settings_protocol import SettingsClient
+
+            binding = self.app.studio.binding
+            endpoint = verified_endpoint(binding, devices())
+            if binding.snapshot() != identity:
+                raise RuntimeError(tr('선택한 Pico가 변경됐습니다. 상태를 다시 조회하세요.'))
+            client = SettingsClient(device, cancel=lambda: (
+                self.cancel.is_set() or binding.snapshot() != identity))
+            play_exclusive_on_endpoint(Path(path), client, endpoint['endpoint_id'], stereo_controls=controls)
+            return {}
+
+        self.start('exclusive_replay', operation)
+
+    def optimizer_preview(self):
+        live_output = self.app.studio.rear_control_required()
+        epoch = self.preview_epoch
+
+        def operation(device, identity):
+            from audio import devices
+            from studio_optimizer_preview import read_route_preview
+            from studio_replay import verified_endpoint
+            from studio_settings_protocol import SettingsClient
+
+            binding = self.app.studio.binding
+            endpoint_verified = False
+            if live_output:
+                try:
+                    verified_endpoint(binding, devices())
+                    endpoint_verified = True
+                except RuntimeError:
+                    pass
+            client = SettingsClient(device, cancel=self.cancel.is_set)
+            preview = read_route_preview(client,
+                                         live_output=live_output, endpoint_verified=endpoint_verified)
+            if preview['changes'] or preview.get('live_route_verified'):
+                from studio_replay import playback_snapshot
+                from studio_slots import profile_matches_revision
+
+                try:
+                    usb = playback_snapshot(client)
+                except (OSError, RuntimeError, ValueError):
+                    usb = {}
+                preview['apply_supported'] = (bool(preview['changes']) and usb.get('conditional_route_apply') and usb.get('known')
+                    and not usb['active'] and profile_matches_revision(
+                        {'config_token': preview['revision']}, usb.get('config_revision')))
+                preview['intensity_supported'] = (usb.get('conditional_intensity_apply') and usb.get('known')
+                    and not usb['active'] and usb.get('local_discard_complete') and profile_matches_revision(
+                        {'config_token': preview['revision']}, usb.get('config_revision')))
+            if binding.snapshot() != identity:
+                raise RuntimeError(tr('선택한 Pico가 변경됐습니다. 상태를 다시 조회하세요.'))
+            return dict(preview, identity=identity, live_output=live_output, epoch=epoch)
+
+        self.start('optimizer_preview', operation)
+
+    def optimizer_write(self):
+        if self.intensity_receipt:
+            return
+        receipt = self.route_receipt
+        candidate = receipt or self.optimizer_result
+        if not candidate or (not receipt and not candidate.get('apply_supported')):
+            return
+        binding = self.app.studio.binding
+        if candidate['identity'] != binding.snapshot() or not self.available('optimizer_write'):
+            return
+        if not receipt and (candidate['live_output'] != self.app.studio.rear_control_required()
+                            or candidate['epoch'] != self.preview_epoch):
+            return
+        if not receipt and not messagebox.askokcancel(
+                tr('후보 적용'), tr('Studio에 라우팅을 적용할까요? 슬롯 저장 없이 적용하며, 이 창에서 이전 라우팅을 복구할 수 있습니다.'),
+                parent=self.window):
+            return
+        if not receipt and self.optimizer_result is not candidate:
+            return
+
+        def operation(device, identity):
+            from studio_optimizer_preview import apply_route_preview, rollback_route_apply
+            from studio_settings_protocol import SettingsClient
+
+            if candidate['identity'] != identity or binding.snapshot() != identity:
+                raise RuntimeError(tr('선택한 Pico가 변경됐습니다. 상태를 다시 조회하세요.'))
+            if not receipt and candidate['live_output']:
+                from audio import devices
+                from studio_replay import verified_endpoint
+
+                verified_endpoint(binding, devices())
+                if binding.snapshot() != identity:
+                    raise RuntimeError(tr('선택한 Pico가 변경됐습니다. 상태를 다시 조회하세요.'))
+            client = SettingsClient(device)
+            if receipt:
+                rollback_route_apply(client, receipt)
+                return None
+            return dict(apply_route_preview(client, candidate), identity=identity)
+
+        self.start('optimizer_write', operation)
+
+    def intensity_action_available(self):
+        if self.busy or self.app.engine is not None or self.route_receipt:
+            return False
+        if self.intensity_receipt:
+            return self.intensity_receipt['identity'] == self.app.studio.binding.snapshot()
+        preview = self.optimizer_result or {}
+        signal = self.signal_result or {}
+        if not preview.get('intensity_supported') or signal.get('pc_gain_candidate'):
+            return False
+        candidate = self.studio_intensity_preview()
+        return bool(candidate and candidate['proposed'] < candidate['observed'])
+
+    def optimizer_intensity_write(self):
+        if not self.intensity_action_available() or not self.available('intensity_write'):
+            return
+        receipt, preview, signal = self.intensity_receipt, self.optimizer_result, self.signal_result
+        controls = self.app.controls
+        binding = self.app.studio.binding
+        identity = (receipt or preview)['identity']
+        if not receipt and not messagebox.askokcancel(
+                tr('Studio 강도 후보 적용'), tr('Studio 강도 후보를 적용할까요? 슬롯에는 저장하지 않습니다.'),
+                parent=self.window):
+            return
+        if not receipt and (preview is not self.optimizer_result or signal is not self.signal_result
+                            or controls != self.app.controls or not self.intensity_action_available()):
+            return
+
+        def operation(device, selected):
+            from audio import devices
+            from studio_optimizer_preview import apply_intensity_preview, rollback_intensity_apply
+            from studio_replay import verified_endpoint
+            from studio_settings_protocol import SettingsClient
+
+            if not receipt:
+                verified_endpoint(binding, devices())
+            if selected != identity or binding.snapshot() != identity:
+                raise RuntimeError(tr('선택한 Pico가 변경됐습니다. 상태를 다시 조회하세요.'))
+            client = SettingsClient(device)
+            if receipt:
+                rollback_intensity_apply(client, receipt)
+                return None
+            return dict(apply_intensity_preview(client, preview, signal, controls), identity=identity)
+
+        self.start('intensity_write', operation)
+
+    def signal_preview(self):
+        if not self.available('signal_preview'):
+            return
+        path = filedialog.askopenfilename(parent=self.window, filetypes=[('WAV', '*.wav')])
+        if not path:
+            return
+        selection = simpledialog.askstring(tr('WAV 분석 구간'),
+            tr('시작 시간(초)을 쉼표로 구분해 최대 3개 입력하세요. 각 구간은 최대 1.5초입니다.'),
+            initialvalue='0', parent=self.window)
+        if selection is None:
+            return
+        try:
+            starts = tuple(float(part) for part in selection.split(','))
+            if not 1 <= len(starts) <= 3 or len(set(starts)) != len(starts) or any(
+                    not math.isfinite(start) or start < 0 for start in starts):
+                raise ValueError
+        except ValueError:
+            self.status.set(tr('서로 다른 0 이상의 시작 시간을 최대 3개 입력하세요.'))
+            return
+        controls = self.app.controls
+
+        def operation(_device, _identity):
+            from studio_optimizer_preview import analyze_rehearsal_windows
+
+            return analyze_rehearsal_windows(Path(path), controls, starts)
+
+        self.signal_context = self.current_signal_context()
+        self.start('signal_preview', operation)
+
+    def current_signal_context(self):
+        app = self.app
+        scope = app.scope.get()
+        return (scope, app.game.get() if scope == 'process' else None,
+                app.destination.get(), app.studio.binding.snapshot())
+
+    def signal_context_matches(self):
+        return self.signal_context is None or self.signal_context == self.current_signal_context()
+
+    def matching_studio_preview(self):
+        preview, signal = self.optimizer_result, self.signal_result
+        if (not preview or not signal or not self.signal_context_matches()
+                or signal.get('dsp_controls') != asdict(self.app.controls)
+                or preview['identity'] != self.app.studio.binding.snapshot()
+                or preview['live_output'] != self.app.studio.rear_control_required()):
+            return None
+        return preview
+
+    def studio_intensity_preview(self):
+        preview = self.matching_studio_preview()
+        if preview is None:
+            return None
+        from studio_optimizer_preview import preview_studio_intensity
+
+        return preview_studio_intensity(preview, self.signal_result)
+
+    def studio_headroom_preview(self):
+        preview = self.matching_studio_preview()
+        if preview is None:
+            return None
+        from studio_optimizer_preview import compare_studio_headroom
+
+        return compare_studio_headroom(preview, self.signal_result)
+
+    def studio_intensity_summary(self):
+        summary = ''
+        headroom = self.studio_headroom_preview()
+        if headroom:
+            summary = '\n' + tr('포화 전 상한 추정 · 리허설 {rehearsal:.2f} / 실시간 모의 {live:.2f} (기준 {limit:.2f})').format(
+                rehearsal=headroom['rehearsal']['current_upper_bound'],
+                live=headroom['simulated_live']['current_upper_bound'], limit=headroom['criterion'])
+        candidate = self.studio_intensity_preview()
+        if not candidate:
+            return summary
+        if candidate['observed'] == candidate['proposed']:
+            return summary + '\n' + tr('오프라인 추정 · PC 게인 후보만으로 기준 충족')
+        return summary + '\n' + tr('오프라인 Studio 강도 후보 · {before}% → {after}%').format(
+            before=candidate['observed'], after=candidate['proposed'])
+
+    def pc_gain_action(self):
+        if self.app.engine is not None or self.busy:
+            return None, False
+        if self.pc_gain_restore:
+            observed, previous, _, _ = self.pc_gain_restore
+            if self.app.controls == observed:
+                return previous.gain, True
+        result = self.signal_result or {}
+        candidate = result.get('pc_gain_candidate')
+        if candidate and self.signal_context_matches() and result.get('dsp_controls') == asdict(self.app.controls):
+            return candidate['gain'], False
+        return None, False
+
+    def toggle_studio_tools(self):
+        if self.studio_tools.winfo_manager():
+            self.studio_tools.pack_forget()
+            label = 'Studio 개발 진단 열기'
+        else:
+            self.studio_tools.pack(fill='x', after=self.studio_tools_button)
+            label = 'Studio 개발 진단 닫기'
+        self.studio_tools_button.configure(text=tr(label))
+
+    def update_pc_gain_button(self):
+        gain, restoring = self.pc_gain_action()
+        self.pc_gain_button.configure(state='normal' if gain is not None else 'disabled',
+                                      text=tr('이전 PC 게인 복구' if restoring else 'PC 게인 후보 적용'))
+        if gain is None:
+            self.pc_gain_button.pack_forget()
+        elif not self.pc_gain_button.winfo_manager():
+            self.pc_gain_button.pack(fill='x', pady=(4, 0), after=self.signal_button)
+
+    def apply_pc_gain(self):
+        gain, restoring = self.pc_gain_action()
+        if gain is None or not self.available('signal_preview'):
+            self.update_pc_gain_button()
+            return
+        previous = self.app.controls
+        self.app.gain.set(gain * 100 if restoring else round(gain * 100))
+        self.app.update_controls()
+        if restoring:
+            _, original, applied_signal, original_signal = self.pc_gain_restore
+            if self.app.controls == original and applied_signal is not None and self.signal_result is applied_signal:
+                self.signal_result = original_signal
+            self.pc_gain_restore = None
+        else:
+            from studio_optimizer_preview import applied_pc_gain_signal
+
+            original_signal = self.signal_result
+            applied_signal = applied_pc_gain_signal(original_signal, previous, self.app.controls)
+            if applied_signal is not None:
+                self.signal_result = applied_signal
+            self.pc_gain_restore = (self.app.controls, previous, applied_signal, original_signal)
+        self.update_test_buttons()
+        self.status.set(tr('PC 게인 복구 · {before}% → {after}%' if restoring
+                           else 'PC 게인 적용 · {before}% → {after}%').format(
+            before=round(previous.gain * 100), after=round(gain * 100)) + self.studio_intensity_summary())
+
+    def invalidate_optimizer_preview(self):
+        self.preview_epoch += 1
+        self.optimizer_result = None
+        self.update_route_button()
+        if self.preview_visible:
+            self.preview_visible = False
+            self.status.set(tr('Studio 상태가 바뀌었습니다. 최적화 미리보기를 다시 조회하세요.'))
 
     def snapshot(self, measure_speaker=False):
         stats = self.app.engine.stats() if self.app.engine else None
@@ -416,11 +762,30 @@ class DeviceDiagnosticsDialog:
         for button in self.buttons:button.configure(state='normal')
         self.stop_button.configure(state='disabled')
         if error:
+            if kind in ('optimizer_write', 'intensity_write'):
+                self.optimizer_result = None
+                if isinstance(error, PartialApplyError):
+                    if kind == 'optimizer_write':
+                        self.route_receipt = None
+                    else:
+                        self.intensity_receipt = None
+            error = str(error)
             self.last_test=None
             self.status.set(tr(error))
             if kind in ('snapshot', 'speaker_meter'):self.show(dict(diagnostic_error=error))
             self.test_results.append(dict(operation=kind,completed=False,error=error))
             self.test_results=self.test_results[-64:]
+        elif kind == 'intensity_write':
+            self.optimizer_result = None
+            self.intensity_receipt = value
+            self.status.set(tr('이전 Studio 강도 복구 및 확인 완료' if value is None else 'Studio 강도 적용 및 확인 완료'))
+        elif kind == 'optimizer_write':
+            self.optimizer_result = None
+            verified_route = self.route_receipt['before'] if value is None else value['applied']
+            if (self.report or {}).get('status'):
+                self.report['status']['auto_haptics'] = verified_route['auto_haptics_enable']
+            self.route_receipt = value
+            self.status.set(tr('이전 라우팅 복구 및 확인 완료' if value is None else '후보 라우팅 적용 및 확인 완료'))
         else:
             if value is None:value={}
             if kind in ('snapshot', 'speaker_meter'):self.report = value
@@ -444,6 +809,60 @@ class DeviceDiagnosticsDialog:
                     title += f" · {mode} · {value['rumble_strength']}/255"
                 self.status.set(title + ' · ' + tr('전송 요청 완료 · 실제 반응을 확인하세요.')
                                 if self.last_test else tr(value.get('blocked_reason', '시험 중지됨')))
+            elif kind == 'optimizer_preview':
+                labels = {
+                    'auto_haptics_enable': ('오디오햅틱 모드', ('Off', 'Mix', 'Replace')),
+                    'ah_dsp_source': ('DSP 입력', ('전면 CH0–1', '후면 CH2–3')),
+                    'auto_mute_replace': ('Replace 스피커 자동 음소거', ('끔', '켬')),
+                }
+                lines = [tr(value['reason'])]
+                observed = value.get('observed', {})
+                for field, current in observed.items():
+                    name, descriptions = labels[field]
+                    line = f'{tr(name)}  {tr(descriptions[current])}'
+                    if field in value['changes']:
+                        _, candidate = value['changes'][field]
+                        line += f' → {tr(descriptions[candidate])}'
+                    lines.append(line)
+                    reason = value.get('field_reasons', {}).get(field)
+                    if reason and reason != value['reason']:
+                        lines.append(tr(reason))
+                if (self.app.studio.binding.snapshot() != value['identity']
+                        or self.app.studio.rear_control_required() != value['live_output']
+                        or self.preview_epoch != value['epoch']):
+                    self.status.set(tr('Studio 상태가 바뀌었습니다. 최적화 미리보기를 다시 조회하세요.'))
+                else:
+                    self.preview_visible = True
+                    self.optimizer_result = value
+                    self.status.set('\n'.join(lines) + self.studio_intensity_summary())
+            elif kind == 'signal_preview':
+                if self.cancel.is_set():
+                    self.status.set(tr('검사 중지됨'))
+                else:
+                    self.signal_result = value
+                    current, bypass = value['current'], value['bypass']
+                    summary = (tr('WAV 리허설 후면 PCM 피크 · 현재 DSP / 바이패스') +
+                               f"  {current['rear_peak']} / {bypass['rear_peak']}")
+                    live_pcm = value.get('live_pcm')
+                    if live_pcm is not None:
+                        summary += '\n' + tr('실시간 출력 모의 · 후면 PCM 피크 {peak}').format(
+                            peak=live_pcm['rear_peak'])
+                    source = value.get('source')
+                    if value.get('windows'):
+                        summary += '\n' + tr('WAV 구간 {count}개 비교').format(count=len(value['windows']))
+                    if source and source['first_frame']:
+                        summary += '\n' + tr('WAV 구간 시작 {seconds:g}초').format(
+                            seconds=source['first_frame'] / source['sample_rate'])
+                    candidate = value.get('pc_gain_candidate')
+                    if candidate:
+                        summary += '\n' + tr('오프라인 PC 게인 후보 {gain}% · PCM 상한 프레임 {before} → {after}').format(
+                            gain=round(candidate['gain'] * 100), before=current['rear_ceiling_frames'],
+                            after=candidate['rear_ceiling_frames'])
+                    elif value.get('rejected_pc_gain_trial'):
+                        summary += '\n' + tr('공통 PC 게인 후보가 선택 구간의 검증을 통과하지 못했습니다.')
+                    self.status.set(summary + self.studio_intensity_summary())
+            elif kind == 'exclusive_replay':
+                self.status.set(tr('Studio WAV 전송 완료'))
             elif kind == 'timing':
                 self.status.set(tr('입력 수신 검사 완료') if not value.get('cancelled') else tr('검사 중지됨'))
             elif kind == 'speaker_meter' and 'speaker_delta' in value:
@@ -472,10 +891,27 @@ class DeviceDiagnosticsDialog:
         if not comparison:
             self.rumble_choice.current(0)
         self.rumble_choice.configure(state='readonly' if allowed and comparison else 'disabled')
+        self.exclusive_button.configure(
+            state='normal' if has_hid and not self.busy and self.app.engine is None
+            and status.get('ready') and status.get('auto_haptics') == 2
+            and status.get('usb_playback_diagnostics') else 'disabled')
+        self.preview_button.configure(state='normal' if has_hid and not self.busy else 'disabled')
+        self.update_route_button()
+        self.update_pc_gain_button()
         self.snapshot_button.configure(state='normal' if has_hid and not self.busy else 'disabled')
         self.speaker_meter_button.configure(state='normal' if has_hid and not self.busy
                                             and status.get('ready') and status.get('speaker_diagnostics') else 'disabled')
         self.measure_button.configure(state='disabled' if self.busy or not has_hid or status.get('usb_mode')=='XInput' else 'normal')
+
+    def update_route_button(self):
+        candidate = self.route_receipt or self.optimizer_result or {}
+        enabled = (not self.busy and self.app.engine is None and not self.intensity_receipt
+                   and (self.route_receipt or candidate.get('apply_supported'))
+                   and candidate.get('identity') == self.app.studio.binding.snapshot())
+        self.route_button.configure(state='normal' if enabled else 'disabled',
+                                    text=tr('이전 라우팅 복구' if self.route_receipt else '후보 적용'))
+        self.intensity_button.configure(state='normal' if self.intensity_action_available() else 'disabled',
+            text=tr('이전 Studio 강도 복구' if self.intensity_receipt else 'Studio 강도 후보 적용'))
 
     def show(self, value):
         status = value.get('status')
@@ -518,20 +954,57 @@ class DeviceDiagnosticsDialog:
 
     def export(self):
         if self.busy:return
-        if self.report is None and self.timing is None and not self.test_results:
+        if (self.report is None and self.timing is None and not self.test_results
+                and self.optimizer_result is None and self.signal_result is None):
             self.status.set(tr('상태 조회 또는 시험을 먼저 실행하세요.'))
             return
         path = filedialog.asksaveasfilename(parent=self.window, defaultextension='.json',
                     initialfile='ds5light-device-diagnostics.json', filetypes=[('JSON', '*.json')])
         if not path:return
+        preview = self.optimizer_result
+        live_output = self.app.studio.rear_control_required()
+        if preview is not None and (self.app.studio.binding.snapshot() != preview['identity']
+                                    or live_output != preview['live_output']):
+            self.invalidate_optimizer_preview()
+            preview = None
         def shareable(report):
             if report is None or 'device' not in report:return report
             identity=report['device']
             return dict(report,device={key:identity[key] for key in
                 ('edge_serial_present','require_output_identity','expected_edge_serial') if key in identity})
         try:
-            Path(path).write_text(json.dumps(dict(snapshot=shareable(self.report), input_timing=shareable(self.timing), output_tests=self.test_results),
-                ensure_ascii=False, indent=2, default=self.json_value), encoding='utf-8')
+            from studio_optimizer_preview import describe_haptics_profile
+
+            engine = self.app.engine
+            profile = describe_haptics_profile(
+                self.app.controls, engine.controls if engine is not None else None,
+                live_output=live_output, preview=preview)
+            profile['pc']['configured_controls'] = asdict(self.app.configured_controls())
+            report = dict(snapshot=shareable(self.report), input_timing=shareable(self.timing),
+                          output_tests=self.test_results, haptics_profile=profile)
+            if self.signal_result is not None:
+                signal = dict(self.signal_result)
+                if 'dsp_controls' in signal:
+                    signal['matches_current_pc_controls'] = signal['dsp_controls'] == asdict(self.app.controls)
+                report['optimizer_signal'] = signal
+            if preview is not None:
+                report['optimizer_preview'] = {
+                    key: preview[key] for key in ('reason', 'observed', 'changes', 'field_reasons',
+                                                  'live_output', 'studio_dsp_baseline', 'studio_output_gain') if key in preview
+                }
+                report['optimizer_preview']['profile_revision_verified'] = bool(preview.get('revision'))
+                report['optimizer_preview']['conditional_apply_ready_at_preview'] = bool(preview.get('apply_supported'))
+                headroom = self.studio_headroom_preview()
+                if headroom:
+                    report['optimizer_preview']['studio_headroom_comparison'] = headroom
+                candidate = self.studio_intensity_preview()
+                if candidate:
+                    key = ('studio_intensity_candidate' if candidate['proposed'] != candidate['observed']
+                           else 'studio_pc_gain_only_estimate')
+                    report['optimizer_preview'][key] = candidate
+            Path(path).write_text(json.dumps(report, ensure_ascii=False, indent=2, default=self.json_value),
+                                  encoding='utf-8')
+            self.preview_visible = False
             self.status.set(tr('진단 파일 저장 완료 · 장치 식별 필드 제외'))
         except (OSError, TypeError) as exc:self.status.set(str(exc))
 

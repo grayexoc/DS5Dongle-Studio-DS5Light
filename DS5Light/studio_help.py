@@ -237,7 +237,7 @@ DESCRIPTIONS.update({
 
  'batt_notify_enable':_ui_tr('설정한 잔량에 도달하면 듀얼센스 라이트바로 알립니다.'),
 
- 'touch_mouse':_ui_tr('터치패드 움직임을 마우스로 변환합니다.'),
+ 'touch_mouse':_ui_tr('터치패드 움직임을 마우스로 변환합니다. 스틱이나 자이로도 마우스로 출력하면 이동량이 합산됩니다. 게임과 매핑에서도 터치패드 입력을 계속 사용할 수 있습니다.'),
 
  'touch_mouse_sens':_ui_tr('값이 클수록 손가락 이동에 대한 포인터 속도가 빨라집니다.'),
 
@@ -323,7 +323,7 @@ GROUPS=[(_ui_tr('장치'),['Device & Connection']),
 
  (_ui_tr('트리거'),['Trigger Strength','Rumble → Trigger']),
 
- (_ui_tr('자이로·스틱'),['Gyro Aiming','Right Stick','Stick to Mouse']),
+ (_ui_tr('자이로·스틱'),['Gyro Aiming','Right Stick','Stick to Mouse','Touchpad as Mouse']),
 
  (_ui_tr('매핑·매크로'),['Macros']),(_ui_tr('프로필 슬롯'),[])]
 
@@ -573,6 +573,9 @@ DEFAULTS['speaker_volume']=127
 DESCRIPTIONS['speaker_volume']=_ui_tr('적용·저장 시 Windows의 같은 Pico 출력 장치 음량도 동기화\n127은 Windows 장치 볼륨 100%에 해당')
 DESCRIPTIONS['headset_volume']=_ui_tr('듀얼센스 단자에 연결한 헤드셋의 음량\n음량 연동을 켜면 스피커 음량을 기준으로 맞춤')
 DESCRIPTIONS['lock_volume']=_ui_tr('Windows·게임의 듀얼센스 음량 변경 명령 차단\n게임 자체의 소리 크기 설정은 별도')
+LABELS['ah_highpass'] = _ui_tr('극저음 차단')
+DEFAULTS['ah_highpass'] = 0
+DESCRIPTIONS['ah_highpass'] = _ui_tr('원본 오디오에서 햅틱을 만들 때 극저음을 줄입니다. 기본값은 끔입니다.')
 LABELS['at_pushback_src']=_ui_tr('트리거 반동 소스')
 DESCRIPTIONS['at_pushback_src']=_ui_tr('트리거 반동을 만드는 일반 진동·오디오햅틱 신호 선택\n커스텀 트리거 효과 설정 중 반동 세기 조절 가능')
 DESCRIPTIONS['disable_usb_sn']=_ui_tr('켜면 일부 게임·모드와의 호환성 개선\nDualSense Edge는 특히 햅틱·스피커 호환성을 위해 켜기 권장\n변경 시 장치가 재연결되며 윈도 소리 제어판의 기본 장치를 다시 선택해야 할 수 있음')

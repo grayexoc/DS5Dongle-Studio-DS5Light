@@ -11,6 +11,7 @@
 
 static bool ps_was_pressed       = false;
 static uint32_t ps_press_time    = 0;
+static bool long_press_detected  = false;
 static bool long_press_fired     = false;
 static bool key_release_pending  = false;
 static uint32_t key_release_time = 0;
@@ -28,6 +29,7 @@ static void release_key() {
 void ps_shortcut_reset() {
     ps_was_pressed      = false;
     ps_press_time       = 0;
+    long_press_detected = false;
     long_press_fired    = false;
     key_release_time    = to_ms_since_boot(get_absolute_time());
     last_high_time      = 0;
@@ -64,9 +66,11 @@ void ps_shortcut_tick(const uint8_t *data, uint16_t len) {
     if (is_ps_pressed && !ps_was_pressed) {
         ps_press_time    = now;
         ps_was_pressed   = true;
+        long_press_detected = false;
         long_press_fired = false;
-    } else if (is_ps_pressed && ps_was_pressed) {
+    } else if (raw_ps) {
         if (!long_press_fired && (now - ps_press_time >= 750)) {
+            long_press_detected = true;
             if (!key_release_pending && !macro_busy() && tud_hid_n_ready(PS_KBD_INSTANCE)) {
                 uint8_t keys[6] = { HID_KEY_TAB };
                 if (tud_hid_n_keyboard_report(PS_KBD_INSTANCE, 0, KEYBOARD_MODIFIER_LEFTGUI, keys)) {
@@ -77,7 +81,7 @@ void ps_shortcut_tick(const uint8_t *data, uint16_t len) {
             }
         }
     } else if (!is_ps_pressed && ps_was_pressed) {
-        if (!long_press_fired) {
+        if (!long_press_detected) {
             if (!key_release_pending && !macro_busy() && tud_hid_n_ready(PS_KBD_INSTANCE)) {
                 uint8_t keys[6] = { HID_KEY_G };
                 if (tud_hid_n_keyboard_report(PS_KBD_INSTANCE, 0, KEYBOARD_MODIFIER_LEFTGUI, keys)) {

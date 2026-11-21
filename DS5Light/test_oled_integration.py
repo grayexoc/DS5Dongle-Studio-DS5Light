@@ -66,6 +66,72 @@ class IdentityTests(unittest.TestCase):
         self.assertEqual(Engine().transport_frames,480)
 
 class EngineReconnectTests(unittest.TestCase):
+    def test_engine_stop_waits_for_owned_studio_worker(self):
+        engine = Engine()
+        engine._studio_output = worker = Mock()
+        worker.wait_closed.side_effect = [False, True]
+        self.assertFalse(engine.stop())
+        worker.request_stop.assert_called_once()
+        self.assertTrue(engine.stop())
+
+
+    def test_explicit_studio_live_path_does_not_fall_back_to_shared_output(self):
+        import audio
+
+        rows = [dict(index=0, name='PC input', maxInputChannels=2, defaultSampleRate=48000,
+                     isLoopbackDevice=True, hostApi=1), output()]
+        target = rows[1]
+        engine = Engine(input_name='PC input', output_name=target['name'],
+                        controls=Controls(bypass=True), binding=binding())
+        engine.studio_live = True
+        engine.diagnostics_enabled = True
+        native = Mock()
+        pa = Mock()
+        pa.get_host_api_info_by_type.return_value = {'index': 1}
+        pa.get_device_info_by_index.side_effect = {row['index']: row for row in rows}.__getitem__
+        pa.get_device_info_generator.side_effect = lambda: iter(rows)
+        payload = b'\x00\xc0' * (480 * 4)
+        input_kwargs = dict(input=True, input_device_index=0, rate=48000, channels=2)
+
+        def namespace(module):
+            def run(args):
+                audio_api = module.PyAudio()
+                audio_api.open(**input_kwargs)
+                kwargs = dict(output=True, output_device_index=args.out_index, rate=48000, channels=4)
+                stream = audio_api.open(**kwargs)
+                engine._capture_timing = (audio.time.perf_counter(), None)
+                stream.write(payload)
+                engine.diagnostics_enabled = False
+                stream.write(bytes(len(payload)))
+                stream.close()
+                with self.assertRaisesRegex(RuntimeError, 'fresh start'):
+                    audio_api.open(**kwargs)
+                return 0
+            return {'run': run}
+
+        with (
+            patch.object(audio, 'devices', return_value=rows),
+            patch.object(audio.pa, 'PyAudio', return_value=pa),
+            patch.object(audio, 'original_namespace', side_effect=namespace),
+            patch('studio_replay.verified_endpoint', return_value=target),
+            patch('studio_live_output.StudioLiveOutput', return_value=native) as renderer,
+        ):
+            engine._run()
+        self.assertEqual(engine.errors, 0, engine.status)
+        renderer.assert_called_once_with(engine.binding, engine.binding.snapshot(), target['endpoint_id'],
+                                         engine.stop_event, adaptive_gain=False)
+        self.assertEqual(native.write.call_count, 2)
+        native.write.assert_any_call(payload, engine.controls, stereo_capture=True)
+        native.write.assert_called_with(bytes(len(payload)), engine.controls, stereo_capture=True)
+        self.assertEqual(engine.blocks, 2)
+        self.assertEqual(engine.peak, 0.5)
+        for key in ('capture_to_output_call_ms', 'output_write_wait_ms'):
+            self.assertEqual(len(engine.latency_samples[key]), 1)
+            self.assertGreaterEqual(engine.latency_samples[key][0], 0)
+        native.close.assert_called_once()
+        pa.open.assert_called_once_with(**input_kwargs)
+
+
     def test_changed_endpoint_name_and_id_recover_only_same_container(self):
         import audio
         state={'changed':False};opened=[];waits=[];holder={}
@@ -103,12 +169,39 @@ class EngineReconnectTests(unittest.TestCase):
         self.assertEqual(e.errors,0,e.status);self.assertEqual(opened,[1,2]);self.assertEqual(waits,[.2]);self.assertEqual(e.output_id,'E2');self.assertEqual(discard.call_count,2)
 
 class WatchReadTests(unittest.TestCase):
+    def test_replace_header_exposes_dsp_source_and_legacy_poll_keeps_verified_value(self):
+        from studio_slots import StudioClient
+
+        raw = bytearray(63)
+        raw[23:30] = b'SLP2' + bytes((2, 0, 1))
+        client = StudioClient(Mock())
+        with patch.object(client, 'metadata', return_value=raw):
+            profile = client.profile(include_state=True)
+        self.assertEqual(profile['ah_dsp_source'], 1)
+        self.assertNotIn('mix_native_level', profile)
+
+        old = Mock()
+        old.profile.return_value = {k: profile[k] for k in ('index', 'name', 'edited')}
+        with patch('hid.device', return_value=Mock()), patch.object(watch, 'StudioClient', return_value=old):
+            observed = watch.read_current(DeviceIdentity(b'ours', 'ours'), profile)
+        self.assertEqual(observed['profile']['ah_dsp_source'], 1)
+        old.profile_state.assert_not_called()
+
     def test_healthy_metadata_does_not_enumerate_or_read_full_slots(self):
         client=Mock();client.profile.return_value={k:AH[k] for k in ('index','name','edited')}
         with patch('hid.device',return_value=Mock()),patch.object(watch,'StudioClient',return_value=client),patch.object(watch,'devices') as scan:
             result=watch.read_current(DeviceIdentity(b'ours','ours'),AH,False)
         scan.assert_not_called();client.profile_state.assert_not_called();client.slots.assert_not_called()
         self.assertEqual(result['profile']['auto_haptics_enable'],1)
+    def test_extended_settings_revision_is_read_with_the_route_in_one_request(self):
+        profile = dict(AH, config_token='01000000aabbccdd')
+        client = Mock()
+        client.profile.return_value = profile
+        with patch('hid.device', return_value=Mock()), patch.object(watch, 'StudioClient', return_value=client):
+            result = watch.read_current(DeviceIdentity(b'ours', 'ours'), AH)
+        client.profile.assert_called_once_with(include_mute=True, include_state=True, include_revision=True)
+        client.profile_state.assert_not_called()
+        self.assertEqual(result['profile']['config_token'], profile['config_token'])
     def test_profile_change_and_periodic_mode_validation_use_coherent_state(self):
         for previous,header,mode,full in ((AH,OFF,0,False),(AH,AH,1,True)):
             client=Mock();client.profile.return_value={k:header[k] for k in ('index','name','edited')};client.profile_state.return_value=header
@@ -180,14 +273,50 @@ class AppPolicyTests(unittest.TestCase):
         self.assertFalse(e.write_ready);self.assertEqual(e.doc.values['auto_haptics_gain'],123)
     def test_verified_mix_observation_switches_live_channel_route(self):
         u=self.ui
-        u.engine=SimpleNamespace(front_only=False)
+        u.engine=SimpleNamespace(front_only=False,studio_live=False)
         try:
-            with patch.object(u,'render'):
-                for mode,level,front in ((1,50,True),(1,0,False),(1,100,True),(2,100,False)):
+            with patch.object(u,'render'),patch.object(u,'stop') as stop:
+                for mode,level,source,front in ((1,50,0,True),(1,0,0,False),(1,100,0,True),
+                                                (2,100,0,False),(2,100,1,True),(2,100,0,False)):
+                    rear=(mode,source)==(2,1)
+                    stop.reset_mock()
                     u._external_profile(dict(path=b'ours',row=hidrow(),profile=dict(AH,auto_haptics_enable=mode,
-                                              mix_native_level=level,ah_dsp_source=0)))
+                                              mix_native_level=level,ah_dsp_source=source)))
                     self.assertEqual(u.engine.front_only,front)
+                    self.assertEqual(stop.call_count,int(u.engine.studio_live!=rear))
+                    u.engine.studio_live=rear
         finally:u.engine=None
+    def test_revision_only_observation_invalidates_preview_without_restarting_audio(self):
+        u = self.ui
+        original = dict(AH, config_token='01000000aabbccdd')
+        changed = dict(original, config_token='02000000aabbccdd')
+        u._external_profile(dict(path=b'ours', row=hidrow(), profile=original))
+        u.engine = SimpleNamespace(front_only=False, studio_live=False)
+        diagnostic = u.device_diagnostics = Mock(optimizer_result=None)
+        editor = u.studio_settings
+        editor.path = b'ours'
+        editor.loaded = editor.write_ready = True
+        editor.profile_revision = original['config_token']
+        editor.doc.load({'auto_haptics_gain': 100})
+        editor.doc.values['auto_haptics_gain'] = 110
+        try:
+            with patch.object(u, 'stop') as stop:
+                u._external_profile(dict(path=b'ours', profile=changed))
+                diagnostic.invalidate_optimizer_preview.assert_called_once_with()
+                stop.assert_not_called()
+                self.assertEqual(u.studio.observed_profile_revision, changed['config_token'])
+                self.assertTrue(editor.external_stale)
+                self.assertFalse(editor.write_ready)
+                self.assertEqual(editor.doc.values['auto_haptics_gain'], 110)
+                diagnostic.reset_mock()
+                u._external_profile(dict(path=b'ours', profile=changed))
+                diagnostic.invalidate_optimizer_preview.assert_not_called()
+                diagnostic.optimizer_result = {'revision': original['config_token']}
+                u._external_profile(dict(path=b'ours', profile=changed))
+                diagnostic.invalidate_optimizer_preview.assert_called_once_with()
+        finally:
+            u.device_diagnostics = None
+            u.engine = None
     def test_start_does_not_immediately_scan_whole_slot_catalog(self):
         p=self.ui.studio;p.last_profile_check=time.monotonic();p.choice.set('02 · Audio Haptic')
         with patch.object(p,'task') as task:p.discover(allow_running=True,after_start=True)
@@ -249,7 +378,7 @@ class SignalEquivalenceTests(unittest.TestCase):
     def baseline(self,name):
         path=Path(__file__).parent/'tests/fixtures/oled-signal'/(name+'.py')
         spec=importlib.util.spec_from_file_location('oled_baseline_'+name,path);m=importlib.util.module_from_spec(spec);sys.modules[spec.name]=m;spec.loader.exec_module(m);return m
-    def test_mix_and_gain_equal_previous_bytes_through_transitions(self):
+    def test_mix_matches_previous_bytes_and_gain_preserves_transition_bounds(self):
         from channel_mix import ChannelMixer
         from output_gain import OutputGain
         old=self.baseline('channel_mix').ChannelMixer();new=ChannelMixer()
@@ -259,7 +388,15 @@ class SignalEquivalenceTests(unittest.TestCase):
             controls=dict(rear=i%13<6,lfe=i%17<8,center=i%19<9,limiter='soft' if i%23<11 else 'hard')
             self.assertEqual(old.process(data,ch,48000,**controls),new.process(data,ch,48000,**controls))
             data=rng.integers(-32768,32767,(n,4),dtype=np.int16).tobytes();target=(0.,.5,1.,1.5)[i//60]
-            self.assertEqual(oldgain.process(data,target),newgain.process(data,target));self.assertEqual(oldgain.limited_samples,newgain.limited_samples)
+            settled=oldgain.current==newgain.current==target
+            previous=oldgain.process(data,target)
+            result=newgain.process(data,target)
+            if settled:
+                self.assertEqual(previous,result)
+            else:
+                difference=np.frombuffer(previous,'<i2').astype(int)-np.frombuffer(result,'<i2')
+                self.assertLessEqual(np.max(np.abs(difference)),1)
+            self.assertEqual(oldgain.limited_samples,newgain.limited_samples)
     def test_passthroughs_preserve_object_and_transition_state(self):
         from output_gain import OutputGain
         from channel_mix import ChannelMixer

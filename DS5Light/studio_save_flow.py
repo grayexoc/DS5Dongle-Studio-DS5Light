@@ -151,7 +151,18 @@ class SaveFlow:
         # path alone must not label the preserved profile draft as external.
         # Require a stable serial AND unchanged profile; never relax stale edits.
         if (not self.external_stale and old_serial and old_serial==new_serial
-                and self.profile_stamp==stamp):self.path=fresh['path']
+                and self.profile_stamp==stamp):
+            self.path=fresh['path']
+            # The same Pico can reset its revision counter at reconnect.
+            # Retain a profile draft only if its scalar baseline still reads back.
+            revision = fresh['profile'].get('config_token')
+            if self.profile_revision is not None and revision is not None:
+                from studio_recommended import equal_value
+
+                values = fresh['values']
+                if all(key in values and equal_value(values[key], previous)
+                       for key, previous in self.doc.baseline.items()):
+                    self.profile_revision = revision
         # Keep unrelated profile edits staged. The shared action never sends
         # fields, the per-profile enable mask, save_flash or save_slot.
         self.doc.macros=copy.deepcopy(fresh['macros']);self.doc.macro_baseline=copy.deepcopy(fresh['macros'])

@@ -4282,7 +4282,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
                                                                               'per-profile enable checks '
                                                                               'with Save to current profile '
                                                                               'below.',
- '앱이 오디오를 전송할 때만 적용되며 프로필은 바꾸지 않습니다. 반응을 먼저 맞춘 뒤 세기를 조절하세요. 기본 100%. Studio 오디오햅틱 세기와 함께 높이면 포화될 수 있습니다.': 'Applies '
+ '앱이 오디오를 전송할 때만 적용되며 프로필은 바꾸지 않습니다. 반응을 먼저 맞춘 뒤 세기를 조절하세요. 기본 1x. Studio 오디오햅틱 세기와 함께 높이면 포화될 수 있습니다.': 'Applies '
                                                                                                            'only '
                                                                                                            'while '
                                                                                                            'the '
@@ -4301,7 +4301,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
                                                                                                            'adjust '
                                                                                                            'strength. '
                                                                                                            'Default '
-                                                                                                           '100%. '
+                                                                                                           '1x. '
                                                                                                            'Raising '
                                                                                                            'this '
                                                                                                            'and '
@@ -4376,6 +4376,11 @@ EN.update({
  '중지': 'Stop', '닫기': 'Close',
  'DS5Light 오디오와 다른 장치 작업을 정지한 뒤 시도하세요.': 'Stop DS5Light audio and other device operations first.',
  'Pico를 먼저 조회하세요.': 'Read the Pico device first.', '진단 작업 중…': 'Running device check…',
+ '후보 적용': 'Apply candidate',
+ '이전 라우팅 복구': 'Restore previous route',
+ 'Studio에 라우팅을 적용할까요? 슬롯 저장 없이 적용하며, 이 창에서 이전 라우팅을 복구할 수 있습니다.': 'Apply the route to Studio without saving a slot? You can restore the previous route in this window.',
+ '후보 라우팅 적용 및 확인 완료': 'Candidate route applied and verified',
+ '이전 라우팅 복구 및 확인 완료': 'Previous route restored and verified',
  'XInput 설정 HID에는 입력 보고가 없습니다. DualSense 모드에서 측정하세요.': 'The XInput configuration HID has no input reports. Measure in DualSense mode.',
  '제출 완료 · 실제 진동·소리는 직접 확인하세요.': 'Submitted. Confirm physical vibration/audio separately.',
  '조회 완료 · 실제 BT 지연과 모터 반응은 미측정': 'Read complete. BT latency and motor response are not measured.',
@@ -4561,6 +4566,9 @@ FIELD_LABELS = {
  'stick_mouse_sens':'Horizontal mouse speed', 'stick_mouse_sens_y':'Vertical mouse speed',
  'stick_mouse_deadzone':'Stick deadzone', 'stick_mouse_curve':'Response curve ×10',
  'stick_mouse_invert':'Invert mouse axes',
+ 'touch_mouse':'Touchpad mouse', 'touch_mouse_sens':'Touchpad pointer speed',
+ 'touch_mouse_min':'Touchpad movement threshold', 'touch_mouse_invert':'Invert touchpad axes',
+ 'touch_mouse_trackball':'Trackball inertia', 'touch_mouse_friction':'Trackball friction',
 }
 FIELD_HELP = {
  'auto_haptics_enable':'Off: game rumble and native haptics.\nMix: adds audio haptics. Replace: audio haptics only.',
@@ -4636,6 +4644,12 @@ FIELD_HELP = {
  'stick_mouse_deadzone':'Ignores movement near the center. Higher values reduce drift and fine control.',
  'stick_mouse_curve':'10 is linear; higher values give finer control near the center. Default: 18.',
  'stick_mouse_invert':'Reverses stick-to-mouse axes.',
+ 'touch_mouse':'Move the pointer with the touchpad. Stick and gyro mouse movement adds to it. Games and mappings can still receive touchpad input.',
+ 'touch_mouse_sens':'Higher values move the pointer farther for the same finger movement.',
+ 'touch_mouse_min':'Filters out small finger movements. Higher values can also block intentional fine movement.',
+ 'touch_mouse_invert':'Reverses the selected pointer axes for touchpad movement.',
+ 'touch_mouse_trackball':'Lets the pointer keep moving briefly after you lift your finger.',
+ 'touch_mouse_friction':'Higher values stop trackball movement sooner.',
 }
 for _prefix in ('at_', 'at_l2_'):
     for _suffix, _title, _help in (
@@ -4907,3 +4921,88 @@ EN.update({
     '마지막으로 읽은 햅틱 채널에서 신호가 감지됐습니다. 실제 전송 완료와 손잡이 진동까지 확인한 결과는 아닙니다.': 'A signal was detected in the last observed haptic channels. This does not confirm completed delivery or physical vibration.',
     '오디오 수신량과 마지막 햅틱 신호, 스피커 처리 카운터를 확인합니다. 신호 크기는 마지막 블록의 값이며 전체 검사 구간의 최대값이 아닙니다.': 'Checks received audio, the last haptic signal and speaker counters. Signal peaks describe the last block, not the maximum over the whole check.',
 })
+
+EN['Studio 독점 WAV 재생'] = 'Studio exclusive WAV replay'
+EN['Studio WAV 전송 완료'] = 'Studio WAV submission complete'
+
+EN['Studio 재생용 WAV 선택 · 스테레오는 처음 1.5초'] = 'Select a Studio WAV · first 1.5 seconds for stereo'
+
+EN['Studio 독점 오디오 출력'] = 'Studio exclusive audio output'
+
+EN['Studio 실시간 독점 출력 (실험용)'] = 'Studio live exclusive output (experimental)'
+EN['Studio Replace와 후면 DSP, 스피커 자동 음소거, Windows 독점 모드가 필요합니다.'] = 'Requires Studio Replace, rear DSP, speaker auto-mute and Windows exclusive mode.'
+
+EN['Studio 프레임 · 큐 등록 / WASAPI 제출: '] = 'Studio frames · queued / submitted to WASAPI: '
+EN['승인 갱신: '] = 'Lease renewals: '
+
+EN.update({'DSP Only 최적화 미리보기': 'DSP Only optimization preview', '오디오햅틱 모드': 'Audio haptics mode', 'DSP 입력': 'DSP input', '전면 CH0–1': 'Front CH0–1', '후면 CH2–3': 'Rear CH2–3', 'Replace 스피커 자동 음소거': 'Replace speaker auto-mute', '현재 Studio 설정과 프로필 리비전을 다시 확인하세요.': 'Check the current Studio settings and profile revision again.', '실시간 독점 출력은 현재 Native Mix 설정과 충돌합니다.': 'Live exclusive output conflicts with the current Native Mix settings.', 'Studio 독점 출력의 장치 식별 또는 펌웨어 지원을 확인하세요.': 'Verify the Studio exclusive output device or firmware support.', 'Studio 실시간 독점 출력에 필요한 설정 후보입니다.': 'Candidate settings required for Studio live exclusive output.', 'Studio 독점 출력의 설정 조건이 충족됐습니다. 독점권은 시작할 때 확인합니다.': 'The Studio settings meet the requirements. Exclusive access will be checked at startup.', 'Native Mix의 후면 채널을 유지하려면 DSP 입력을 전면으로 선택하세요.': 'Select front DSP input to preserve the rear channels for Native Mix.', '확인된 설정에서 변경할 경로 후보가 없습니다.': 'The verified settings have no route change candidate.'})
+
+EN['Studio 상태가 바뀌었습니다. 최적화 미리보기를 다시 조회하세요.'] = 'Studio state changed. Refresh the optimization preview.'
+
+EN['WAV DSP 신호 비교'] = 'Compare WAV DSP signals'
+EN['WAV 리허설 후면 PCM 피크 · 현재 DSP / 바이패스'] = 'WAV rehearsal rear PCM peak · current DSP / bypass'
+EN['실시간 출력 모의 · 후면 PCM 피크 {peak}'] = 'Simulated live output · rear PCM peak {peak}'
+EN['WAV 분석 구간'] = 'WAV analysis window'
+EN['시작 시간(초)을 쉼표로 구분해 최대 3개 입력하세요. 각 구간은 최대 1.5초입니다.'] = 'Enter up to three comma-separated start times in seconds. Each window is up to 1.5 seconds.'
+EN['서로 다른 0 이상의 시작 시간을 최대 3개 입력하세요.'] = 'Enter up to three distinct, nonnegative start times.'
+EN['WAV 구간 {count}개 비교'] = 'Compared {count} WAV windows'
+EN['공통 PC 게인 후보가 선택 구간의 검증을 통과하지 못했습니다.'] = 'The shared PC gain failed verification across the selected windows.'
+EN['오프라인 추정 · PC 게인 후보만으로 기준 충족'] = 'Offline estimate · the PC gain candidate alone meets the criterion'
+EN['오프라인 Studio 강도 후보 · {before}% → {after}%'] = 'Offline Studio intensity candidate · {before}% → {after}%'
+EN['포화 전 상한 추정 · 리허설 {rehearsal:.2f} / 실시간 모의 {live:.2f} (기준 {limit:.2f})'] = 'Estimated bound before soft clipping · rehearsal {rehearsal:.2f} / simulated live {live:.2f} (criterion {limit:.2f})'
+EN['WAV 구간 시작 {seconds:g}초'] = 'WAV window starts at {seconds:g} s'
+EN['오프라인 PC 게인 후보 {gain}% · PCM 상한 프레임 {before} → {after}'] = 'Offline PC gain candidate {gain}% · frames at PCM ceiling {before} → {after}'
+EN['PC 게인 후보 적용'] = 'Apply PC gain candidate'
+EN['이전 PC 게인 복구'] = 'Restore previous PC gain'
+EN['PC 게인 복구 · {before}% → {after}%'] = 'PC gain restored · {before}% → {after}%'
+EN['PC 게인 적용 · {before}% → {after}%'] = 'PC gain applied · {before}% → {after}%'
+
+EN['USB 진단과 Studio 설정의 리비전이 다릅니다. 다시 조회하세요.'] = 'USB diagnostics and Studio settings have different revisions. Refresh the preview.'
+EN['PC 후면 제어 스트림에는 Replace 모드가 필요합니다.'] = 'The PC rear-control stream requires Replace mode.'
+EN['PC 제어값은 후면 CH2–3으로 전달됩니다.'] = 'The PC sends control values on rear channels CH2–3.'
+EN['Studio 독점 출력은 Replace의 스피커 자동 음소거를 요구합니다.'] = 'Studio exclusive output requires speaker auto-mute in Replace mode.'
+EN['적응 PC 게인 목표: {gain}%'] = 'Adaptive PC gain target: {gain}%'
+EN['Studio 강도 후보 적용'] = 'Apply Studio intensity candidate'
+EN['Studio 강도 후보를 적용할까요? 슬롯에는 저장하지 않습니다.'] = 'Apply the Studio intensity candidate without saving the slot?'
+EN['이전 Studio 강도 복구'] = 'Restore previous Studio intensity'
+EN['이전 Studio 강도 복구 및 확인 완료'] = 'Previous Studio intensity restored and verified'
+EN['Studio 강도 적용 및 확인 완료'] = 'Studio intensity applied and verified'
+EN.update({
+    '요청 채널 {request} · 열린 형식 {channels}ch / {rate} Hz': 'Requested {request} · opened {channels}ch / {rate} Hz',
+    '지원하지 않는 형식에서 다음 프로세스 캡처 후보로 전환했습니다.': 'Unsupported format. Opened the next process capture format.',
+    '입력 채널 배치 미확인 · 첫 스테레오 쌍 사용': 'Input layout unverified · using the first stereo pair',
+    'Studio 임시 경로 적용 확인': 'Temporary Studio route verified',
+    'Studio 경로 복구 확인': 'Studio route restored and verified',
+    'Studio 경로 복구 미확인': 'Studio route restoration unverified',
+    '터치패드 움직임을 마우스로 변환합니다. 스틱이나 자이로도 마우스로 출력하면 이동량이 합산됩니다. 게임과 매핑에서도 터치패드 입력을 계속 사용할 수 있습니다.': 'Move the pointer with the touchpad. Stick and gyro mouse movements add to it. The game and mappings can still receive touchpad input.',
+    '복원 대상에서 터치패드 마우스 설정을 읽지 못했습니다.': 'Could not read touchpad mouse settings on the restore target.',
+    '오디오햅틱 필터': 'Audio haptics filter',
+    '수동 5.1·7.1은 센터·서라운드·LFE를 자동으로 켜고 합산 초과분을 자릅니다. 자동에서 채널 배치를 확인할 수 없으면 첫 스테레오 쌍을 사용합니다.': 'Manual 5.1 and 7.1 include center, surround and LFE and clip peaks above the mix limit. Auto uses the first stereo pair when it cannot verify the channel layout.',
+    '원본 채널 RMS (dBFS) · ': 'Raw channel RMS (dBFS) · ',
+    '전체 범위 도달 샘플 · ': 'Full-scale samples · ',
+    '동일 PCM 채널 · ': 'Identical PCM channels · ',
+    '가장 높은 절대 상관 · ': 'Highest absolute correlation · ',
+    'Studio 출력 경로가 변경되었습니다. 다시 시작하세요.': 'The Studio output route changed. Start again.',
+    'Studio 독점 출력 시작 실패 · ': 'Could not start Studio exclusive output · ',
+    'Studio 독점 출력 시작 실패 · 입출력 장치를 확인하세요.': 'Could not start Studio exclusive output · Check the input and output devices.',
+    'Studio 독점 출력 시작 실패 · 같은 Pico의 4채널 출력을 선택하세요.': 'Could not start Studio exclusive output · Select the four-channel output on the same Pico.',
+    '높일수록 배경 진동을 줄이는 동안 타격의 순간적인 진동을 더 살립니다.': 'Raise this to preserve sharp impacts while reducing background vibration.',
+})
+EN.update({
+    '오디오햅틱 믹스': 'Audio haptics · Mix',
+    '오디오햅틱 대체': 'Audio haptics · Replace',
+    '오디오햅틱을 네이티브 햅틱 원본과 섞습니다. Rear에 네이티브 신호가 들어오는 게임에서 사용하세요. 앱 필터를 켜고 앱 강도 100%부터 시작하세요.':
+        'Mixes audio haptics with raw native haptics. Use with games that send native signals to Rear. Enable the app filter and start at 100% app strength.',
+    'Front 입력에서 만든 오디오햅틱만 사용합니다. 앱 필터 켬, 배경 억제량 55%, 앱 강도 100% 기준입니다.':
+        'Uses audio haptics derived from Front input. Tuned for the app filter on, background suppression at 55%, and app strength at 100%.',
+})
+
+EN.update({'Studio 개발 진단 열기': 'Show Studio developer diagnostics',
+           'Studio 개발 진단 닫기': 'Hide Studio developer diagnostics'})
+EN.update({'극저음 차단': 'Haptic high-pass',
+           '원본 오디오에서 햅틱을 만들 때 극저음을 줄입니다. 기본값은 끔입니다.':
+           'Reduces very low frequencies when deriving haptics from source audio. Off by default.'})
+
+FIELD_LABELS['ah_highpass'] = 'Haptic high-pass'
+FIELD_HELP['ah_highpass'] = 'Reduces very low frequencies in audio-derived haptics. Off by default.'
+EN['복원 대상 펌웨어에서 극저음 차단을 지원하지 않습니다.'] = 'The target firmware does not support haptic high-pass.'

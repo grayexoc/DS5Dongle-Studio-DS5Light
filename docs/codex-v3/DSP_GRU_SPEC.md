@@ -15,7 +15,19 @@ Responsibilities:
 
 Feature extraction must reuse existing DSP states. Do not calculate a duplicate filter bank or duplicate RMS path for AI.
 
+### Phase 2 offline replay
+
+Run `python offline.py input.wav output.wav --features-jsonl features.jsonl` from `DS5Light/`. The WAV path preserves the existing replay routing. The optional JSONL uses `FeatureFrameV1` with schema ID `ds5light.band-evidence.raw.v1`. The 16 values are grouped by instantaneous mean-square, fast envelope, slow envelope, and onset score, in that order. Within each group the bands are below 120 Hz, 120–600 Hz, 600–2500 Hz and above 2500 Hz, using the existing complementary filter differences. Energy values are in squared normalized PCM units. Onset scores are dimensionless, from 0 to 1.
+
+Each record uses the index of the last processed sample on the 48 kHz replay output clock. Sequence starts at zero per run; generation and inference epoch are 1 and profile revision is 0 for a standalone replay. Capture rates other than 48 kHz may produce variable block lengths. These raw block records are evidence for evaluation. Model normalization, labels and 10 ms inference aggregation are Phase 3 decisions.
+
+For human-confirmed labels from HT-GRU-Lab-Lite, see the [offline handoff and alignment tool](HT_GRU_HANDOFF.md).
+
 Potential frequency split changes such as 0–60 / 60–120 Hz are experiments. Existing 120 / 600 / 2500 Hz boundaries are current implementation facts to audit, not immutable V3 choices.
+
+### Studio DSP Only live mapping
+
+The managed Studio rear-control route uses the same low-band hit evidence for attack shaping and optional steering as the offline rehearsal. Attack shape follows the dominant protected band below the 600 Hz crossover. Steering requires a two-channel capture and a clear left/right energy rise. Other input layouts use equal rear targets. Layout changes clear the direction envelope, and the existing output ramp smooths target changes. This DSP behavior does not classify game events from their meaning. Stereo diagnostic WAV conversion uses the same mapper.
 
 ## DSP invariants
 - Preserve causal behavior.

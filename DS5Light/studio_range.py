@@ -5,11 +5,12 @@ from studio_scope import trigger_display,trigger_raw
 from ui_dpi import px,watch_scale
 
 class RangeSlider(tk.Canvas):
-    def __init__(self,parent,variable,low,high,enabled=True,marker=None,marker_label='',trigger=False,allowed=None,display_scale=1,reset_to_marker=False,**kw):
+    def __init__(self,parent,variable,low,high,enabled=True,marker=None,marker_label='',trigger=False,allowed=None,display_scale=1,reset_to_marker=False,tick_labels=None,**kw):
         super().__init__(parent,height=px(parent,64),width=px(parent,220),bg='#151515',highlightthickness=0,bd=0,takefocus=enabled,**kw)
         self.variable=variable;self.low=low;self.high=high;self.enabled=enabled
         self.marker=marker;self.marker_label=marker_label;self.trigger=trigger;self.allowed=allowed;self.display_scale=display_scale
         self.reset_to_marker=reset_to_marker
+        self.tick_labels=tick_labels
         self.bind('<Configure>',self.draw)
         self.bind('<Button-1>',self.move);self.bind('<B1-Motion>',self.move)
         self.bind('<Left>',lambda e:self.step(-1));self.bind('<Right>',lambda e:self.step(1))
@@ -40,8 +41,12 @@ class RangeSlider(tk.Canvas):
             anchor='w' if mx<left+px(self,40) else 'e' if mx>right-px(self,40) else 'center'
             self.create_text(mx,px(self,55),text=f'{self.marker_label} {m:g}',fill=color if self.reset_to_marker else '#aaa393',
                              font=(_ui_tr('맑은 고딕'),8),anchor=anchor,tags='default_marker')
-        self.create_text(left,px(self,34),text=f'{lo:g}',anchor='w',fill='#aaa393',font=(_ui_tr('맑은 고딕'),8))
-        self.create_text(right,px(self,34),text=f'{hi:g}',anchor='e',fill='#aaa393',font=(_ui_tr('맑은 고딕'),8))
+        labels = self.tick_labels or (f'{lo:g}', f'{hi:g}')
+        for index, label in enumerate(labels):
+            fraction = index / (len(labels) - 1)
+            anchor = 'w' if fraction == 0 else 'e' if fraction == 1 else 'center'
+            self.create_text(left + fraction * (right - left), px(self,34), text=label,
+                             anchor=anchor, fill='#aaa393', font=(_ui_tr('맑은 고딕'),8))
         self.create_oval(x-px(self,6),px(self,10),x+px(self,6),px(self,22),fill='#151515',outline=color,width=px(self,2))
     def move(self,event):
         if not self.enabled:return

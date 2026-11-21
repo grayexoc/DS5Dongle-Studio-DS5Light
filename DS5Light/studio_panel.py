@@ -49,8 +49,10 @@ class StudioPanel(StartupDiscovery):
         self._start_callback=None
 
         self.binding=DeviceBinding();self.observed_profile=None;self.last_profile_check=-1e9;self.catalog_invalid=False
+        self.observed_profile_revision=None
 
         self.current_profile=None;self.current_profile_name=None;self.slot_labels=[]
+        self._open_after_discover=False
 
         self._battery_ready_key=None;self._battery_recovery_pending=None
 
@@ -80,7 +82,7 @@ class StudioPanel(StartupDiscovery):
 
         self.choice.bind('<Configure>',lambda event:self._draw_profile_text(),add='+')
 
-        self.apply=ttk.Button(row,text=tr(_ui_tr('불러오기')),command=self.activate,width=9,state='disabled')
+        self.apply=ttk.Button(row,text=tr(_ui_tr('불러오기')),command=self.activate,width=9,state='disabled',style='Footer.TButton')
 
         self.apply.grid(row=0,column=3,sticky='ew',padx=(8,0))
 
@@ -101,9 +103,12 @@ class StudioPanel(StartupDiscovery):
 
         # Startup, Start and post-activation reads keep the current slot fresh.
 
-        if not self.busy and (not self.slots or self.catalog_invalid):self.discover(refresh=True)
+        if not self.busy and (not self.slots or self.catalog_invalid):
+            self.discover(refresh=True)
+            self._open_after_discover=self.operation=='discover'
 
-        self.parent.after_idle(self._color_profile_popup)
+        # The native Post command flushes idle callbacks before showing the popup.
+        self.app.root.after(0,self._color_profile_popup)
 
 
 
@@ -153,6 +158,9 @@ class StudioPanel(StartupDiscovery):
 
         try:
 
+            if self.operation=='discover':
+                self.choice.tk.call('ttk::combobox::Unpost',str(self.choice))
+                return
             popup=self.choice.tk.call('ttk::combobox::PopdownWindow',str(self.choice))
 
             listing=str(popup)+'.f.l'
@@ -191,7 +199,7 @@ class StudioPanel(StartupDiscovery):
 
         self.apply.configure(state='normal' if allowed else 'disabled',
 
-                             style='Accent.TButton' if missing else 'TButton')
+                             style='Accent.Footer.TButton' if missing else 'Footer.TButton')
 
         active=(self.current_profile is not None and
 
@@ -205,7 +213,11 @@ class StudioPanel(StartupDiscovery):
 
                                        foreground='#eee9df' if active else '#aaa393')
 
-        if active:
+        if self.operation=='discover':
+            self._profile_display=('',tr(_ui_tr('불러오는 중…')))
+            self._draw_profile_text()
+
+        elif active:
 
             name=self.current_profile_name
 
@@ -237,7 +249,7 @@ class StudioPanel(StartupDiscovery):
 
         self.current_profile=None;self.current_profile_name=None
 
-        self.observed_profile=None;self.auto_haptics_mode=None
+        self.observed_profile=None;self.observed_profile_revision=None;self.auto_haptics_mode=None
 
         self.catalog_invalid=True;self.last_profile_check=-1e9
 
@@ -420,12 +432,16 @@ class StudioPanel(StartupDiscovery):
         self.initial_connected=True
 
         old=self.observed_profile
+        if 'config_token' in profile or path != self.profile_path:
+            self.observed_profile_revision = profile.get('config_token')
 
         self.observed_profile={k:profile.get(k) for k in ('index','name','edited','auto_haptics_enable')}
         if profile['auto_haptics_enable']==1:
             self.observed_profile.update({key:profile[key] for key in ('mix_native_level','ah_dsp_source') if key in profile})
+        elif profile['auto_haptics_enable']==2 and 'ah_dsp_source' in profile:
+            self.observed_profile['ah_dsp_source']=profile['ah_dsp_source']
         if getattr(self.app,'engine',None):
-            self.app.engine.front_only=self.native_mix_front_only()
+            self.app.engine.front_only=self.legacy_output_front_only()
 
         if old is not None and old!=self.observed_profile:self.catalog_invalid=True
 
@@ -480,6 +496,13 @@ class StudioPanel(StartupDiscovery):
     def native_mix_front_only(self):
         profile=self.observed_profile or {}
         return profile.get('auto_haptics_enable')==1 and (profile.get('mix_native_level') or 0)>0
+
+    def rear_control_required(self):
+        profile = self.observed_profile or {}
+        return profile.get('auto_haptics_enable') == 2 and profile.get('ah_dsp_source') == 1
+
+    def legacy_output_front_only(self):
+        return self.native_mix_front_only() or self.rear_control_required()
 
     def native_mix_conflict(self):
         return self.native_mix_front_only() and self.observed_profile.get('ah_dsp_source')==1
@@ -938,6 +961,8 @@ class StudioPanel(StartupDiscovery):
             self.poll_id=self.app.root.after(80,self.poll);return
 
         self.busy=False;self.operation=None
+        reopen=kind=='discover' and self._open_after_discover
+        if reopen:self._open_after_discover=False
         if kind=='startup':
             result=self.finish_initial_read(result if not error else None)
             if result is None:
@@ -1099,6 +1124,9 @@ class StudioPanel(StartupDiscovery):
         self.render();self.app.last_render=None;self.app.render()
 
         if self._start_callback is not None:self._begin_start_check()
+        elif (reopen and not self.catalog_invalid and self.slots and self.app.selected_tab==0
+              and str(self.choice.tk.call('focus'))==str(self.choice)):
+            self._open_profile_popup()
 
 
 

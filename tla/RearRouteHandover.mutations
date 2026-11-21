@@ -1,0 +1,19 @@
+mutation apply the new interpretation immediately after revision change
+detects NoRearContamination
+only control
+- Revoke(next) == /\ wanted' = next
+-                 /\ active' = None
++ Revoke(next) == /\ wanted' = next
++                 /\ active' = IF next.rev # wanted.rev THEN next ELSE None
+
+mutation rearm after device FIFO flush before the playback boundary
+detects NoRearContamination
+only control
+- /\ boundary /\ LocalDrained
++ /\ LocalDrained
+
+mutation accept a stale lease acknowledgement
+detects NoStaleAcknowledgement
+only control
+- THEN ack ELSE producer
++ THEN ack ELSE ack

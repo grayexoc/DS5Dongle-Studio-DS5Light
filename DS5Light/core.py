@@ -9,8 +9,11 @@ def load_signal_filters():
 
 RATE = 48000
 BLOCK = 240
+HAPTIC_BAND_COUNT = 2  # Below the existing 600 Hz crossover.
+MIN_HAPTIC_ENERGY_SHARE = .25
 HAPTIC_GAIN_MIN = 0.5
-HAPTIC_GAIN_MAX = 2.0
+HAPTIC_GAIN_MAX = 3.0
+LEGACY_HAPTIC_GAIN_MAX = 4.0
 
 @dataclass(frozen=True)
 class Controls:
@@ -79,9 +82,11 @@ class Processor:
         self.initialized = False
         self.event_cooldown = np.zeros(4)
         self.was_event = np.zeros(4,dtype=bool)
+        self.stable_rise = np.zeros(4)
         self._envelope_size = None
         self._coefficient_controls = None
         self._slow_times = np.array([.045,.025,.020,.015])
+        self._direction_energy = None
         self._capacity = BLOCK
         self._bands = np.empty((4, self._capacity, 2), dtype=np.float32)
         self._ramp = np.empty((4, self._capacity), dtype=np.float64)
@@ -122,7 +127,8 @@ class Processor:
         self.gain = ramp[:, -1].copy()
         return ramp
 
-    def process(self, x, controls=Controls(), rumble=RumbleSample(), now=0.):
+    def process(self, x, controls=Controls(), rumble=RumbleSample(), now=0., *,
+                band_features=None, haptic_evidence=None, haptic_direction=None, haptic_bands=None):
         x = select_stereo(x)
         if not np.isfinite(x).all():
             raise ValueError('비정상 오디오 값: 무음 실패 정책 필요')
@@ -161,12 +167,31 @@ class Processor:
             self._slow_alpha = 1-np.exp(-dt/self._slow_times)
             self._envelope_size = n
         fast_a, slow_a = self._fast_alpha, self._slow_alpha
+        if haptic_direction is not None:
+            haptic_direction.fill(0)
+            left = bands[:, :, 0]
+            left_energy = np.einsum('ij,ij->i', left, left) / n
+            # Reuse the shared stereo energy to derive the other channel.
+            side_energy = np.column_stack((left_energy, np.maximum(0, 2 * energy - left_energy)))
+            if self._direction_energy is None:
+                self._direction_energy = side_energy.copy()
+            side_change = side_energy - self._direction_energy
+            self._direction_energy += slow_a[:, None] * side_change
+        else:
+            self._direction_energy = None
         if self.age == 0:
             self.fast_energy = energy.copy()
             self.slow_energy = energy.copy()
             self.bg = np.maximum(energy, 1e-10)
         old_slow = self.slow_energy.copy()
-        self.fast_energy += fast_a*(energy-self.fast_energy)
+        # A weaker follow-up hit can rise sharply against the decaying tail
+        # before the slower envelope recovers enough to recognise a new onset.
+        protect_hits = controls.mode == 'normal' and not controls.bypass and self._impact > 0
+        short_rise = False
+        if protect_hits:
+            short_rise = (energy > self.fast_energy * 2.7) & (energy > self.bg * 2.5)
+        energy_jump = energy - self.fast_energy
+        self.fast_energy += fast_a*energy_jump
         self.slow_energy += slow_a*(energy-self.slow_energy)
         # Relative thresholds follow game volume; an absolute floor only stops
         # digital silence and quantization noise from opening protection.
@@ -176,13 +201,20 @@ class Processor:
         contrast = np.clip((background_ratio-1.25)/3., 0, 1)
         onset = np.clip((onset_ratio-1.8)/2.2, 0, 1)
         onset *= np.clip((self.fast_energy-floor)/(floor*8+1e-12),0,1)
+        if band_features is not None:
+            # Rows are instantaneous mean-square, fast envelope, slow envelope, and onset.
+            band_features[:] = energy, self.fast_energy, self.slow_energy, onset
         event = (onset>.2) & (background_ratio>1.6)
         self.hold = np.maximum(0., self.hold-dt)
-        self.hold[event] = .035
         # Freeze rising background briefly, never indefinitely. Repeated or
         # sustained energy resumes slow learning instead of latching the gate.
         self.learn_pause = np.maximum(0., self.learn_pause-dt)
         self.event_cooldown = np.maximum(0.,self.event_cooldown-dt)
+        # The follow-up can renew protection, while background learning keeps
+        # the original onset cooldown and independently decides when to pause.
+        follow_up = ((self.event_cooldown > 0) & (self.hold <= 0) &
+                     short_rise & (energy > floor * 8))
+        self.hold[event | follow_up] = .035
         new_event = event & ~self.was_event & (self.event_cooldown<=0)
         self.learn_pause[new_event] = .080
         self.event_cooldown[new_event] = .25
@@ -194,12 +226,48 @@ class Processor:
         learning_energy = np.minimum(self.slow_energy, self.fast_energy) if self._impact > 0 else self.slow_energy
         self.bg += alpha*(learning_energy-self.bg)
         self.age += dt
+        if protect_hits and controls.background:
+            # A higher background level can linger in contrast protection.
+            # Reduce that contribution only after the envelopes have settled;
+            # a confirmed hit still gets its original onset/hold protection.
+            stable = ((self.fast_energy >= self.slow_energy * .6) &
+                      (self.fast_energy <= self.slow_energy * 1.6) &
+                      (background_ratio > 1.6))
+            self.stable_rise = np.where(stable, np.minimum(self.stable_rise + dt, .30), 0.)
+            contrast *= 1 - .65 * np.clip((self.stable_rise - .18) / .12, 0, 1)
+        else:
+            self.stable_rise.fill(0)
         protection = np.maximum(contrast, np.where(self.hold>0,1.,onset))
         protection *= self._impact
         # A real energy valley ends protection; sustained effects keep their decay.
         gap = (self.fast_energy < self.slow_energy*.5) & (self._impact > 0)
         self.hold[gap] = 0.
         protection[gap] *= np.clip(self.fast_energy[gap] / np.maximum(self.slow_energy[gap]*.5, floor[gap]), 0, 1)
+        low = slice(0, HAPTIC_BAND_COUNT)
+        # Keep spill from the crossover from opening impact protection.
+        low_band_hit = protect_hits and energy[low].sum() >= energy.sum() * MIN_HAPTIC_ENERGY_SHARE
+        if protect_hits and not low_band_hit and np.any((event | follow_up)[low]):
+            # A loud steady background can dominate the block while the hit
+            # supplies most of the new energy. Require a confirmed low rise.
+            excess = np.maximum(energy_jump, 0.)
+            low_band_hit = excess[low].sum() > .5 * excess.sum()
+        if protect_hits and not low_band_hit:
+            protection[low] = 0.
+        if haptic_evidence is not None:
+            haptic_evidence[:] = 0
+            if haptic_bands is not None:
+                haptic_bands.fill(0)
+            if low_band_hit:
+                amplitude = np.sqrt(energy[low])
+                protected = protection[low] * amplitude * (self.hold[low] > 0)
+                haptic_evidence[0] = np.max(protected)
+                haptic_evidence[1] = np.max(onset[low] * amplitude)
+                if haptic_bands is not None:
+                    haptic_bands[low] = protected
+                if haptic_direction is not None and haptic_evidence[0] > 0:
+                    band = int(np.argmax(protected))
+                    if np.max(side_change[band]) > floor[band] * 8:
+                        np.maximum(0, side_change[band], out=haptic_direction)
         strength = self._strength
         target = 10**((-14*strength*(1-protection))/20)
         if not controls.background or controls.bypass:
@@ -213,7 +281,8 @@ class Processor:
         ramp = self._gain_ramp(target, n, gap)
         y = self._y[:n]
         np.multiply(bands[0], ramp[0, :, None], out=y)
-        for band in range(1, 4):
+        band_count = HAPTIC_BAND_COUNT if controls.mode == 'normal' and not controls.bypass else len(bands)
+        for band in range(1, band_count):
             np.multiply(bands[band], ramp[band, :, None], out=self._weighted[:n])
             np.add(y, self._weighted[:n], out=y)
         if controls.mode not in ('normal', 'pure'):
@@ -231,9 +300,15 @@ class Processor:
             self.pure_gain = gate_end
             np.clip(y, -1, 1, out=y)
             return y.astype(np.float32)
-        g = np.linspace(self.pure_gain, gate_end, n+1)[1:]
-        self.pure_gain = gate_end
-        np.multiply(y, g[:, None], out=y)
+        if self.pure_gain != gate_end:
+            gate = self._ramp[0, :n]
+            np.multiply(self._positions[:n], (gate_end - self.pure_gain) / n, out=gate)
+            gate += self.pure_gain
+            gate[-1] = gate_end
+            np.multiply(y, gate[:, None], out=y)
+            self.pure_gain = gate_end
+        elif not gate_end:
+            y.fill(0.)
         np.clip(y, -1, 1, out=y)
         return y.astype(np.float32)
 

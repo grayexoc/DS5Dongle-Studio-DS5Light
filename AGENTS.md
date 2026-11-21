@@ -43,3 +43,9 @@ The 15–20% Astra / 80–85% Sol split is a planning heuristic, not a quota. Mo
 - Record verified repository facts separately from hypotheses and hardware assumptions.
 - Include branch, commit, file paths, tests executed, and unverified items in audit reports.
 - Update the relevant specification and decision log before implementing an approved architectural change.
+
+## Continuation and reporting
+- When the user says to continue, carry out the next in-scope steps consecutively while their prerequisites are met. A completed subtask or focused test is not a reason to stop for another confirmation.
+- Skip routine intermediate reports when the user requests quiet execution. Surface only a blocker requiring user action, an explicitly required approval, or the final milestone result.
+- During implementation, run only checks needed for the change at hand. Record deferrable tests in the phase status and run them together at final integration. Keep the existing explicit hardware and phase approval gates.
+- Before ending a continuation task, recheck the requested milestone, the worktree and the deferred-test list. Continue through independent remaining work. If the milestone cannot advance, report the concrete blocker and what remains.

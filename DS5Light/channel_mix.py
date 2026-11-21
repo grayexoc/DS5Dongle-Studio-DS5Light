@@ -3,6 +3,50 @@ from studio_i18n import text as _ui_tr
 import numpy as np
 
 
+class ChannelSignalCheck:
+    """Observe raw PCM in one-second windows without assigning channel roles."""
+    def __init__(self, channels, rate):
+        self.channels = channels
+        self.rate = rate
+        self.frames = 0
+        self.total = np.zeros(channels)
+        self.products = np.zeros((channels, channels))
+        self.clipped = np.zeros(channels, dtype=np.int64)
+
+    def observe(self, data):
+        samples = np.frombuffer(data, '<i2').reshape(-1, self.channels)
+        self.frames += len(samples)
+        self.total += samples.sum(axis=0)
+        self.products += np.einsum('ni,nj->ij', samples, samples, dtype=np.float64)
+        self.clipped += np.count_nonzero((samples == -32768) | (samples == 32767), axis=0)
+        if self.frames < self.rate:
+            return None
+
+        power = self.products.diagonal()
+        rms = np.sqrt(power / self.frames) / 32768
+        covariance = self.products - np.outer(self.total, self.total) / self.frames
+        variance = np.maximum(covariance.diagonal(), 0)
+        duplicates, correlations = [], []
+        for left, right in zip(*np.triu_indices(self.channels, 1)):
+            if min(variance[left], variance[right]) <= 0:
+                continue
+            pair = (int(left + 1), int(right + 1))
+            if power[left] + power[right] == 2 * self.products[left, right]:
+                duplicates.append(pair)
+            correlation = covariance[left, right] / np.sqrt(variance[left] * variance[right])
+            correlations.append((*pair, float(np.clip(correlation, -1, 1))))
+        result = dict(
+            rms_dbfs=tuple(float(20 * np.log10(level)) if level else None for level in rms),
+            clipped=tuple(map(int, self.clipped)), duplicates=tuple(duplicates),
+            correlation=max(correlations, key=lambda pair: abs(pair[2]), default=None),
+        )
+        self.frames = 0
+        self.total.fill(0)
+        self.products.fill(0)
+        self.clipped.fill(0)
+        return result
+
+
 class ChannelMixer:
     def __init__(self):
         self.rear = 0.

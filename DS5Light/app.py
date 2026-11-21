@@ -36,6 +36,7 @@ from dataclasses import asdict, replace
 from audio import Engine, InstanceLock, devices
 
 from core import Controls, HAPTIC_GAIN_MIN, HAPTIC_GAIN_MAX, load_signal_filters
+from channel_policy import candidates as capture_candidates
 from app_version import APP_VERSION
 
 from process_audio import ProcessSampler
@@ -78,7 +79,7 @@ BG='#0b0b0c'; CARD='#151515'; FG='#f2f0e9'; MUTED='#a7a297'; BORDER='#303030'; A
 
 SPACE=8; SPACE_LG=12; PAGE_MARGIN_X=18; PAGE_MARGIN_Y=12; CARD_INSET_X=20; CARD_INSET_Y=20
 
-AUTO=_ui_tr('자동 선택 · 기존 BAT 방식')
+AUTO=_ui_tr('자동 선택')
 
 CHANNELS={_ui_tr('자동'):0,_ui_tr('2채널 (스테레오)'):2,_ui_tr('5.1채널 (홈시어터)'):6,_ui_tr('7.1채널 (서라운드)'):8}
 
@@ -259,7 +260,7 @@ class TabStrip(tk.Canvas):
 
             self.tab_widths=[shared_width]*len(self.labels)
 
-            if len(self.labels)==3:
+            if len(self.labels)>=3:
 
                 self.tab_widths[2]+=px(self,12)
 
@@ -321,8 +322,7 @@ class TabStrip(tk.Canvas):
     def _left(self,index):
 
         left=sum(self.tab_widths[:index])+index*px(self,8)
-
-        return max(left,self.winfo_width()-self.tab_widths[index]) if len(self.labels)==3 and index==2 else left
+        return max(left,self.winfo_width()-self.tab_width) if index==len(self.labels)-1 else left
 
     def draw(self):
 
@@ -349,11 +349,8 @@ class TabStrip(tk.Canvas):
 
             left=x+1;right=x+width-1;tag=f'tab-{index}'
 
-            self.create_rectangle(left,y,right,bottom,fill=fill,outline=outline,tags=tag)
-            if selected and focused:
-                inset=px(self,3)
-                self.create_rectangle(left+inset,y+inset,right-inset,bottom-inset,
-                                      outline=ACCENT,dash=(2,2),tags='tab-focus')
+            self.create_rectangle(left,y,right,bottom,fill=fill,outline=outline,
+                                  width=px(self,2) if selected and focused else 1,tags=tag)
 
             icon=self.icons[index];icon_width=self.icon_widths[index]
 
@@ -405,7 +402,7 @@ class HapticSlider(tk.Canvas):
 
     """Compact gold range control matching the app's visual theme."""
 
-    def __init__(self,parent,variable,command,maximum=100,reference=None,background=CARD,width=200,*,minimum=0):
+    def __init__(self,parent,variable,command,maximum=100,reference=None,background=CARD,width=200,*,minimum=0,step=None):
 
         super().__init__(parent,width=px(parent,width),height=px(parent,36 if reference is not None else 24),bg=background,highlightthickness=0,borderwidth=0,takefocus=1,cursor='hand2')
 
@@ -416,6 +413,7 @@ class HapticSlider(tk.Canvas):
         self.pad=max(px(self,9),(self.label_font.measure(f'{maximum}%')+1)//2+px(self,2)) if reference is not None else px(self,9)
 
         self.minimum=minimum; self.maximum=maximum; self.reference=reference;self._logical_width=width
+        self.step = step
         watch_scale(self,self._scale_slider)
 
         self.bind('<Configure>',lambda _event:self.draw()); self.bind('<Button-1>',self._click); self.bind('<B1-Motion>',self._drag)
@@ -431,7 +429,14 @@ class HapticSlider(tk.Canvas):
         width=max(self.winfo_width()-2*self.pad,1)
 
         value=self.minimum+(x-self.pad)*(self.maximum-self.minimum)/width
-        self.variable.set(round(max(self.minimum,min(self.maximum,value)),1)); self.command()
+        self._set_value(value)
+
+    def _set_value(self,value):
+        value=max(self.minimum,min(self.maximum,value))
+        if self.step is not None:
+            index=int((value-self.minimum)/self.step+.5)
+            value=self.minimum+index*self.step
+        self.variable.set(round(value,1)); self.command()
 
     def _click(self,event):
 
@@ -451,13 +456,13 @@ class HapticSlider(tk.Canvas):
 
         elif event.keysym=='End': value=self.maximum
 
-        elif event.keysym in ('Left','Down','Prior'): value-=10 if event.keysym=='Prior' else 1
+        elif event.keysym in ('Left','Down','Prior'): value-=self.step or (10 if event.keysym=='Prior' else 1)
 
-        elif event.keysym in ('Right','Up','Next'): value+=10 if event.keysym=='Next' else 1
+        elif event.keysym in ('Right','Up','Next'): value+=self.step or (10 if event.keysym=='Next' else 1)
 
         else: return
 
-        self.variable.set(max(self.minimum,min(self.maximum,value))); self.command(); return 'break'
+        self._set_value(value); return 'break'
 
     def set_enabled(self,enabled):
 
@@ -482,7 +487,12 @@ class HapticSlider(tk.Canvas):
 
         self.create_oval(knob-px(self,2),y-px(self,2),knob+px(self,2),y+px(self,2),fill=edge,outline=edge)
 
-        if self.reference is not None:
+        if self.step is not None:
+            for index,point in enumerate(range(self.minimum,self.maximum+1,self.step),start=1):
+                x=left+(right-left)*(point-self.minimum)/span
+                self.create_line(x,px(self,19),x,px(self,23),fill=ACCENT if point==self.reference else MUTED)
+                self.create_text(x,px(self,23),text=f'{index}x',anchor='n',fill=MUTED,font=self.label_font)
+        elif self.reference is not None:
 
             ref=left+(right-left)*(self.reference-self.minimum)/span
 
@@ -495,9 +505,6 @@ class HapticSlider(tk.Canvas):
 
 
 class App:
-
-    def _scale_cards(self):
-        self._dpi_cards.configure(height=px(self.root,256))
 
     def __init__(self,root):
 
@@ -558,6 +565,8 @@ class App:
             ('Button.padding',{'sticky':'nswe','children':[('Button.label',{'sticky':'nswe'})]})]})])
 
         style.layout('Footer.TButton',style.layout('Filter.TButton'))
+        for option in ('bordercolor','lightcolor','darkcolor'):
+            style.map('Footer.TButton',**{option:[('focus','!disabled',ACCENT),('!focus',BORDER)]})
 
         style.configure('Accent.Footer.TButton',background=ACCENT,foreground='#211a0d',font=(_ui_tr('맑은 고딕'),10,'bold'))
 
@@ -595,7 +604,6 @@ class App:
 
         style.configure('TCombobox',fieldbackground='#111110',background='#242321',arrowcolor=MUTED,bordercolor=BORDER,lightcolor=BORDER,darkcolor=BORDER,focuscolor=ACCENT,padding=7)
 
-        style.configure('Limiter.TCombobox',padding=(8,10),font=(_ui_tr('맑은 고딕'),10))
 
         style.map('TCombobox',fieldbackground=[('disabled','#201f1c'),('readonly','#111110')],foreground=[('disabled',DISABLED),('readonly',FG)],bordercolor=[('focus',ACCENT),('!focus',BORDER)])
 
@@ -652,7 +660,7 @@ class App:
         style.configure('TScrollbar',background='#242424',troughcolor='#111110',arrowcolor=MUTED,bordercolor=BORDER,lightcolor=BORDER,darkcolor=BORDER,gripcount=0,relief='flat')
 
         style.map('TScrollbar',background=[('disabled','#202020'),('pressed','#484848'),('active','#363636')],arrowcolor=[('disabled',DISABLED),('active',FG)])
-        scale_styles(root,style,('.', 'Accent.Footer.TButton', 'Accent.TButton', 'Filter.TButton', 'Horizontal.TScale', 'Limiter.TCombobox', 'Muted.TLabel', 'Process.Treeview', 'Selected.Filter.TButton', 'Selected.TButton', 'Studio.TEntry', 'TButton', 'TCheckbutton', 'TCombobox', 'TEntry', 'TFrame', 'TLabel', 'TRadiobutton', 'TScrollbar', 'Treeview.Heading'))
+        scale_styles(root,style,('.', 'Accent.Footer.TButton', 'Accent.TButton', 'Filter.TButton', 'Horizontal.TScale', 'Muted.TLabel', 'Process.Treeview', 'Selected.Filter.TButton', 'Selected.TButton', 'Studio.TEntry', 'TButton', 'TCheckbutton', 'TCombobox', 'TEntry', 'TFrame', 'TLabel', 'TRadiobutton', 'TScrollbar', 'Treeview.Heading'))
 
         root.option_add('*TCombobox*Listbox.background','#111110'); root.option_add('*TCombobox*Listbox.foreground',FG)
 
@@ -699,7 +707,7 @@ class App:
             except (TypeError,ValueError): pass
 
         gain_notice=self._legacy_gain_notice(self.controls.gain)
-        self.controls=replace(self.controls,mode='normal',gain=max(self.controls.gain,HAPTIC_GAIN_MIN))
+        self.controls=replace(self.controls,mode='normal',gain=min(HAPTIC_GAIN_MAX,max(self.controls.gain,HAPTIC_GAIN_MIN)))
 
         saved_width=max(860,min(10000,int(prefs.get('window_width',px(root,860)))))
 
@@ -809,26 +817,6 @@ class App:
 
         self.header_controls=controls=tk.Frame(head,bg=BG);controls.grid(row=0,column=1,sticky='e')
 
-        gain_frame=tk.Frame(controls,bg=BG);gain_frame.grid(row=0,column=0,padx=(SPACE_LG,SPACE_LG))
-
-        self.gain_frame=gain_frame
-
-        gain_heading=tk.Frame(gain_frame,bg=BG);gain_heading.pack(fill='x')
-
-        tk.Label(gain_heading,text=_ui_tr('오디오햅틱 세기'),bg=BG,fg=MUTED,font=(_ui_tr('맑은 고딕'),9,'bold'),padx=0,pady=0,borderwidth=0,anchor='w').pack(side='left')
-
-        self.filter_help_icon(gain_heading,_ui_tr('앱이 오디오를 전송할 때만 적용되며 프로필은 바꾸지 않습니다. 반응을 먼저 맞춘 뒤 세기를 조절하세요. 기본 100%. Studio 오디오햅틱 세기와 함께 높이면 포화될 수 있습니다.'),background=BG).pack(side='left',padx=(5,0))
-
-        self.gain_value=tk.Label(gain_heading,text='100%',bg=BG,fg=ACCENT,font=(_ui_tr('맑은 고딕'),9,'bold'),padx=0,pady=0,borderwidth=0,anchor='e');self.gain_value.pack(side='right')
-
-        self.gain_slider=HapticSlider(gain_frame,self.gain,self.update_controls,
-                                     minimum=round(HAPTIC_GAIN_MIN*100),maximum=round(HAPTIC_GAIN_MAX*100),
-                                     reference=100,background=BG,width=200)
-
-        self.gain_slider.pack(fill='x')
-
-        gain_heading.pack_configure(padx=self.gain_slider.pad)
-
         self.language_choice=ttk.Combobox(controls,values=['한국어','English'],state='readonly',width=10)
 
         self.language_choice.set('한국어' if LANGUAGE=='ko' else 'English')
@@ -889,7 +877,7 @@ class App:
 
         ttk.Label(proc_head,text=_ui_tr('실행 중인 프로세스'),style='Muted.TLabel').pack(side='left')
 
-        self.refresh_button=ttk.Button(proc_head,text=_ui_tr('↻ 새로 고침'),command=self.refresh_games); self.refresh_button.pack(side='right')
+        self.refresh_button=ttk.Button(proc_head,text=_ui_tr('↻ 새로 고침'),command=self.refresh_games,style='Footer.TButton'); self.refresh_button.pack(side='right')
 
         self.process_sort_box=ttk.Combobox(proc_head,textvariable=self.process_sort_label,values=list(PROCESS_SORTS),state='readonly',width=13,
 
@@ -942,15 +930,15 @@ class App:
 
         self.notice.trace_add('write',lambda *_:self._update_notice_layout()); self._update_notice_layout()
 
-        presetbar=ttk.Frame(capture); presetbar.grid(row=4,column=0,sticky='ew',pady=(CARD_INSET_Y,0))
+        presetbar=ttk.Frame(capture); presetbar.grid(row=5,column=0,sticky='ew',pady=(SPACE,0))
 
         ttk.Label(presetbar,text=_ui_tr('게임 프리셋'),style='Muted.TLabel').pack(side='left',padx=(0,SPACE))
 
         self.slot=ttk.Combobox(presetbar,state='readonly',width=14); self.slot.pack(side='left',fill='x',expand=True); self.slot.bind('<<ComboboxSelected>>',self.slot_selected)
 
-        self.load_button=ttk.Button(presetbar,text=_ui_tr('불러오기'),command=self.load_slot); self.load_button.pack(side='left',padx=SPACE)
+        self.load_button=ttk.Button(presetbar,text=_ui_tr('불러오기'),command=self.load_slot,style='Footer.TButton'); self.load_button.pack(side='left',padx=SPACE)
 
-        self.game_save_button=ttk.Button(presetbar,text=_ui_tr('저장'),command=self.save_prompt);self.game_save_button.pack(side='left')
+        self.game_save_button=ttk.Button(presetbar,text=_ui_tr('저장'),command=self.save_prompt,style='Footer.TButton');self.game_save_button.pack(side='left')
 
         HoverHint(self.game_save_button,_ui_tr('현재 DS5Light 설정을 이 PC의 게임 프리셋에 저장합니다.'))
 
@@ -968,94 +956,60 @@ class App:
 
         self.studio=StudioPanel(self,self.studio_card.content)
 
-        cards=tk.Frame(self.game_page,bg=BG,height=px(root,256)); cards.grid(row=2,column=0,sticky='ew'); cards.grid_propagate(False); cards.columnconfigure(0,weight=1,uniform='cards'); cards.columnconfigure(1,weight=1,uniform='cards'); cards.rowconfigure(0,weight=1)
-        self._dpi_cards=cards;watch_scale(cards,self._scale_cards)
+        cards=tk.Frame(self.game_page,bg=BG); cards.grid(row=2,column=0,sticky='ew')
+        cards.columnconfigure(0,weight=1,uniform='cards'); cards.columnconfigure(1,weight=1,uniform='cards')
 
-        left_box=self.card(cards); left_box.grid(row=0,column=0,sticky='nsew',padx=(0,SPACE_LG//2)); left=left_box.content
+        left_cards=tk.Frame(cards,bg=BG)
+        left_cards.grid(row=0,column=0,sticky='nsew',padx=(0,SPACE_LG//2))
+        left_box=self.card(left_cards); left_box.pack(fill='x'); left=left_box.content
+        gain_card=self.card(left_cards); gain_card.pack(fill='both',expand=True,pady=(SPACE,0))
+        self.gain_frame=gain_card.content
+        gain_heading=ttk.Frame(self.gain_frame); gain_heading.pack(fill='x')
+        self.section_title(gain_heading,_ui_tr('오디오햅틱 세기')).pack(side='left')
+        self.filter_help_icon(gain_heading,_ui_tr('앱이 오디오를 전송할 때만 적용되며 프로필은 바꾸지 않습니다. 반응을 먼저 맞춘 뒤 세기를 조절하세요. 기본 1x. Studio 오디오햅틱 세기와 함께 높이면 포화될 수 있습니다.')).pack(side='left',padx=(5,0))
+        self.gain_value=ttk.Label(gain_heading,text='1x',foreground=ACCENT)
+        self.gain_value.pack(side='right')
+        self.gain_slider=HapticSlider(self.gain_frame,self.gain,self.update_controls,
+                                     minimum=100,maximum=round(HAPTIC_GAIN_MAX*100),step=100,
+                                     reference=100,background=CARD,width=200)
+        self.gain_slider.pack(fill='x',expand=True,pady=(SPACE,0))
 
         right_box=self.card(cards); right_box.grid(row=0,column=1,sticky='nsew',padx=(SPACE_LG//2,0)); right=right_box.content
 
-        channel_head=ttk.Frame(left);channel_head.pack(fill='x')
-
-        self.section_title(channel_head,_ui_tr('채널 구성')).pack(side='left')
-
-        self.channel_note=ttk.Label(channel_head,style='Muted.TLabel',font=(_ui_tr('맑은 고딕'),8),width=1,anchor='e');self.channel_note.pack(side='right',fill='x',expand=True,padx=(8,0))
-
-        self.channel_choice=ttk.Combobox(left,values=list(CHANNELS),textvariable=self.channel,state='readonly')
-
-        self.channel_choice.pack(fill='x',pady=(SPACE,4)); self.channel_choice.bind('<<ComboboxSelected>>',lambda e:self.update_controls())
-
-        self.channel_auto_status=tk.Frame(left,bg=CARD)
-
-        self.channel_status_label=tk.Label(self.channel_auto_status,text=_ui_tr('자동 적용 중..'),bg=CARD,fg=ACCENT,
-
-                 font=(_ui_tr('맑은 고딕'),10),borderwidth=0,highlightthickness=0,
-
-                 padx=0,pady=0)
-
-        self.channel_status_label.place(relx=.5,rely=.5,anchor='center')
-
-        self.channel_details=ttk.Frame(left)
-
-        self.channel_labels=[];self.mix_switches=[]
-
-        for label,var in [(_ui_tr('센터'),self.center),(_ui_tr('후방 L / R'),self.rear),(_ui_tr('LFE · 저음'),self.lfe)]:
-
-            row=ttk.Frame(self.channel_details);row.pack(fill='x')
-
-            lab=ttk.Label(row,text=label);lab.pack(side='left');self.channel_labels.append(lab)
-
-            sw=Switch(row,var,self.update_controls);sw.pack(side='right');self.mix_switches.append(sw)
-
-        limit_row=ttk.Frame(self.channel_details);limit_row.pack(fill='x',pady=(SPACE,0))
-
-        limit_row.columnconfigure(1,weight=1)
-
-        self.limit_label=ttk.Label(limit_row,text=_ui_tr('합산 제한'),style='Muted.TLabel');self.limit_label.grid(row=0,column=0,sticky='w',padx=(0,SPACE))
-
-        self.limiter_box=ttk.Combobox(limit_row,values=list(LIMITERS),textvariable=self.limiter,state='readonly',width=16,style='Limiter.TCombobox')
-
-        self.limiter_box.grid(row=0,column=1,sticky='ew');self.limiter_box.bind('<<ComboboxSelected>>',lambda e:self.update_controls())
-
-        self.mix_note=ttk.Label(left,style='Muted.TLabel',wraplength=390)
+        channel_row=ttk.Frame(left);channel_row.pack(fill='x')
+        self.section_title(channel_row,_ui_tr('채널 구성')).pack(side='left')
+        self.filter_help_icon(channel_row,_ui_tr(
+            '수동 5.1·7.1은 센터·서라운드·LFE를 자동으로 켜고 합산 초과분을 자릅니다. 자동에서 채널 배치를 확인할 수 없으면 첫 스테레오 쌍을 사용합니다.')).pack(side='left',padx=(4,SPACE))
+        self.channel_choice=ttk.Combobox(channel_row,values=list(CHANNELS),
+                                        textvariable=self.channel,state='readonly',width=15)
+        self.channel_choice.pack(side='right',fill='x',expand=True)
+        self.channel_choice.bind('<<ComboboxSelected>>',lambda e:self.update_controls())
 
         fh=ttk.Frame(right); fh.pack(fill='x')
 
-        self.section_title(fh,_ui_tr('PC 억제 필터')).pack(side='left')
+        self.section_title(fh,_ui_tr('오디오햅틱 필터')).pack(side='left')
 
         self.filter_switch=Switch(fh,self.filter_on,self.update_controls); self.filter_switch.pack(side='right')
 
         self.filter_badge=ttk.Label(fh); self.filter_badge.pack(side='right',padx=7)
 
-        self.filter_widgets=[]; self.style_buttons=[]
-
-        sr=ttk.Frame(right); sr.pack(fill='x',pady=(SPACE,4))
-
-        for i,(label,v) in enumerate([(_ui_tr('디테일'),30),(_ui_tr('균형'),55),(_ui_tr('억제'),80)]):
-
-            sr.columnconfigure(i,weight=1,uniform='filter_presets')
-
-            b=ttk.Button(sr,text=label,style='Filter.TButton',command=lambda value=v:self.set_strength(value))
-
-            b.grid(row=0,column=i,sticky='ew',padx=(0,SPACE) if i<2 else 0)
-
-            self.filter_widgets.append(b); self.style_buttons.append((b,v))
+        self.filter_widgets=[]
 
         for label,var,key in [(_ui_tr('배경 억제량'),self.strength,'strength'),(_ui_tr('충격 보존'),self.impact,'impact')]:
 
-            row=ttk.Frame(right); row.pack(fill='x',pady=(4,0))
+            row=ttk.Frame(right); row.pack(fill='x',pady=(SPACE,0))
 
             ttk.Label(row,text=label,style='Muted.TLabel').pack(side='left')
 
             description=(_ui_tr('높일수록 배경음의 지속적인 진동을 줄입니다. 너무 높이면 약한 효과음도 줄어들 수 있습니다.') if key=='strength'
 
-                         else _ui_tr('높일수록 타격·충격의 순간적인 진동을 더 살립니다. 배경 대역 억제와 변화량 보호가 켜져 있을 때 적용됩니다.'))
+                         else _ui_tr('높일수록 배경 진동을 줄이는 동안 타격의 순간적인 진동을 더 살립니다.'))
 
             self.filter_help_icon(row,description).pack(side='left',padx=(5,0))
 
             value=ttk.Label(row);value.pack(side='right')
 
-            slider=HapticSlider(right,var,self.update_controls);slider.pack(fill='x',pady=(0,4))
+            slider=HapticSlider(right,var,self.update_controls);slider.pack(fill='x')
 
             if key=='strength':self.scale=slider;self.value_label=value
 
@@ -1063,37 +1017,11 @@ class App:
 
             self.filter_widgets.append(slider)
 
-        self.advanced=ttk.Frame(right);self.advanced.pack(fill='x',pady=(4,0));self.advanced_open=True
-
-        self.advanced_checks=[]
-
-        for text,var in [(_ui_tr('배경 대역 억제'),self.bg),(_ui_tr('변화량 보호'),self.transient)]:
-
-            group=ttk.Frame(self.advanced);group.pack(side='left',padx=(0,SPACE))
-
-            check=CircleCheck(group,text=text,variable=var,command=self.update_controls,
-
-                              background=CARD,foreground=FG,muted=BORDER,accent=ACCENT,disabled=DISABLED)
-
-            check.pack(side='left');self.filter_widgets.append(check);self.advanced_checks.append(check)
-
-            description=(_ui_tr('계속 이어지는 소리의 진동을 줄입니다. 배경음이 너무 많이 느껴질 때 켜세요.') if var is self.bg
-
-                         else _ui_tr('배경음을 줄이는 동안, 타격처럼 갑자기 커지는 소리의 반응을 살립니다.'))
-
-            self.filter_help_icon(group,description).pack(side='left',padx=(4,0))
-
-        self.filter_note=ttk.Label(right,style='Muted.TLabel',wraplength=390)
-
-
-
         self.device_page.columnconfigure(0,weight=1);self.device_page.rowconfigure(3,weight=1)
 
-        devices_box=self.card(self.device_page);devices_box.grid(row=0,column=0,sticky='ew',pady=(0,SPACE_LG));devices_card=devices_box.content
-
-        ttk.Label(devices_card,text=_ui_tr('장치 설정'),font=(_ui_tr('맑은 고딕'),12,'bold')).pack(anchor='w',pady=(0,SPACE))
-
-        device_fields=ttk.Frame(devices_card);device_fields.pack(fill='x')
+        device_card=self.card(self.device_page)
+        device_card.grid(row=0,column=0,sticky='ew',pady=(0,SPACE_LG))
+        device_fields=device_card.content
 
         device_fields.columnconfigure(0,weight=1,uniform='device_fields');device_fields.columnconfigure(1,weight=1,uniform='device_fields')
 
@@ -1103,7 +1031,7 @@ class App:
 
             cell=ttk.Frame(device_fields);cell.grid(row=0,column=column,sticky='ew',padx=(0,SPACE_LG//2) if column==0 else (SPACE_LG//2,0))
 
-            ttk.Label(cell,text=label,style='Muted.TLabel').pack(anchor='w',pady=(0,4))
+            self.section_title(cell,label).pack(anchor='w',pady=(0,4))
 
             row=ttk.Frame(cell);row.pack(fill='x')
 
@@ -1242,7 +1170,7 @@ class App:
 
         self.power_hitbox.bind('<Button-1>',self.studio_power.click)
 
-        self.refresh_slots(); self.render()
+        self.refresh_slots(); self.update_controls()
 
         for variable in (self.scope,self.channel,self.source,self.destination,self.mode,self.filter_on,self.strength,self.gain,self.impact,self.bg,self.transient,self.center,self.rear,self.lfe,self.limiter,self.remember_last,self.auto_start):
 
@@ -1473,7 +1401,7 @@ class App:
 
         self.tabs.select(index)
 
-        (self.game_page if index==0 else self.device_page if index==1 else self.studio_page).tkraise()
+        (self.game_page,self.device_page,self.studio_page)[index].tkraise()
 
         if index==2:self.studio_settings.open()
 
@@ -1495,7 +1423,14 @@ class App:
 
     def section_title(self,parent,key):
 
-        symbol={_ui_tr('캡쳐 모드'):'camera',_ui_tr('채널 구성'):'channels',_ui_tr('PC 억제 필터'):'filter'}[key]
+        symbol={
+            _ui_tr('캡쳐 모드'):'camera',
+            _ui_tr('채널 구성'):'channels',
+            _ui_tr('오디오햅틱 세기'):'sliders',
+            _ui_tr('오디오햅틱 필터'):'filter',
+            _ui_tr('입력 장치'):'input',
+            _ui_tr('출력 장치 · DualSense'):'output',
+        }[key]
 
         return SectionTitle(parent,symbol,tr(key),background=CARD,foreground=FG,accent=ACCENT)
 
@@ -1513,10 +1448,20 @@ class App:
 
         return int(matches[0]['maxInputChannels']) if len(matches)==1 else self.device_channel_cache.get(self.source.get())
 
-    def _read_controls(self):
+    def configured_controls(self):
         return Controls(mode=self.mode.get(),bypass=not self.filter_on.get(),strength=self.strength.get()/100,
+            background=self.bg.get(),transient=self.transient.get(),
+            rear=self.rear.get(),lfe=self.lfe.get(),center=self.center.get(),
+            limiter=LIMITERS[self.limiter.get()],
+            gain=self.gain.get()/100,impact=self.impact.get()/100)
 
-            background=self.bg.get(),transient=self.transient.get(),rear=self.rear.get(),lfe=self.lfe.get(),center=self.center.get(),limiter=LIMITERS[self.limiter.get()],gain=self.gain.get()/100,impact=self.impact.get()/100)
+    def _read_controls(self):
+        controls = self.configured_controls()
+        if not controls.bypass:
+            controls = replace(controls, background=True, transient=True)
+        if CHANNELS[self.channel.get()] in (6, 8):
+            controls = replace(controls, rear=True, lfe=True, center=True, limiter='hard')
+        return controls
 
     def update_controls(self):
         controls=self._read_controls()
@@ -1542,73 +1487,42 @@ class App:
         ch=self.capture_channels(); active=bool(self.engine); filtering=self.filter_on.get()
 
         native=self.studio.haptics_blocked
+        process_scope=self.scope.get()=='process'
         self._refresh_processes_on_capture_change()
         overlay_text=_ui_tr('네이티브 햅틱') if native else _ui_tr('전역 캡쳐')
         if self.global_capture_overlay.label.cget('text')!=overlay_text:
             self.global_capture_overlay.label.configure(text=overlay_text)
-        self.global_capture_overlay.set_visible(self.scope.get()=='device' or native)
+        self.global_capture_overlay.set_visible(not process_scope or native)
 
         if self.scope.get()=='device' and ch in (2,6,8):
 
             self.device_channel_cache[self.source.get()]=ch
 
-            actual_channel=next(k for k,v in CHANNELS.items() if v==ch)
-
-            if CHANNELS[self.channel.get()]!=0 and self.channel.get()!=actual_channel: self.channel.set(actual_channel)
-
-        state=(ch,active,self._stopping,filtering,native,self.scope.get(),self.channel.get(),self.source.get(),self.destination.get(),self.mode.get(),round(self.strength.get(),3),round(self.gain.get(),3),round(self.impact.get(),3),self.bg.get(),self.transient.get(),self.rear.get(),self.lfe.get(),self.center.get(),self.limiter.get())
+        mix_supported=getattr(self.engine,'mix_supported',True)
+        opened=getattr(self.engine,'capture_format',None)
+        output=getattr(self.engine,'output_name',None)
+        target=self.active_process_name if process_scope else getattr(self.engine,'capture_endpoint_name',None)
+        state=(ch,active,self._stopping,filtering,native,self.scope.get(),self.channel.get(),self.source.get(),self.destination.get(),self.mode.get(),round(self.strength.get(),3),round(self.gain.get(),3),round(self.impact.get(),3),self.bg.get(),self.transient.get(),self.rear.get(),self.lfe.get(),self.center.get(),self.limiter.get(),mix_supported,opened,output,target)
 
         if state==self.last_render: return
 
         self.last_render=state
 
-        available=(ch in (6,8) or ch is None and CHANNELS[self.channel.get()] in (0,6,8)) and getattr(self.engine,'mix_supported',True)
-
-        if CHANNELS[self.channel.get()] in (6,8):self.channel_details.pack(fill='x',pady=(4,0))
-
-        else:self.channel_details.pack_forget()
-
-        if CHANNELS[self.channel.get()] in (0,2):
-
-            self.channel_status_label.configure(text=_ui_tr('자동 적용 중..') if CHANNELS[self.channel.get()]==0 else _ui_tr('2채널 스테레오 적용중..'))
-
-            self.channel_auto_status.pack(fill='both',expand=True)
-
-        else:self.channel_auto_status.pack_forget()
-
-        for sw in self.mix_switches: sw.set_enabled(available)
-
-        for lab in self.channel_labels+[self.limit_label]: lab.configure(foreground=FG if available else DISABLED)
-
-        self.limiter_box.configure(state='readonly' if available else 'disabled')
-
-        self.channel_note.configure(text=(_ui_tr('캡처 형식 · ')+f'{ch}ch') if ch else _ui_tr('시작 시 자동 확인') if CHANNELS[self.channel.get()]==0 else '')
-
         choices=[key for key,value in CHANNELS.items() if value in (0,ch)] if self.scope.get()=='device' and ch in (2,6,8) else list(CHANNELS)
 
         self.channel_choice.configure(values=choices,state='disabled' if active else 'readonly')
 
-        self.mix_note.configure(text='')
-
         self.filter_badge.configure(text=_ui_tr('켜짐') if filtering else _ui_tr('꺼짐'),foreground=ACCENT if filtering else MUTED)
 
-        for w in self.filter_widgets:
-
-            if isinstance(w,(HapticSlider,CircleCheck)): w.set_enabled(filtering)
-
-            else: w.configure(state='normal' if filtering else 'disabled')
-
-        for b,v in self.style_buttons: b.configure(style='Selected.Filter.TButton' if abs(self.strength.get()-v)<.1 and filtering else 'Filter.TButton')
+        for slider in self.filter_widgets: slider.set_enabled(filtering)
 
         self.value_label.configure(text=f'{self.strength.get():.0f}%',foreground=FG if filtering else DISABLED)
 
         self.impact_label.configure(text=f'{self.impact.get():.0f}%',foreground=FG if filtering else DISABLED)
 
-        self.gain_value.configure(text=f'{self.gain.get():.0f}%')
+        self.gain_value.configure(text=f'{self.gain.get()/100:g}x')
 
         self._update_binding_display()
-
-        self.filter_note.configure(text='')
 
         for b in self.scope_buttons: b.set_enabled(not active)
 
@@ -1629,25 +1543,19 @@ class App:
             if button.instate(['disabled'])!=disabled:
                 button.state(['disabled' if disabled else '!disabled'])
 
-        capture_text=f'{self.engine.capture_channels}ch' if self.engine and self.engine.capture_channels else _ui_tr('대기')
-
-        mode_prefix=_ui_tr('퓨어 · 무음')+'  ·  ' if self.mode.get()=='pure' else ''
-
-        channel_text=_ui_tr('자동 채널') if CHANNELS[self.channel.get()]==0 else self.channel.get()
-
-        self.connection_summary.configure(text=mode_prefix+channel_text+'  ·  '+_ui_tr('캡처 ')+capture_text+'  ·  '+_ui_tr('출력: ')+(_ui_tr('자동 선택') if self.destination.get()==AUTO else self.destination.get()[:20]))
+        target=target or (_ui_tr('선택한 게임만') if process_scope else _ui_tr('전역 캡쳐'))
+        output=output or self.destination.get()
+        output_name=_ui_tr('자동 선택') if output==AUTO else output
+        if opened:
+            input_name=target if process_scope else target.removesuffix(' [Loopback]')
+            summary=(input_name,output_name)
+        else:
+            summary=(target,_ui_tr('대기'),output_name)
+        self.connection_summary.configure(text=' · '.join(summary))
 
         if self.connection and self.connection.winfo_exists(): self.render_connection()
 
         if hasattr(self,'studio'): self.studio.render()
-
-    def set_strength(self,value): self.strength.set(value); self.update_controls()
-
-    def toggle_details(self):
-
-        # Kept for integrations; advanced options are always visible.
-
-        return
 
     def schedule_preferences_save(self,*_):
 
@@ -1676,7 +1584,7 @@ class App:
 
                 output=canonical_device(self.destination.get()),game_exe=self.game_names.get(self.game.get(),self.desired_game),
 
-                 process_sort=self.process_sort.get(),controls=asdict(self._read_controls()))
+                 process_sort=self.process_sort.get(),controls=asdict(self.configured_controls()))
 
         return data
 
@@ -2180,6 +2088,8 @@ class App:
         if not self.engine:
 
             text=_ui_tr('오디오 엔진이 정지 상태입니다.')
+            if getattr(self,'_last_studio_route',None):
+                text+='\n'+self._last_studio_route
 
         else:
 
@@ -2220,6 +2130,38 @@ class App:
                 _ui_tr('입력 피크: ')+f"{stats.get('peak',0)*100:.1f}% · "+_ui_tr('재연결: ')+str(stats.get('reconnect_count',0)),
 
                 _ui_tr('햅틱 세기: ')+f"{self.gain.get():.0f}% · "+_ui_tr('출력 제한 샘플: ')+str(stats.get('output_limited_samples',0))]
+
+            live = stats.get('studio_live')
+            opened=stats.get('capture_format')
+            requested=stats.get('requested_channels',0)
+            if opened:
+                lines.append(_ui_tr('요청 채널 {request} · 열린 형식 {channels}ch / {rate} Hz').format(
+                    request=requested if stats.get('process_pid') and requested else _ui_tr('자동 선택'),
+                    channels=opened[0],rate=opened[1]))
+                if stats.get('process_pid') and opened[0]!=capture_candidates(requested,stats.get('channel_hint'))[0]:
+                    lines.append(_ui_tr('지원하지 않는 형식에서 다음 프로세스 캡처 후보로 전환했습니다.'))
+                if not stats.get('mix_supported',True):
+                    lines.append(_ui_tr('입력 채널 배치 미확인 · 첫 스테레오 쌍 사용'))
+            signal=stats.get('capture_signal')
+            if signal:
+                levels=' / '.join('−∞' if level is None else f'{level:.0f}' for level in signal['rms_dbfs'])
+                lines.append(_ui_tr('원본 채널 RMS (dBFS) · ')+levels)
+                lines.append(_ui_tr('전체 범위 도달 샘플 · ')+
+                             ' / '.join(str(count) for count in signal['clipped']))
+                if signal['duplicates']:
+                    lines.append(_ui_tr('동일 PCM 채널 · ')+
+                                 ', '.join(f'CH{left}=CH{right}' for left,right in signal['duplicates']))
+                if signal['correlation']:
+                    left,right,value=signal['correlation']
+                    lines.append(_ui_tr('가장 높은 절대 상관 · ')+f'CH{left}/CH{right} {value:+.2f}')
+            if live is not None:
+                lines.extend(tr(value) for key in ('route_status','restore_status','restore_detail') if (value:=live.get(key)))
+                lines.append(_ui_tr('Studio 프레임 · 큐 등록 / WASAPI 제출: ')
+                             + f"{live['queued_frames']} / {live['submitted_frames']} · "
+                             + _ui_tr('승인 갱신: ') + str(live['renewals']))
+                target = live.get('adaptive_gain_target_percent')
+                if target is not None:
+                    lines.append(_ui_tr('적응 PC 게인 목표: {gain}%').format(gain=target))
 
             if buffer:
 
@@ -2270,7 +2212,7 @@ class App:
 
             value=dict(name=self.slot_name.get(),game_exe=self.game_names.get(self.game.get(),self.desired_game),
                        scope=self.scope.get(),channels=CHANNELS[self.channel.get()],input=canonical_device(self.source.get()),
-                       output=canonical_device(self.destination.get()),controls=asdict(self.controls))
+                       output=canonical_device(self.destination.get()),controls=asdict(self.configured_controls()))
             auto_apply=self.auto_apply_game.get() if exe else None
             pending_store=copy(self.store)
 
@@ -2353,7 +2295,8 @@ class App:
 
             c=Controls(**item['controls'])
 
-            self.mode.set('normal'); self.filter_on.set(not c.bypass); self.strength.set(c.strength*100); self.gain.set(max(c.gain,HAPTIC_GAIN_MIN)*100); self.impact.set(c.impact*100)
+            self.mode.set('normal'); self.filter_on.set(not c.bypass); self.strength.set(c.strength*100)
+            self.gain.set(min(HAPTIC_GAIN_MAX,max(c.gain,HAPTIC_GAIN_MIN))*100); self.impact.set(c.impact*100)
 
             self.bg.set(c.background); self.transient.set(c.transient); self.rear.set(c.rear); self.lfe.set(c.lfe); self.center.set(c.center)
 
@@ -2454,6 +2397,7 @@ class App:
             self.status.set(tr('Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널로 변경하세요.'))
             self.last_render=None;self.render();return
 
+        exclusive=self.studio.rear_control_required()
         pinned_resume=(self.run_intent.profile_paused and self.run_intent.can_resume(self._run_route())
 
                        and self.studio.binding.snapshot().endpoint_id is not None)
@@ -2462,6 +2406,10 @@ class App:
 
             self.run_intent.stop('invalid_route')
 
+            if exclusive:
+                self.open_connection()
+                self.status.set(_ui_tr('Studio 독점 출력 시작 실패 · 입출력 장치를 확인하세요.'))
+                return
             messagebox.showerror(_ui_tr('장치 선택'),_ui_tr('연결 설정에서 입출력 장치를 선택하세요.'),parent=self.root); return
 
         pid=self.game_map.get(self.game.get()) if self.scope.get()=='process' else None
@@ -2548,6 +2496,10 @@ class App:
                 return
             if not eligible:
                 self.run_intent.stop('invalid_route')
+                self.open_connection()
+                if exclusive:
+                    self.status.set(_ui_tr('Studio 독점 출력 시작 실패 · 같은 Pico의 4채널 출력을 선택하세요.'))
+                    return
                 if not any(d.get('maxOutputChannels',0)>=4 and not d.get('isLoopbackDevice') for d in self.ds):
                     messagebox.showerror(_ui_tr('출력 확인'),_ui_tr('Windows에서 듀얼센스 오디오 출력을 찾지 못했습니다. Pico USB 연결과 Windows 소리 설정을 확인하세요.'),parent=self.root);return
                 messagebox.showerror(_ui_tr('출력 확인'),_ui_tr('선택한 출력을 안전하게 식별할 수 없습니다. 장치 이름을 구분하고 새로 고침하세요.'),parent=self.root);return
@@ -2569,7 +2521,9 @@ class App:
         self.update_controls()
 
         candidate=Engine(None if self.source.get()==AUTO else self.source.get(),None if self.destination.get()==AUTO else self.destination.get(),self.controls,process_pid=pid,process_channels=CHANNELS[self.channel.get()],binding=self.studio.binding)
-        candidate.front_only=self.studio.native_mix_front_only()
+        candidate.front_only=self.studio.legacy_output_front_only()
+        candidate.studio_live=exclusive
+        candidate.studio_adaptive_gain=candidate.studio_live and '--studio-adaptive-gain' in sys.argv
 
         try:
 
@@ -2594,17 +2548,27 @@ class App:
             record('start_failed', self.ds, self.studio.binding, self.destination.get(), error=exc)
             self.run_intent.stop('start_error')
 
-            messagebox.showerror(_ui_tr('시작 실패'),tr(str(exc)),parent=self.root)
+            if exclusive:
+                self.status.set(_ui_tr('Studio 독점 출력 시작 실패 · ')+tr(str(exc)))
+            else:
+                messagebox.showerror(_ui_tr('시작 실패'),tr(str(exc)),parent=self.root)
 
     def _finish_stop(self,message=None):
 
+        output=getattr(self.engine,'_studio_output',None)
+        message=message or _ui_tr('정지')
+        if output is not None:
+            self._last_studio_route=' · '.join(tr(value) for value in
+                (output.route_status,output.restore_status,output.restore_detail) if value)
+            if output.restore_status=='Studio 경로 복구 미확인':
+                message+=' · '+tr(output.restore_status)
         self.engine=None; self._stopping=False
 
         self._reconnect_wait_engine=None;self._reconnect_wait_since=None
 
         self.active_process_pid=None; self.active_process_started=None; self.active_process_name=None
 
-        self.status.set(message or _ui_tr('정지')); self.render()
+        self.status.set(message); self.render()
 
         callbacks,self._stop_callbacks=self._stop_callbacks,[]
 
@@ -2678,6 +2642,8 @@ class App:
         current={k:profile.get(k) for k in ('index','name','edited','auto_haptics_enable')}
         if profile.get('auto_haptics_enable')==1:
             current.update({key:profile[key] for key in ('mix_native_level','ah_dsp_source') if key in profile})
+        elif profile.get('auto_haptics_enable')==2 and 'ah_dsp_source' in profile:
+            current['ah_dsp_source']=profile['ah_dsp_source']
 
         if result.get('row'):
 
@@ -2685,17 +2651,30 @@ class App:
 
             profile=dict(profile,device_row=result['row'],device_serial=result['row'].get('serial_number'))
 
-        if old==current and self.studio.profile_path==path:return
+        diagnostic = getattr(self, 'device_diagnostics', None)
+        revision = profile.get('config_token')
+        route_changed = old != current or self.studio.profile_path != path
+        preview = diagnostic.optimizer_result if diagnostic is not None else None
+        previous_revision = preview.get('revision') if preview else self.studio.observed_profile_revision
+        revision_changed = bool(revision and previous_revision and previous_revision != revision)
+        if diagnostic is not None and (route_changed or revision_changed):
+            diagnostic.invalidate_optimizer_preview()
+        if not route_changed:
+            if revision:
+                self.studio.observed_profile_revision = revision
 
         editor=self.studio_settings
+        editor_revision_changed = bool(not editor.external_stale and revision and editor.path == path and editor.profile_revision
+                                       and revision != editor.profile_revision)
 
         if editor.loaded:
 
             stamp={k:profile.get(k) for k in ('index','name','edited')}
 
-            if (editor.profile_stamp!=stamp or editor.doc.baseline.get('auto_haptics_enable')!=profile.get('auto_haptics_enable')
+            if (editor_revision_changed or route_changed and (
+                    editor.profile_stamp!=stamp or editor.doc.baseline.get('auto_haptics_enable')!=profile.get('auto_haptics_enable')
                     or any(key in current and editor.doc.baseline.get(key)!=current[key]
-                           for key in ('mix_native_level','ah_dsp_source'))):
+                           for key in ('mix_native_level','ah_dsp_source')))):
 
                 editor.write_ready=False;editor.external_stale=True
                 editor.invalidate_slot_cache()
@@ -2718,9 +2697,13 @@ class App:
 
                     editor.task('entry_read',editor.entry_snapshot)
 
+        if not route_changed:return
         self.studio._observe_profile(path,profile);self.studio._sync_current_profile(path,profile)
         if self.engine and self.studio.native_mix_conflict():
             self.stop(message=tr('Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널로 변경하세요.'),reason='invalid_route')
+        elif (self.engine and not self.studio.haptics_blocked
+              and getattr(self.engine,'studio_live',False)!=self.studio.rear_control_required()):
+            self.stop(message=_ui_tr('Studio 출력 경로가 변경되었습니다. 다시 시작하세요.'),reason='invalid_route')
 
         self.studio.enforce_haptics_policy();self.studio.render();self.last_render=None;self.render()
 
@@ -2792,7 +2775,7 @@ class App:
 
             self.studio.current_profile=None;self.studio.current_profile_name=None
 
-            self.studio.observed_profile=None;self.studio.auto_haptics_mode=None
+            self.studio.observed_profile=None;self.studio.observed_profile_revision=None;self.studio.auto_haptics_mode=None
 
             self.studio.catalog_invalid=True;self.studio.last_profile_check=-1e9
 
@@ -2825,6 +2808,9 @@ class App:
 
             if not self.run_intent.profile_paused:self.run_intent.stop('engine_exit')
 
+            if not getattr(self.engine, 'output_is_closed', lambda: True)():
+                self.stop(message=self._stop_message or message, reason='engine_exit')
+                return
             self._finish_stop(self._stop_message or message)
 
             if self._closing: return
@@ -2916,41 +2902,16 @@ def smoke(app,report):
 
     from types import SimpleNamespace
 
-    results={"default_limiter_hard":app.controls.limiter=="hard", "channel_order": [w.cget("text") for w in app.channel_labels]==[_ui_tr('센터'),_ui_tr('후방 L / R'),_ui_tr('LFE · 저음')]}
-
-    app.scope.set('process'); app.channel.set(next(k for k,v in CHANNELS.items() if v==6)); app.center.set(True); app.rear.set(True); app.lfe.set(True); app.filter_on.set(True); app.strength.set(73); app.limiter.set(_ui_tr('초과분 자르기')); app.update_controls()
-
-    results['six_channel_enabled']=all(s.enabled for s in app.mix_switches) and str(app.limiter_box['state'])=='readonly'
-
+    app.scope.set('process'); app.channel.set(next(k for k,v in CHANNELS.items() if v==6))
+    app.center.set(False); app.rear.set(False); app.lfe.set(False)
+    app.filter_on.set(True); app.strength.set(73); app.limiter.set(_ui_tr('부드러운 제한'))
+    app.update_controls()
+    results={'manual_surround_mixed':(app.controls.center,app.controls.rear,app.controls.lfe,
+                                      app.controls.limiter)==(True,True,True,'hard')}
     app.filter_switch.invoke()
-
-    results['filter_off_maps_to_bypass']=app.controls.bypass and all(not w.enabled if isinstance(w,(HapticSlider,CircleCheck)) else str(w['state'])=='disabled' for w in app.filter_widgets) and app.controls.rear and app.controls.lfe
-
+    results['filter_off_maps_to_bypass']=app.controls.bypass and all(not w.enabled for w in app.filter_widgets)
     app.filter_switch.invoke()
-
     results['filter_on_maps_to_processing']=not app.controls.bypass
-
-    app.channel.set(next(k for k,v in CHANNELS.items() if v==2)); app.render()
-
-    app.mix_switches[0].invoke()
-
-    results['center_enabled_six']=len(app.mix_switches)==3 and app.controls.center
-
-    results['two_channel_disabled']=all(not s.enabled for s in app.mix_switches) and str(app.limiter_box['state'])=='disabled' and app.rear.get() and app.center.get() and not app.controls.bypass
-
-    app.device_channel_cache.clear(); app.channel.set(next(k for k,v in CHANNELS.items() if v==6)); app.scope.set('device'); app.source.set(AUTO); app.render()
-
-    results['unknown_device_five_one_configurable']=all(s.enabled for s in app.mix_switches) and app.capture_channels() is None
-
-    app.engine=SimpleNamespace(capture_channels=2); app.render()
-
-    results['actual_device_two_disabled']=all(not s.enabled for s in app.mix_switches)
-
-    app.engine.capture_channels=6; app.render()
-
-    results['actual_device_six_enabled']=all(s.enabled for s in app.mix_switches)
-
-    app.engine=None; app.scope.set('process'); app.channel.set(next(k for k,v in CHANNELS.items() if v==6)); app.update_controls()
 
     if '--preset-test-path' in sys.argv:
 
@@ -2961,9 +2922,9 @@ def smoke(app,report):
 
         app.filter_on.set(False); app.strength.set(12); app.center.set(False); app.rear.set(False); app.lfe.set(False); app.limiter.set(_ui_tr('부드러운 제한')); app.update_controls(); app.load_slot()
 
-        results['preset_roundtrip']=app.filter_on.get() and app.strength.get()==73 and app.rear.get() and app.lfe.get() and app.center.get() and app.controls.center and app.controls.limiter=='hard' and app.desired_game=='test_game.exe'
+        results['preset_roundtrip']=app.filter_on.get() and app.strength.get()==73 and app.controls.rear and app.controls.lfe and app.controls.center and app.controls.limiter=='hard' and app.desired_game=='test_game.exe'
 
-    app.toggle_details(); app.root.update_idletasks()
+    app.root.update_idletasks()
 
     clipped=[]
 
@@ -3009,11 +2970,36 @@ def smoke(app,report):
 
     results['studio_starts_without_hid_polling']=app.studio.poll_id is None and not app.studio.busy
 
-    results['advanced_inline']=not hasattr(app,'details_button') and bool(app.advanced.winfo_ismapped())
+    app.select_tab(0);app.root.update_idletasks()
+    results['main_channel_and_filter']=bool(app.channel_choice.winfo_viewable() and app.filter_switch.winfo_viewable())
 
     results['impact_control_present']=app.impact_slider.maximum==100
 
     results['auto_channel_available']=0 in CHANNELS.values() and 8 in CHANNELS.values()
+    results['studio_live_automatic'] = not app.studio.rear_control_required()
+
+
+    from device_diagnostics_ui import DeviceDiagnosticsDialog
+    diagnostic = DeviceDiagnosticsDialog(app)
+    app.device_diagnostics = diagnostic
+    try:
+        app.root.update_idletasks()
+        results['studio_exclusive_replay_button_present'] = bool(diagnostic.exclusive_button.winfo_exists())
+        results['dsp_optimizer_preview_present'] = bool(diagnostic.preview_button.winfo_exists())
+        results['dsp_wav_signal_compare_present'] = bool(diagnostic.signal_button.winfo_exists())
+        results['dsp_optimizer_apply_disabled_on_open'] = (
+            bool(diagnostic.route_button.winfo_exists())
+            and str(diagnostic.route_button.cget('state')) == 'disabled')
+        results['dsp_pc_gain_apply_disabled_on_open'] = (
+            bool(diagnostic.pc_gain_button.winfo_exists())
+            and str(diagnostic.pc_gain_button.cget('state')) == 'disabled')
+        results['studio_intensity_apply_disabled_on_open'] = (
+            str(diagnostic.intensity_button.cget('state')) == 'disabled')
+        results['studio_exclusive_replay_idle_on_open'] = (
+            not diagnostic.busy and str(diagnostic.exclusive_button.cget('state')) == 'disabled')
+    finally:
+        diagnostic.close()
+
 
     editor=app.studio_settings
 
@@ -3109,6 +3095,11 @@ def make_close_handler(app,lock):
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == '--studio-exclusive-replay':
+        from studio_replay import packaged_exclusive_main
+
+        raise SystemExit(packaged_exclusive_main(sys.argv[2:]))
+
 
     enable_dpi_awareness()
     root=tk.Tk(); lock=None

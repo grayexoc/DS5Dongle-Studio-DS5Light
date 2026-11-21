@@ -9,7 +9,8 @@ from studio_fields import FIELDS
 class SearchTests(unittest.TestCase):
     def test_recommended_and_spacing_and_choices(self):
         self.assertTrue(any(feature_matches(f,'추천') and f[0]=='추천 프리셋' for f in FEATURES))
-        self.assertTrue(any(feature_matches(f,'오디오 햅틱 안정형') for f in FEATURES))
+        for name in ('오디오 햅틱 믹스','오디오 햅틱 대체'):
+            self.assertTrue(any(feature_matches(f,name) for f in FEATURES),name)
         self.assertTrue(field_matches(FIELDS['gyro_mode'],'Gyro Aiming','터치패드'))
         self.assertEqual(normalized('오디오 햅틱'),normalized('오디오햅틱'))
     def test_tooltip_prose_is_not_in_index(self):

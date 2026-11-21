@@ -37,12 +37,18 @@ class ReleaseMetadataTests(unittest.TestCase):
             for value in ('strength', 'impact', 'gain'):
                 self.assertIn(f"{defaults[value] * 100:g}%", text)
 
-    def test_build_packages_the_linked_setup_documents(self):
+    def test_build_packages_one_guide_and_preserves_notices(self):
         build = (ROOT / 'build.ps1').read_text(encoding='utf-8-sig')
-        for name in ('README.md', 'PRODUCT_KO.md', 'SETUP.md', 'SETUP_KO.md', 'RELEASE_NOTES.md',
-                     'MAPPING_GUIDE_KO.md', 'DPI_LAYOUT_KO.md'):
+        for name in ('PACKAGE_README.md', 'LICENSE.txt', 'LICENSE_EN.txt', 'DISTRIBUTION_POLICY_KO.md',
+                     'SOURCES.md', 'default_config.json'):
             self.assertIn(name, build)
             self.assertTrue((ROOT / name).is_file())
+        for name in ('PRODUCT_KO.md', 'SETUP.md', 'SETUP_KO.md', 'RELEASE_NOTES.md',
+                     'MAPPING_GUIDE_KO.md', 'DPI_LAYOUT_KO.md', 'README_KO.txt', 'README.txt'):
+            self.assertNotIn(name, build)
+        guide = (ROOT / 'PACKAGE_README.md').read_text(encoding='utf-8')
+        for entry in ('## 한국어', '## English', 'DS5Light.exe', 'Studio Presert', 'LICENSES/'):
+            self.assertIn(entry, guide)
 
 
 if __name__ == '__main__':

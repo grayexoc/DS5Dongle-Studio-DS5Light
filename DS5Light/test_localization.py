@@ -24,7 +24,7 @@ class LocalizationTests(unittest.TestCase):
     def test_auto_device_compatible_both_directions(self):
         for lang in ('ko','en'):
             with patch.object(L,'LANGUAGE',lang):
-                for value in (L.AUTO_KO,EN[L.AUTO_KO]):
+                for value in (L.AUTO_KO,EN[L.AUTO_KO],'자동 선택 · 기존 BAT 방식','Automatic · original BAT method'):
                     self.assertEqual(L.display_device(value),L.tr(L.AUTO_KO))
                     self.assertEqual(L.canonical_device(value),L.AUTO_KO)
                 self.assertEqual(L.display_device('Actual device name'),'Actual device name')

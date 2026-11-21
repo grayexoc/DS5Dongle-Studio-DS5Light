@@ -62,6 +62,10 @@ Source inspection found a 4-channel descriptor mask value 0x0033 and a selectabl
 - Audio thread never blocks for AI or configuration.
 - Structural reconfiguration occurs only on stable device/format events.
 
+## Offline Fusion and Mapper
+
+For model-independent Phase 4 replay, the existing DSP supplies protected transient and onset detail amplitudes. Fusion accepts detail only when protection is present and reserves the protected amplitude before allocating remaining headroom. The offline mapper interpolates from its previous level to the current target over the block, emits centered L/R in the absence of verified direction, and writes candidate HapticFrameV1 records to a separate artifact. The existing WAV and live device routes retain their own output behavior. Each replay starts at zero.
+
 ## Optimization loops
 - Fast: per-block DSP and output envelope.
 - Medium: stable event/audio statistics and limited runtime correction.

@@ -26,6 +26,42 @@ def process(x,controls):
 
 
 class SignalBehavior(unittest.TestCase):
+    def test_dsp_only_filters_high_tones_before_ordinary_usb_output(self):
+        from audio import OutputProcessor
+        t=np.arange(RATE)/RATE
+        for hz, minimum, maximum in ((80,.35,.55),(3300,0,.04)):
+            with self.subTest(hz=hz):
+                tone=np.rint(4500*np.sin(2*np.pi*hz*t)).astype('<i2')
+                pcm=np.repeat(tone[:,None],4,axis=1)
+                output=OutputProcessor()
+                rendered=b''.join(output.process(chunk.tobytes(),Controls()) for chunk in np.split(pcm,100))
+                filtered=np.frombuffer(rendered,'<i2').reshape(-1,4)[RATE//2:,0].astype(float)
+                gain=np.linalg.norm(filtered)/np.linalg.norm(tone[RATE//2:].astype(float))
+                self.assertGreater(gain,minimum)
+                self.assertLess(gain,maximum)
+
+    def test_upper_crossover_burst_does_not_lift_background_reduction(self):
+        elapsed = np.arange(RATE) / RATE - .5
+        burst = .26 * np.sin(2*np.pi*750*elapsed) * np.exp(-np.maximum(elapsed, 0)/.018)
+        burst[(elapsed < 0) | (elapsed >= .045)] = 0
+        protected, _, _ = process(burst, Controls())
+        attenuated, _, _ = process(burst, Controls(impact=0))
+        hit = slice(RATE//2, RATE//2 + 4*BLOCK)
+        np.testing.assert_array_equal(protected[hit], attenuated[hit])
+
+    def test_weak_low_hit_keeps_impact_protection_against_loud_high_background(self):
+        time = np.arange(RATE) / RATE
+        elapsed = time - .5
+        hit = .06 * np.sin(2*np.pi*80*elapsed) * np.exp(-np.maximum(elapsed, 0)/.018)
+        hit[(elapsed < 0) | (elapsed >= .045)] = 0
+        background = .35 * np.sin(2*np.pi*3300*time) * (.8 + .2*np.cos(2*np.pi*3*elapsed))
+        protected, _, _ = process(background + hit, Controls())
+        background_only, _, _ = process(background, Controls())
+        attenuated, _, _ = process(background + hit, Controls(impact=0))
+        onset = slice(RATE//2, RATE//2+3*BLOCK)
+        self.assertGreater(np.linalg.norm(protected[onset] - background_only[onset]),
+                           1.25 * np.linalg.norm(attenuated[onset] - background_only[onset]))
+
     def test_steady_low_tones_do_not_keep_triggering_protection(self):
         t=np.arange(3*RATE)/RATE
         for hz in (30,50,60,80):
@@ -46,6 +82,36 @@ class SignalBehavior(unittest.TestCase):
         x=np.where((u>=0)&(u<.2),.24*np.sin(2*np.pi*60*u)*np.exp(-np.maximum(u,0)/.055),0)
         loud,_,_=process(x,Controls());quiet,_,_=process(x*.03,Controls())
         np.testing.assert_allclose(quiet,loud*.03,atol=2e-5)
+
+    def test_quiet_follow_up_hits_survive_background_and_louder_hits(self):
+        t=np.arange(5*RATE)/RATE
+        background=(.065*np.sin(2*np.pi*47*t)+.028*np.sin(2*np.pi*230*t)
+                    +.018*np.sin(2*np.pi*820*t))
+        signal=background.copy()
+        starts=np.arange(1.5,3.9,.105)
+        for index,start in enumerate(starts):
+            elapsed=t-start
+            level=.2 if index%2==0 else .072
+            signal+=level*np.sin(2*np.pi*75*elapsed)*np.exp(-np.maximum(elapsed,0)/.017)*(
+                (elapsed>=0)&(elapsed<.055))
+        filtered,_,_=process(signal,Controls())
+        steady,_,_=process(background,Controls())
+        residual=filtered-steady
+        weak_windows=[residual[round(start*RATE):round((start+.03)*RATE)] for start in starts[1::2]]
+        # The release v48 processor measures about 0.0161 with this fixture.
+        self.assertGreater(np.mean([np.sqrt(np.mean(x*x)) for x in weak_windows]),.019)
+
+    def test_sustained_background_step_loses_contrast_protection_after_onset(self):
+        t=np.arange(4*RATE)/RATE
+        background=(.065*np.sin(2*np.pi*47*t)+.028*np.sin(2*np.pi*230*t)
+                    +.018*np.sin(2*np.pi*820*t))
+        background*=np.where(t<2,1,2.1)
+        filtered,_,_=process(background,Controls())
+        early=slice(2*RATE,round(2.08*RATE))
+        late=slice(round(2.38*RATE),round(2.9*RATE))
+        rms_gain=lambda window: np.linalg.norm(filtered[window])/np.linalg.norm(background[window])
+        self.assertGreater(rms_gain(early),.58)
+        self.assertLess(rms_gain(late),.54)
 
     def test_start_is_attenuated_and_repeated_events_do_not_freeze_learning(self):
         p=Processor();x=np.full((BLOCK,2),.15,dtype=np.float32)
@@ -109,11 +175,10 @@ class AutomaticChannels(unittest.TestCase):
 class IntegratedUI(unittest.TestCase):
     setUp=_fixtures.ModifiedUITests.setUp
     tearDown=_fixtures.ModifiedUITests.tearDown
-    def test_advanced_controls_are_inline_gold_circles(self):
-        self.assertFalse(hasattr(self.ui,'details_button'))
-        self.assertEqual(self.ui.advanced.winfo_manager(),'pack')
-        self.assertTrue(all(isinstance(w,self.ui.binding_check.__class__) for w in self.ui.advanced_checks))
+    def test_filter_preserves_impact_with_legacy_detail_flags_off(self):
+        self.ui.bg.set(False);self.ui.transient.set(False);self.ui.filter_on.set(True)
         self.ui.impact.set(63);self.ui.update_controls();self.assertEqual(self.ui.controls.impact,.63)
+        self.assertTrue(self.ui.controls.background and self.ui.controls.transient)
         self.assertEqual(self.ui.channel.get(),self.ui.tr('자동') if hasattr(self.ui,'tr') else __import__('app').tr('자동'))
 
     def test_studio_only_queries_on_demand_and_selection_does_not_activate(self):
@@ -135,12 +200,14 @@ class IntegratedUI(unittest.TestCase):
             panel.apply.invoke()
         discover.assert_called_once_with(allow_running=True,refresh=True)
 
-    def test_channel_rows_are_only_shown_for_explicit_surround_choices(self):
+    def test_channel_row_remains_a_single_dropdown_for_every_choice(self):
         import app as ui
+        choice=self.ui.channel_choice
         for channels in (0,2,6,8):
             self.ui.channel.set(next(label for label,value in ui.CHANNELS.items() if value==channels))
             self.ui.render()
-            self.assertEqual(self.ui.channel_details.winfo_manager()=='pack',channels in (6,8))
+            self.assertEqual(choice.master.master.winfo_children(),[choice.master])
+            self.assertEqual(choice.winfo_manager(),'pack')
 
     def test_compact_studio_resolves_each_profile_to_its_own_device(self):
         panel=self.ui.studio
@@ -166,3 +233,27 @@ class IntegratedUI(unittest.TestCase):
             self.assertEqual(call.call_count,2)
             self.assertEqual(call.call_args_list[0].args,(b'B',0))
             self.assertEqual(call.call_args_list[1].kwargs,{'action':'read_profile_state'})
+
+    def test_click_shows_loading_during_stale_catalog_refresh(self):
+        from localization import tr
+        panel=self.ui.studio
+        panel.slots=[Slot(0,'saved','Saved')]
+        panel.paths=panel.slot_paths=[b'device']
+        panel.current_profile=(b'device',0)
+        panel.current_profile_name='Saved'
+        panel.choice.configure(values=('01 · Saved',))
+        panel.choice.current(0)
+        panel.catalog_invalid=True
+
+        def begin(*,refresh):
+            self.assertTrue(refresh)
+            panel.busy=True;panel.operation='discover';panel.render()
+
+        with patch.object(panel,'discover',side_effect=begin):
+            panel.on_open()
+        self.assertEqual(panel._profile_display,('',tr('불러오는 중…')))
+        self.assertEqual(panel.choice.current(),0)
+        panel.results.put(('discover',None,'read failed'))
+        panel.poll()
+        self.assertEqual(panel._profile_display,('01 · ','Saved'))
+        self.assertEqual(panel.choice.current(),0)

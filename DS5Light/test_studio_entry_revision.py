@@ -61,6 +61,15 @@ class RevisionUITests(unittest.TestCase):
         self.assertEqual(e.doc.values['audio_buffer_length'],48)
         result['profile']['index']=1;e.merge_entry_snapshot(result)
         self.assertFalse(e.write_ready);self.assertEqual(e.doc.values[key],original+1)
+    def test_merge_rejects_a_changed_revision_without_losing_staged_values(self):
+        e=self.editor();e.path=b'device';e.profile_stamp={'index':0,'name':'Test','edited':True}
+        e.profile_revision='loaded'
+        key='auto_haptics_gain';original=e.doc.baseline[key];e.doc.values[key]=original+1
+        result=dict(rows=[dict(path=b'device',product_string='DualSense')],path=b'device',
+                    values={key:original},profile=dict(e.profile_stamp,config_token='external'),version='Test',cfg=19)
+        e.merge_entry_snapshot(result)
+        self.assertTrue(e.external_stale);self.assertFalse(e.write_ready)
+        self.assertEqual(e.profile_revision,'loaded');self.assertEqual(e.doc.values[key],original+1)
     def test_mix_before_replace_and_gyro_panels(self):
         e=self.editor();keys=list(e.vars)
         self.assertLess(keys.index('auto_mute_mix'),keys.index('auto_mute_replace'))

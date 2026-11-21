@@ -40,13 +40,17 @@ class RecommendedTests(unittest.TestCase):
         profiles={file:load_preset(file) for file,_,_ in PRESETS}
         self.assertEqual(profiles['DS_Native.json'][1]['auto_haptics_enable'],0)
         a=profiles['Audio_Haptic_01.json'];b=profiles['Audio_Haptic_02.json']
-        self.assertEqual(a[0],'Audio Haptic 01');self.assertEqual(b[0],'Audio Haptic 02')
-        self.assertGreater(a[1]['auto_haptics_gate'],b[1]['auto_haptics_gate'])
-        self.assertEqual(b[1]['auto_haptics_smooth'],32)
-        self.assertEqual(b[1]['auto_haptics_gate'],16)
+        self.assertEqual((a[0],b[0]),('Audio Haptic Mix','Haptic Replace'))
+        self.assertEqual((a[1]['auto_haptics_enable'],b[1]['auto_haptics_enable']),(1,2))
+        self.assertEqual((a[1]['mix_native_level'],a[1]['mix_native_filter']),(100,0))
+        for _,fields in (a,b):
+            self.assertEqual((fields['auto_haptics_gain'],fields['auto_haptics_gate'],fields['auto_haptics_smooth']),
+                             (100,16,15))
         self.assertNotIn('lightbar_fixed',b[1])
         self.assertNotIn('audio_buffer_length',b[1])
-        self.assertEqual((a[1]['ah_xover_hz'],b[1]['ah_xover_hz']),(50,60))
+        self.assertEqual((a[1]['ah_xover_hz'],b[1]['ah_xover_hz']),(55,50))
+        for _,fields in (a,b):
+            self.assertEqual((fields['auto_haptics_lowpass_hz'],fields['ah_high_gain']),(120,45))
         for _,fields in profiles.values():self.assertEqual(set(fields),AUDIO_HAPTIC_FIELDS)
     def test_save_activate_once_and_preserve_mask(self):
         client=Client();mask=client.values['macro_disable'];result=self.run_transaction(client)

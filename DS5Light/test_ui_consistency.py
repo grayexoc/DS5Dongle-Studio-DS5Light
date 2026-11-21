@@ -74,7 +74,7 @@ class ConsistencyUITests(unittest.TestCase):
         self.ui.status.set('연결된 듀얼센스가 없습니다.')
         s.mark_pico_absent()
         with patch.object(s,'discover') as discover,patch('studio_panel.run_device') as send:
-            s.render();self.assertEqual(s.apply.cget('style'),'Accent.TButton');s.activate()
+            s.render();self.assertEqual(s.apply.cget('style'),'Accent.Footer.TButton');s.activate()
             discover.assert_called_once_with(allow_running=True,refresh=True);send.assert_not_called()
     def test_verified_activation_schedules_current_settings_not_slot_catalog(self):
         e=self.editor();s=self.ui.studio;s.slots=[Slot(0,'saved','Audio')];s.slot_paths=[b'A'];s.paths=[b'A'];s.choice.configure(values=['Audio']);s.choice.current(0)

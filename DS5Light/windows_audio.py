@@ -202,24 +202,29 @@ def snapshot(include_sessions=True,channel_pid=None,*,include_inactive=False):
 def attach_endpoint_ids(devices,endpoints=None):
     endpoints=snapshot(False)['endpoints'] if endpoints is None else endpoints
     for device in devices:
-        if not device.get('isLoopbackDevice') and device.get('maxOutputChannels',0)<=0:
+        loopback=bool(device.get('isLoopbackDevice'))
+        if not loopback and device.get('maxOutputChannels',0)<=0:
             continue
-        matches=[entry for entry in endpoints if entry['name']==device['name']]
-        peers=[d for d in devices if d['name']==device['name'] and bool(d.get('isLoopbackDevice'))==bool(device.get('isLoopbackDevice'))
+        device_name=device['name']
+        endpoint_name=device_name.removesuffix(' [Loopback]') if loopback else device_name
+        matches=[entry for entry in endpoints if entry['name']==endpoint_name]
+        peers=[d for d in devices if d['name']==device_name and bool(d.get('isLoopbackDevice'))==loopback
                and (d.get('isLoopbackDevice') or d.get('maxOutputChannels',0)>0)]
         if len(matches)>1 or len(peers)>1:
             # Names may be shared by stereo and four-channel endpoints.
             # Require a unique format match in both enumerations.
-            channels=device.get('maxOutputChannels',0)
+            channel_key='maxInputChannels' if loopback else 'maxOutputChannels'
+            channels=device.get(channel_key,0)
             rate=device.get('defaultSampleRate')
             formatted=[entry for entry in matches
                        if entry.get('mix_channels')==channels and entry.get('mix_rate')==rate]
             format_peers=[peer for peer in peers
-                          if peer.get('maxOutputChannels')==channels
+                          if peer.get(channel_key)==channels
                           and peer.get('defaultSampleRate')==rate]
             if len(formatted)==1 and len(format_peers)==1:
                 matches=formatted;peers=format_peers
-        if len(matches)==1 and len(peers)==1: device.update(matches[0]);device['endpoint_id']=matches[0]['id']
+        if len(matches)==1 and len(peers)==1:
+            device.update(matches[0],name=device_name,endpoint_id=matches[0]['id'])
     from output_debug import record
     record('device_enumeration', devices, endpoints=endpoints)
     return devices

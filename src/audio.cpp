@@ -17,6 +17,8 @@
 #include "profile_chime.h"
 #include "haptic_mix.h"
 #include "haptic_math.h"
+#include "output_diagnostics.h"
+#include "rear_route_lease.h"
 #include "bt.h"
 #include "resample.h"
 #include "tusb.h"
@@ -68,6 +70,11 @@ volatile uint16_t g_diag_ch01_peak = 0; // peak |sample| ch0-1 (DSP input)
 volatile uint16_t g_diag_ch23_peak = 0; // peak |sample| ch2-3 (native actuators)
 uint16_t g_diag_rear_left_peak = 0, g_diag_rear_right_peak = 0;
 uint32_t g_diag_usb_audio_blocks = 0;
+static std::atomic<uint32_t> haptic_packet_peaks{0};
+
+uint32_t audio_diagnostic_haptics_packet() {
+    return haptic_packet_peaks.load(std::memory_order_relaxed);
+}
 volatile uint8_t  g_diag_actual_ch  = 0;
 // Incoming DS4Windows rumble-emulation motor values (0-255), blended into the
 // actuator signal in Mix mode when auto-haptics is on.
@@ -90,7 +97,7 @@ volatile uint8_t g_rumble_flags_seen = 0;
 //                  last read. Non-zero => the bridge (ds5audio.py) is streaming,
 //                  even during game silence; zero => nothing arriving (the usual
 //                  reason auto-haptics "does nothing" is the script not running).
-//  g_ah_in_peak  - peak |ch0/1 input sample| 0-255: the DSP's audio source level.
+//  g_ah_in_peak  - peak magnitude of the selected DSP input pair, 0-255.
 //  g_ah_out_peak - peak derived-haptic OUTPUT 0-255 the DSP is generating, taken
 //                  before native passthrough / converted rumble are mixed in, so
 //                  it reflects only what auto-haptics itself produces.
@@ -143,12 +150,64 @@ bool audio_profile_chime() {
 #endif
 }
 bool spk_active = false;
+// TinyUSB callbacks and tagged diagnostic dispatch are serialized on core 0.
+static UsbPlaybackObservation playback_observation;
+static RearRouteLease rear_lease;
+static RearRouteLease::Rear rear_policy = RearRouteLease::Rear::Legacy;
+static uint32_t rear_link_epoch = 0;
 enum class StreamReset { None, UsbSessionEnded, FlushUsb };
 static StreamReset stream_reset_requested = StreamReset::None;
 void audio_reset_stream() {
     stream_reset_requested = StreamReset::FlushUsb;
     audio_input_seen = false;
 }
+static bool rear_route_ready() {
+    const auto &cfg = get_config();
+    return bt_is_ready() && !usb_xinput_active() && !wake_host_is_suspended() &&
+           cfg.auto_haptics_enable == 2 && cfg.ah_dsp_source == 1 && cfg.auto_mute_replace;
+}
+
+void audio_rear_sync() {
+    const auto policy = rear_lease.rear(config_revision(), rear_link_epoch, playback_observation,
+                                       rear_route_ready(), to_ms_since_boot(get_absolute_time()));
+    if (policy == rear_policy) return;
+    rear_policy = policy;
+    bt_discard_audio();
+    audio_reset_stream();
+}
+
+void audio_rear_link_disconnected() {
+    ++rear_link_epoch;
+    audio_rear_sync();
+}
+
+bool audio_rear_idle_for_settings() {
+    audio_rear_sync();
+    return rear_route_ready() && rear_policy == RearRouteLease::Rear::Legacy && playback_observation.known &&
+           !playback_observation.active && playback_observation.local_discard_complete;
+}
+
+uint32_t audio_rear_request(uint8_t operation, uint32_t attempt, uint32_t revision,
+                            uint32_t link_epoch, uint32_t generation, uint32_t sequence) {
+    const uint32_t current = config_revision();
+    const uint32_t now = to_ms_since_boot(get_absolute_time());
+    const bool ready = rear_route_ready();
+    uint32_t result = 0;
+    if (operation == 1 && attempt == 0 && sequence == 0)
+        result = rear_lease.arm({revision, link_epoch, generation}, current, rear_link_epoch,
+                                playback_observation, ready, now);
+    else if (operation == 2 && sequence == 0 &&
+             rear_lease.commit(attempt, {revision, link_epoch, generation}, current, rear_link_epoch,
+                               playback_observation, ready, now))
+        result = attempt;
+    else if (operation == 3 && revision == current && link_epoch == rear_link_epoch &&
+             generation == playback_observation.generation &&
+             rear_lease.renew(attempt, sequence, current, rear_link_epoch, playback_observation, ready, now))
+        result = attempt;
+    audio_rear_sync();
+    return result;
+}
+
 static_assert(std::atomic<bool>::is_always_lock_free);
 static_assert(std::atomic<uint8_t>::is_always_lock_free);
 
@@ -297,9 +356,34 @@ void audio_usb_session_reset() {
         bt_discard_audio();
     }
     spk_active = false;
+    audio_usb_playback_invalidate();
     audio_input_seen = false;
     stream_reset_requested = StreamReset::UsbSessionEnded;
     if (mic_active) set_mic_active(false);
+}
+
+void audio_usb_playback_alt(uint8_t alt) {
+    playback_observation.set_alternate(alt);
+    spk_active = alt != 0;
+    if (!alt) audio_reset_stream();
+}
+
+void audio_usb_playback_invalidate() {
+    playback_observation.invalidate();
+}
+
+void audio_diagnostic_usb_playback(uint8_t *data) {
+    const auto &state = playback_observation;
+    data[0] = 1;
+    data[1] = (state.known ? 1 : 0) | (state.active ? 2 : 0);
+    const uint32_t values[] = {state.generation, state.opens, state.closes, state.invalidations,
+                               config_revision()};
+    std::memcpy(data + 2, values, sizeof(values));
+    data[22] = state.local_discard_complete ? 2 : 1;
+    std::memcpy(data + 23, &rear_link_epoch, sizeof(rear_link_epoch));
+    data[27] = 1;  // rear-control lease command version
+    data[28] = 1;  // conditional route apply command version
+    data[29] = 1;  // conditional intensity apply command version
 }
 
 bool audio_mic_active() {
@@ -359,6 +443,7 @@ static bool take_speaker_frame(uint8_t *data) {
 }
 
 void __not_in_flash_func(audio_loop)() {
+    audio_rear_sync();
     const bool connected = bt_is_ready();
     if (audio_link_active.exchange(connected, std::memory_order_relaxed) != connected) __sev();
     static bool was_connected = false;
@@ -366,6 +451,7 @@ void __not_in_flash_func(audio_loop)() {
     static uint audio_buf_pos = 0;
     static int8_t haptic_buf[SAMPLE_SIZE];
     static int haptic_buf_pos = 0;
+    static uint8_t packet_peak_l = 0, packet_peak_r = 0;
     static uint8_t usb_remainder[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX * sizeof(int16_t)]{};
     static uint usb_remainder_bytes = 0;
     static uint8_t previous_mode = 0xff;
@@ -385,6 +471,8 @@ void __not_in_flash_func(audio_loop)() {
         g_diag_rear_left_peak = g_diag_rear_right_peak = 0;
         audio_buf_pos = 0;
         haptic_buf_pos = 0;
+        packet_peak_l = packet_peak_r = 0;
+        haptic_packet_peaks.store(0, std::memory_order_relaxed);
         usb_remainder_bytes = 0;
         resampler.Reset();
         if (discard_usb) tud_audio_clear_ep_out_ff();
@@ -410,6 +498,7 @@ void __not_in_flash_func(audio_loop)() {
         discard_speaker_queue();
     }
 #endif
+    if (reset_stream) playback_observation.mark_local_discard_complete();
     if (connected && link_changed && mic_active) update_mic_status();
     if (!connected) {
         if (link_changed) {
@@ -502,6 +591,10 @@ void __not_in_flash_func(audio_loop)() {
         audio_input_seen = true;
         ++g_diag_usb_audio_blocks;
     }
+    if (rear_policy == RearRouteLease::Rear::Suppress) {
+        for (int i = 0; i < frames; ++i)
+            raw[i * actual_ch + 2] = raw[i * actual_ch + 3] = 0;
+    }
     // Never join a pre-disable partial block to newly enabled speaker audio.
     if (!speaker_enabled || speaker_filters_reset) audio_buf_pos = 0;
     // 2. 从4ch中提取ch3/ch4，转换为float输入重采样器
@@ -513,6 +606,7 @@ void __not_in_flash_func(audio_loop)() {
     const struct AudioBlockSettings {
         decltype(Config_body::ah_dsp_source) ah_dsp_source;
         decltype(Config_body::ah_high_gain) ah_high_gain;
+        decltype(Config_body::ah_highpass) ah_highpass;
         decltype(Config_body::ah_low_gain) ah_low_gain;
         decltype(Config_body::ah_xover_hz) ah_xover_hz;
         decltype(Config_body::audio_buffer_length) audio_buffer_length;
@@ -542,6 +636,7 @@ void __not_in_flash_func(audio_loop)() {
     } cfg{
         live_config.ah_dsp_source,
         live_config.ah_high_gain,
+        live_config.ah_highpass,
         live_config.ah_low_gain,
         live_config.ah_xover_hz,
         live_config.audio_buffer_length,
@@ -603,7 +698,7 @@ void __not_in_flash_func(audio_loop)() {
     // Clamp cutoff defensively so a 0/garbage config value can't zero the filter
     // coefficient (which would silence auto-haptics entirely).
     uint16_t lp_fc = cfg.auto_haptics_lowpass_hz;
-    if (lp_fc < 20 || lp_fc > 400) lp_fc = 60;
+    if (lp_fc < 20 || lp_fc > 400) lp_fc = 120;
     static float lp_a = 0.0f; static uint16_t lp_fc_cached = 0;
     if (auto_mode > 0 && lp_fc != lp_fc_cached) {
         lp_fc_cached = lp_fc;
@@ -763,6 +858,7 @@ void __not_in_flash_func(audio_loop)() {
     static float rc_lo_ph = 0.0f, rc_hi_ph = 0.0f;
     static float native_lp_l = 0.0f, native_lp_r = 0.0f;
     static float aa1_l = 0.0f, aa1_r = 0.0f, aa2_l = 0.0f, aa2_r = 0.0f;
+    const bool reset_haptic_filters = speaker_filters_reset;
     if (speaker_filters_reset) {
         lp_l = lp_r = lp2_l = lp2_r = lp3_l = lp3_r = lp4_l = lp4_r = 0;
         xo1_l = xo2_l = xo1_r = xo2_r = 0;
@@ -778,6 +874,20 @@ void __not_in_flash_func(audio_loop)() {
         speaker_filters_reset = false;
     }
     const bool dsp_rear = cfg.ah_dsp_source == 1 && actual_ch == 4;
+    // TPT state-variable high-pass, Butterworth damping, at 48 kHz.
+    constexpr float hp_g[] = {0.0f, 0.000981748f, 0.001636248f};
+    constexpr float hp_damping = 1.414213562f;
+    const uint8_t hp_mode = auto_mode != 0 && cfg.ah_highpass <= 2 &&
+        !(dsp_rear && rear_policy == RearRouteLease::Rear::Control) ? cfg.ah_highpass : 0;
+    static uint8_t last_hp_mode = 0;
+    static bool last_hp_rear = false;
+    static float hp_band_l = 0.0f, hp_band_r = 0.0f;
+    static float hp_low_l = 0.0f, hp_low_r = 0.0f;
+    const float hp_step = hp_g[hp_mode];
+    const float hp_norm = 1.0f / (1.0f + hp_step * (hp_damping + hp_step));
+    bool seed_hp = reset_haptic_filters || hp_mode != last_hp_mode || dsp_rear != last_hp_rear;
+    last_hp_mode = hp_mode;
+    last_hp_rear = dsp_rear;
     const float native_lvl = cfg.mix_native_level / 100.0f;
     const float rumble_str = cfg.rumble_haptic_strength / 100.0f;
     const uint8_t gate_cfg = cfg.auto_haptics_gate;
@@ -893,8 +1003,25 @@ void __not_in_flash_func(audio_loop)() {
             // ch0/1 carries only the game's own native speaker audio - the one
             // way to have derived haptics without the script's audio reaching
             // the speaker or leaking through the effect leak.
-            const float src_l = dsp_rear ? raw[i * actual_ch + 2] / 32768.0f : spk_l;
-            const float src_r = dsp_rear ? raw[i * actual_ch + 3] / 32768.0f : spk_r;
+            float src_l = dsp_rear ? raw[i * actual_ch + 2] / 32768.0f : spk_l;
+            float src_r = dsp_rear ? raw[i * actual_ch + 3] / 32768.0f : spk_r;
+            if (hp_mode) {
+                if (seed_hp) {
+                    hp_band_l = hp_band_r = 0.0f;
+                    hp_low_l = src_l;
+                    hp_low_r = src_r;
+                    seed_hp = false;
+                }
+                const auto highpass = [&](float input, float &band, float &low) {
+                    const float high = (input - low - (hp_damping + hp_step) * band) * hp_norm;
+                    const float next_band = band + hp_step * high;
+                    band = next_band + hp_step * high;
+                    low += 2.0f * hp_step * next_band;
+                    return high;
+                };
+                src_l = highpass(src_l, hp_band_l, hp_low_l);
+                src_r = highpass(src_r, hp_band_r, hp_low_r);
+            }
             lp_l += lp_a * (src_l - lp_l);
             lp_r += lp_a * (src_r - lp_r);
             // Cascade additional poles for steeper slopes. Each stage adds
@@ -919,9 +1046,12 @@ void __not_in_flash_func(audio_loop)() {
             env_r = (abs_r > env_r) ? env_r + ENV_ATK*(abs_r-env_r) : env_r + ENV_REL*(abs_r-env_r);
             float use_env_l = env_l, use_env_r = env_r;
             if (split_on) {
-                // Low band: 12 dB/oct LP at the crossover on the raw input.
-                xo1_l += xo_a * (src_l - xo1_l); xo2_l += xo_a * (xo1_l - xo2_l);
-                xo1_r += xo_a * (src_r - xo1_r); xo2_r += xo_a * (xo1_r - xo2_r);
+                // Keep the 24 dB/oct rejection on both sides of the crossover.
+                // Shallower slopes retain their legacy voicing.
+                const float split_l = n_poles == 4 ? fl : src_l;
+                const float split_r = n_poles == 4 ? fr : src_r;
+                xo1_l += xo_a * (split_l - xo1_l); xo2_l += xo_a * (xo1_l - xo2_l);
+                xo1_r += xo_a * (split_r - xo1_r); xo2_r += xo_a * (xo1_r - xo2_r);
                 const float lo_l = xo2_l,      lo_r = xo2_r;
                 // High band: everything the main LP kept, minus the low band
                 // (phase ripple from the subtraction is irrelevant - only the
@@ -942,7 +1072,7 @@ void __not_in_flash_func(audio_loop)() {
             // opens/closes smoothly instead of switching.
             const float GATE_KNEE   = 0.04f; // wider knee = gentler transition
              // smoothed gate gain memory
-            // Gate slew: ~5 ms open, ~60 ms close, at 48 kHz frame rate.
+            // Gate gain alone reaches 90% of a step in ~0.22 ms open / ~2.37 ms close at 48 kHz.
             constexpr float GATE_OPEN = 0.20f, GATE_CLOSE = 0.02f;
             float genv_l = use_env_l, genv_r = use_env_r;
             if (GATE_THRESH > 0.0f) {
@@ -1059,15 +1189,14 @@ void __not_in_flash_func(audio_loop)() {
         }
         const uint32_t f = (uint32_t)g_ah_frames + (uint32_t)frames;
         g_ah_frames = f > 0xFFFF ? 0xFFFF : (uint16_t)f;
-        const uint8_t v = (uint8_t)(p01 >> 7);
-        if (v > g_ah_in_peak) g_ah_in_peak = v;
+        const int dsp_peak = dsp_rear ? std::max(rear_left, rear_right) : p01;
+        const auto input_v = static_cast<uint8_t>(std::min(dsp_peak >> 7, 255));
+        if (input_v > g_ah_in_peak) g_ah_in_peak = input_v;
+        if (input_v > g_oled_ah_input_peak) g_oled_ah_input_peak = input_v;
     }
     { extern volatile uint8_t g_ah_out_peak;
       const uint8_t v = ah_out_pk >= 1.0f ? 255 : (uint8_t)(ah_out_pk * 255.0f);
       if (v > g_ah_out_peak) g_ah_out_peak = v;
-      extern volatile uint8_t g_oled_ah_input_peak, g_oled_ah_output_peak;
-      const uint8_t input_v = p01 >= 32768 ? 255 : static_cast<uint8_t>(p01 >> 7);
-      if (input_v > g_oled_ah_input_peak) g_oled_ah_input_peak = input_v;
       if (v > g_oled_ah_output_peak) g_oled_ah_output_peak = v;
       }
 
@@ -1080,8 +1209,12 @@ void __not_in_flash_func(audio_loop)() {
     for (int i = 0; i < out_frames; i++) {
         int val_l = static_cast<int>(out_buf[i * 2] * 127.0f * (auto_mode == 0 ? haptics_gain : 1.0f));
         int val_r = static_cast<int>(out_buf[i * 2 + 1] * 127.0f * (auto_mode == 0 ? haptics_gain : 1.0f));
-        haptic_buf[haptic_buf_pos++] = (int8_t) clamp(val_l, -128, 127); // 似乎clamp有点多余？还是以防万一吧
-        haptic_buf[haptic_buf_pos++] = (int8_t) clamp(val_r, -128, 127);
+        const int sample_l = clamp(val_l, -128, 127);
+        const int sample_r = clamp(val_r, -128, 127);
+        haptic_buf[haptic_buf_pos++] = static_cast<int8_t>(sample_l);
+        haptic_buf[haptic_buf_pos++] = static_cast<int8_t>(sample_r);
+        packet_peak_l = std::max(packet_peak_l, static_cast<uint8_t>(std::abs(sample_l)));
+        packet_peak_r = std::max(packet_peak_r, static_cast<uint8_t>(std::abs(sample_r)));
 
         if (haptic_buf_pos != SAMPLE_SIZE) {
             continue;
@@ -1136,6 +1269,10 @@ void __not_in_flash_func(audio_loop)() {
             memset(pkt + sizeof(pkt) - 65 - 4, 0, 65);
         }
         bt_write(pkt, sizeof(pkt));
+        // Publish the two peaks together so HID cannot observe different packets.
+        haptic_packet_peaks.store(0x10000u | (uint32_t(packet_peak_r) << 8) | packet_peak_l,
+                                  std::memory_order_relaxed);
+        packet_peak_l = packet_peak_r = 0;
         haptic_buf_pos = 0;
     }
 }

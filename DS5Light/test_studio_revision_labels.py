@@ -39,14 +39,15 @@ class LabelRevisionTests(unittest.TestCase):
         texts=[text(w) for w in walk(m.dialog)]
         self.assertIn('조건 버튼 전달',texts);self.assertEqual(m.hide_control.text,'조건 버튼 숨기기');m.close()
     def test_all_requested_title_glyphs_are_gold(self):
-        titles=[w for w in walk(self.ui.game_page) if isinstance(w,SectionTitle)]
-        self.assertEqual([t.number for t in titles],['camera','channels','filter'])
+        titles=[w for page in (self.ui.game_page,self.ui.device_page)
+                for w in walk(page) if isinstance(w,SectionTitle)]
+        self.assertEqual([t.number for t in titles],['camera','channels','sliders','filter','input','output'])
         for t in titles:
             first=t.find_all()[0]
             color=t.itemcget(first,'fill') or t.itemcget(first,'outline')
             self.assertEqual(color,app.ACCENT)
         self.ui.tabs.draw()
-        for i in range(3):
+        for i in range(len(self.ui.tabs.labels)):
             ids=self.ui.tabs.find_withtag(f'icon-{i}');self.assertTrue(ids)
             for item in ids:
                 color=self.ui.tabs.itemcget(item,'fill') or self.ui.tabs.itemcget(item,'outline')

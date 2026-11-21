@@ -46,6 +46,10 @@ for _section in SECTIONS:
             [0xC7,'disable_usb_sn','u8',_ui_tr('USB 시리얼 숨기기'),'bool'],
         ])
 
+for _section in SECTIONS:
+    if _section['title'] == 'Auto-Haptics & Speaker Effect Leak':
+        _section['fields'].append([0xC9, 'ah_highpass', 'u8', 'Haptic high-pass', 'number', [0, 2]])
+
 FIELDS = {f[1]: f for s in SECTIONS for f in s["fields"]}
 for _key,_name in (('disable_usb_sn','Hide USB serial number'),('r2t_mode','Game rumble to triggers'),('gyro_mode','Gyro activation')):
     FIELDS[_key][3]=_name

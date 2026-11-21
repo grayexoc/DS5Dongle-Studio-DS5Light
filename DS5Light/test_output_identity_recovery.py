@@ -42,6 +42,17 @@ class IdentityTests(unittest.TestCase):
   for r in rows:r.pop('endpoint_id')
   attach_endpoint_ids(rows,[dict(id='one',name='Same',container_id='ours'),dict(id='two',name='Same',container_id='other')])
   self.assertIsNone(self.binding().output(rows));self.assertEqual(self.binding().output_issue(rows),'ambiguous')
+ def test_loopback_matches_unique_render_format_without_renaming_capture(self):
+  name='Speakers [Loopback]'
+  rows=[dict(name=name,isLoopbackDevice=True,maxInputChannels=n,defaultSampleRate=48000)
+        for n in (2,6,6)]
+  endpoints=[dict(name='Speakers',id=key,mix_channels=n,mix_rate=48000,channel_mask=mask)
+             for n,key,mask in ((2,'stereo',3),(6,'surround',0x3f))]
+  attach_endpoint_ids(rows,endpoints)
+  self.assertEqual(rows[0]['endpoint_id'],'stereo')
+  self.assertEqual(rows[0]['channel_mask'],3)
+  self.assertTrue(all(row['name']==name for row in rows))
+  self.assertTrue(all('endpoint_id' not in row for row in rows[1:]))
  def test_stale_name_does_not_block_same_container(self):
   b=DeviceBinding();b._identity=DeviceIdentity(container_id='ours')
   r=self.row(container_id='ours');self.assertIs(b.output([r],'Old name'),r)

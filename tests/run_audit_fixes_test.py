@@ -302,6 +302,8 @@ void macro_suspend(bool on){macros_suspended=on;}
 void xinput_disconnect(){}
 unsigned audio_session_resets=0;
 void audio_usb_session_reset(){++audio_session_resets;}
+unsigned audio_playback_invalidations=0;
+void audio_usb_playback_invalidate(){++audio_playback_invalidations;}
 uint32_t now=0;
 unsigned connects=0, disconnects=0;
 uint32_t get_absolute_time(){return now;}
@@ -339,6 +341,7 @@ int main() {
  macros_suspended=true;
  tud_umount_cb();
  assert(!macros_suspended);
+ assert(audio_playback_invalidations==1);
  tud_descriptor_device_cb();
  assert(desc_device.idVendor==0x054c&&desc_device.idProduct==0x0ce6&&desc_device.iSerialNumber==3&&desc_device.bcdUSB==0x0200);
  const auto *descriptor=tud_descriptor_configuration_cb(0);
@@ -389,12 +392,13 @@ run('required-hid-channel-loss',r"""
 constexpr int L2CAP_EVENT_CHANNEL_CLOSED=1;
 uint16_t hid_control_cid, hid_interrupt_cid;
 bool hid_control_open, hid_interrupt_open, hid_channels_failed;
-unsigned neutral, wake_resets, rumble_resets, disconnects;
+unsigned neutral, wake_resets, rumble_resets, rear_disconnects, disconnects;
 std::map<unsigned,unsigned> feature_data;
 uint16_t l2cap_event_channel_closed_get_local_cid(const uint16_t *p){return *p;}
 void controller_input_on_disconnect(){++neutral;}
 void wake_on_bt_disconnect(){++wake_resets;}
 void state_rumble_reset(){++rumble_resets;}
+void audio_rear_link_disconnected(){++rear_disconnects;}
 bool bt_disconnect(){++disconnects;return true;}
 """+extract(bt,'static void reset_disconnected_hid(')+r"""
 void closed(uint16_t cid){const auto *packet=&cid;switch(1){
@@ -407,7 +411,7 @@ int main(){
   unsigned before=neutral;
   closed(99);assert(neutral==before&&hid_control_open&&hid_interrupt_open&&!feature_data.empty());
   closed(lost);closed(lost);closed(lost==10?11:10);
-  assert(neutral==before+1&&wake_resets==neutral&&rumble_resets==neutral&&disconnects==neutral);
+  assert(neutral==before+1&&wake_resets==neutral&&rumble_resets==neutral&&rear_disconnects==neutral&&disconnects==neutral);
   assert(hid_channels_failed&&!hid_control_open&&!hid_interrupt_open);
   assert(!hid_control_cid&&!hid_interrupt_cid&&feature_data.empty());
  }
@@ -550,6 +554,7 @@ Config&get_config(){return config;}
 #include "profile_chime.h"
 ProfileChime profile_chime;
 std::atomic<bool> audio_link_active{false};
+std::atomic<uint32_t> haptic_packet_peaks{0};
 bool link=true,audio_input_seen=false,speaker_filters_reset=false;
 bool mic_active=false;
 uint32_t now=0,last_audio_input_ms=0,mic_generation=0;
@@ -560,7 +565,9 @@ void __sev(){} bool bt_is_ready(){return link;}
 uint32_t get_absolute_time(){return now;}uint32_t to_ms_since_boot(uint32_t x){return x;}
 void tud_audio_clear_ep_out_ff(){clears++;usb_frames=0;}void bt_discard_audio(){discards++;}
 void set_mic_active(bool active){if(mic_active!=active)++mic_generation;mic_active=active;}
-"""+s[s.index('bool spk_active = false;'):s.index('static_assert(std::atomic<bool>::is_always_lock_free)')]+
+bool spk_active=false;
+void audio_usb_playback_invalidate(){}
+"""+s[s.index('enum class StreamReset'):s.index('static bool rear_route_ready()')]+
 extract(s,'void audio_usb_session_reset(')+r"""
 struct Positions{uint speaker;int haptic;uint remainder;};
 Positions tick(bool seed){
@@ -655,7 +662,7 @@ int main(){
 macro=(root/'src/macro.cpp').read_text(encoding='utf-8')
 cmd=(root/'src/cmd.cpp').read_text(encoding='utf-8')
 legacy=cmd[cmd.index('        case 0x1a: {\n'):cmd.index('        case 0x1b: {\n')]
-lease=cmd[cmd.index('        case 0x23: {\n'):cmd.index('        case 0x67: {\n')]
+lease=cmd[cmd.index('        case 0x23: {\n'):cmd.index('        case 0x24: {\n')]
 run('macro-pause-lease',r"""
 #include <cassert>
 #include <cstdint>
@@ -771,6 +778,7 @@ int l2cap_event_can_send_now_get_local_cid(uint8_t*){return 1;}
 constexpr int BTSTACK_ACL_BUFFERS_FULL=1;
 uint8_t pending_send_retries=0;uint32_t pending_send_failed_ms=0;
 int recovery_requests=0;void audio_reset_stream(){++recovery_requests;}
+void audio_rear_sync(){}
 void state_refresh_rumble(uint8_t*p){p[0]&=~3u;p[38]&=~4u;p[2]=p[3]=0;}
 void state_set(uint8_t*p,unsigned n){memset(p,0,n);}
 void state_report_sent(const uint8_t*,bool){}
@@ -1119,6 +1127,15 @@ int main(){
  write(valid,sizeof(valid));assert(applies==1&&live.speaker_volume==55&&live.headset_volume==35);
  assert(pico_portal_reply[2]==0&&pico_portal_reply[3]==2);
  const uint8_t empty[]{0};write(empty,sizeof(empty));assert(applies==1&&pico_portal_reply[2]==0&&pico_portal_reply[3]==0);
+ for(uint8_t mode:{0,1,2}){
+    const uint8_t highpass[]{1,0xc9,1,mode};
+    write(highpass,sizeof(highpass));
+    assert(pico_portal_reply[2]==0&&live.ah_highpass==mode);
+ }
+ const auto before=applies;
+ const uint8_t invalid_highpass[]{2,2,1,60,0xc9,1,3};
+ write(invalid_highpass,sizeof(invalid_highpass));
+ assert(pico_portal_reply[2]==1&&applies==before&&live.ah_highpass==2&&live.speaker_volume==55);
  puts("PASS: a rejected chunk leaves RAM and LED state unchanged; a valid chunk applies once");
 }
 """)

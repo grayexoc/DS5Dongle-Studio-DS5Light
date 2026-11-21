@@ -53,9 +53,25 @@ class GainTests(unittest.TestCase):
             legacy=output(False);front=output(True)
             np.testing.assert_array_equal(front[:,:2],legacy[:,:2])
             self.assertTrue(np.any(legacy[:,2:]));self.assertFalse(np.any(front[:,2:]))
+    def test_studio_gain_slews_only_rear_and_respects_peak(self):
+        pcm = np.tile([4900, -4900, 2000, 4000], (1920, 1)).astype('<i2')
+        gain = OutputGain()
+        result = np.frombuffer(gain.process(pcm.tobytes(), 2., rear_peak=4915), '<i2').reshape(-1, 4)
+        np.testing.assert_array_equal(result[:, :2], pcm[:, :2])
+        np.testing.assert_array_equal(result[-1, 2:], [4000, 4915])
+        self.assertLess(int(result[0, 2]), 2010)
+        self.assertGreater(gain.limited_samples, 0)
+        result = np.frombuffer(gain.process(pcm.tobytes(), .5, rear_peak=4915), '<i2').reshape(-1, 4)
+        np.testing.assert_array_equal(result[-1], [4900, -4900, 1000, 2000])
+
     def test_invalid_gain_rejected(self):
-        for value in (-.1,2.01,float('nan'),True):
+        for value in (-.1,3.01,float('nan'),True):
             with self.assertRaises(ValueError): OutputGain().process(bytes(8),value)
+
+    def test_maximum_gain_amplifies_and_limits_pcm(self):
+        pcm=np.tile([1000,-1000,12000,-12000],(1920,1)).astype('<i2')
+        actual=np.frombuffer(OutputGain().process(pcm.tobytes(),3.),'<i2').reshape(-1,4)
+        np.testing.assert_array_equal(actual[-1],[3000,-3000,32767,-32768])
 
 
 class PersistenceTests(unittest.TestCase):
@@ -64,7 +80,9 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(validate_preferences({'version':1,'preferences':data})['controls']['gain'],1.)
         data['controls']['gain']=2.
         self.assertEqual(validate_preferences({'version':1,'preferences':data})['controls']['gain'],2.)
-        data['controls']['gain']=2.01
+        data['controls']['gain']=4.
+        self.assertEqual(validate_preferences({'version':1,'preferences':data})['controls']['gain'],4.)
+        data['controls']['gain']=4.01
         with self.assertRaises(ValueError): validate_preferences({'version':1,'preferences':data})
     def test_game_link_migrates_atomically_and_can_be_removed(self):
         with tempfile.TemporaryDirectory() as temp:

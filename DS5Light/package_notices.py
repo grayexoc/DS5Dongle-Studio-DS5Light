@@ -4,7 +4,7 @@ from importlib.metadata import distribution,packages_distributions
 from pathlib import Path
 from PyInstaller.archive.readers import CArchiveReader
 
-def collect(exe,target):
+def collect(exe,target,inventory=None):
     target.mkdir(parents=True,exist_ok=True)
     shutil.copy2('vendor/LICENSE-Studio.txt',target/'DS5Dongle-Studio-LICENSE.txt')
     archive=CArchiveReader(str(exe)).open_embedded_archive('PYZ.pyz')
@@ -43,11 +43,14 @@ def collect(exe,target):
         if p.is_file() and p.suffix.lower() in ('.dll','.pyd','.exe'):
             binaries.append(dict(file=p.relative_to(exe.parent).as_posix(),sha256=hashlib.sha256(p.read_bytes()).hexdigest()))
     (target/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
-    (target/'binary_inventory.json').write_text(json.dumps(binaries,indent=2),encoding='utf-8')
+    if inventory is None:
+        inventory = target / 'binary_inventory.json'
+    inventory.write_text(json.dumps(binaries,indent=2),encoding='utf-8')
     print(f'{len(manifest)} package notice groups; {len(binaries)} native binaries inventoried')
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--exe',type=Path,default=Path('dist/DS5Light/DS5Light.exe'))
     parser.add_argument('--target',type=Path,default=Path('dist/DS5Light/THIRD_PARTY'))
-    args=parser.parse_args();collect(args.exe,args.target)
+    parser.add_argument('--inventory',type=Path)
+    args=parser.parse_args();collect(args.exe,args.target,args.inventory)

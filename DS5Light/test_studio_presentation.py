@@ -62,6 +62,9 @@ class PresentationTests(unittest.TestCase):
         self.assertTrue(sliders)
         for slider in sliders:
             slider.draw();texts=[slider.itemcget(i,'text') for i in slider.find_all() if slider.type(i)=='text']
+            if slider is e.field_views['ah_highpass'][1][0]:
+                self.assertEqual(texts,['끔','15 Hz','25 Hz'])
+                continue
             low,high=slider.limits()
             self.assertIn(f'{low:g}',texts);self.assertIn(f'{high:g}',texts)
     def test_search_hint_is_not_query_text(self):

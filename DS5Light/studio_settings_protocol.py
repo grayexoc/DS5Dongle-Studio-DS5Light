@@ -6,7 +6,7 @@ import secrets
 import time
 from studio_slots import StudioClient
 from studio_fields import FIELDS
-from studio_scope import EDITABLE,CONSTRUCTION,LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB_MODE_FIELDS,RUMBLE_MODE_FIELDS,EDGE_SERIAL_FIELDS,OPTIONAL_FIELDS
+from studio_scope import EDITABLE,CONSTRUCTION,LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB_MODE_FIELDS,RUMBLE_MODE_FIELDS,EDGE_SERIAL_FIELDS,OPTIONAL_FIELDS,TOUCH_MOUSE_FIELDS
 
 FORMATS={'u8':'B','u16':'H','u32':'I','f32':'f'}
 ENUM_FIELDS={'usb_gamepad_mode','controller_mode','polling_rate_mode','audio_buffer_length','disable_mic','disable_speaker','enable_wake'}
@@ -14,6 +14,8 @@ class PartialApplyError(RuntimeError):pass
 class USBModeUnsupported(ValueError):pass
 class RumbleModeUnsupported(ValueError):pass
 class EdgeSerialUnsupported(ValueError):pass
+class TouchMouseUnsupported(ValueError):pass
+class HapticHighpassUnsupported(ValueError):pass
 
 EDGE_SERIAL_STORAGE_FIELD=[0xC8,*FIELDS['disable_usb_sn'][1:]]
 
@@ -128,6 +130,68 @@ class SettingsClient(StudioClient):
             if accept is not None and not accept(body):continue
             return body
         raise TimeoutError(_ui_tr('Studio 응답 충돌 또는 지연 · 브라우저 웹 설정의 장치 연결을 해제한 뒤 새로 고침하세요.') if mismatched else _ui_tr('Studio 응답 대기 시간 초과'))
+
+    def conditional_studio_route_write(self, operation, token, observed, target):
+        try:
+            revision = bytes.fromhex(token)
+            current = bytes(observed)
+            proposed = bytes(target)
+        except (ValueError, TypeError) as exc:
+            raise ValueError('Invalid conditional Studio route request.') from exc
+        if (operation not in (1, 2) or len(revision) != 8 or len(current) != 3 or len(proposed) != 3
+                or any(value > bound for route in (current, proposed)
+                       for value, bound in zip(route, (2, 1, 1)))):
+            raise ValueError('Invalid conditional Studio route request.')
+
+        return self._conditional_settings_write(0x25, operation, revision + current + proposed)
+
+    def conditional_studio_intensity_write(self, operation, token, observed, target):
+        try:
+            revision = bytes.fromhex(token)
+        except (ValueError, TypeError) as exc:
+            raise ValueError('Invalid conditional Studio intensity request.') from exc
+        if (operation not in (1, 2) or len(revision) != 8
+                or any(type(value) is not int or not 0 <= value <= 200 for value in (observed, target))
+                or observed == target or (operation == 1 and target >= observed)):
+            raise ValueError('Invalid conditional Studio intensity request.')
+        return self._conditional_settings_write(0x26, operation, revision + bytes((observed, target)))
+
+    def _conditional_settings_write(self, command, operation, data):
+        echo = bytes((1, operation)) + secrets.token_bytes(4)
+        try:
+            reply = self.command(command, echo + data, report=0x84,
+                                 echo=echo, attempts=6)
+        except (OSError, TimeoutError, RuntimeError) as exc:
+            raise PartialApplyError('Studio write status is unknown. Refresh the profile before retrying.') from exc
+        if len(reply) != 63 or reply[:2] != bytes((0x66, command)) or reply[3:9] != echo:
+            raise PartialApplyError('Studio write acknowledgement is invalid. Refresh the profile.')
+        if reply[2] == 1:
+            raise ValueError('Studio refused the write. Check the current profile and stop audio.')
+        if reply[2] != 0:
+            raise PartialApplyError('Studio write status is unknown. Refresh the profile.')
+        return reply[9:17].hex()
+
+    def rear_lease_exchange(self, operation, snapshot, *, attempt=0, sequence=0):
+        """Return the granted attempt and a conservative host-side deadline."""
+        if operation not in (1, 2, 3) or 'rear_link_epoch' not in snapshot:
+            raise ValueError('Unsupported rear-control lease operation.')
+        if ((operation == 1 and (attempt or sequence or not snapshot.get('known')
+                                or snapshot.get('active') or not snapshot.get('local_discard_complete')))
+                or (operation != 1 and (not attempt or not snapshot.get('known') or not snapshot.get('active')))
+                or (operation == 2 and sequence)):
+            raise ValueError('Rear-control lease request does not match the USB state.')
+
+        echo = bytes((1, operation)) + secrets.token_bytes(4)
+        payload = echo + struct.pack('<5I', attempt, snapshot['config_revision'],
+                                     snapshot['rear_link_epoch'], snapshot['generation'], sequence)
+        deadline = time.monotonic() + (2.0 if operation == 1 else 1.0)
+        reply = self.command(0x24, payload, report=0x84, echo=echo, attempts=6)
+        if len(reply) != 63 or reply[:9] != b'\x66\x24\x00' + echo:
+            raise RuntimeError('Rear-control lease was not acknowledged.')
+        granted, = struct.unpack_from('<I', reply, 9)
+        if not granted or (operation != 1 and granted != attempt) or time.monotonic() >= deadline:
+            raise RuntimeError('Rear-control lease acknowledgement is stale or invalid.')
+        return granted, deadline
 
     def _macro_pause_exchange(self,operation):
         started=time.monotonic()
@@ -264,8 +328,14 @@ class SettingsClient(StudioClient):
             if r[2]!=0:raise ValueError(_ui_tr('슬롯 설정 읽기 미지원'))
             return decode(field,r[5:5+struct.calcsize('<'+FORMATS[field[2]])],raw_slot=True)
         # Successful command 4 replies use the field ID in place of a status byte.
-        r=self.command(4,bytes([fid]),echo=bytes([fid]),echo_offset=2)
-        if r[2]==0xff:raise ValueError(_ui_tr('Studio 필드 읽기 미지원'))
+        unsupported=TouchMouseUnsupported if field[1] in TOUCH_MOUSE_FIELDS else ValueError
+        if field[1] == 'ah_highpass':
+            unsupported=HapticHighpassUnsupported
+            r=self.command(4,bytes([fid]),accept=lambda reply:
+                len(reply)>=5 and (reply[2]==fid or reply[2:5]==bytes([0xff,fid,1])))
+        else:
+            r=self.command(4,bytes([fid]),echo=bytes([fid]),echo_offset=2)
+        if r[2]==0xff:raise unsupported(_ui_tr('Studio 필드 읽기 미지원'))
         size=struct.calcsize('<'+FORMATS[field[2]])
         data=r[3:3+size]
         if self.bulk is not False and data==bytes(size):
@@ -275,7 +345,7 @@ class SettingsClient(StudioClient):
                 if self.bulk is True:raise
                 return decode(field,data)
             self.bulk=True
-            if reply[2:4]==b'\x01\x00':raise ValueError(_ui_tr('Studio 필드 읽기 미지원'))
+            if reply[2:4]==b'\x01\x00':raise unsupported(_ui_tr('Studio 필드 읽기 미지원'))
             if reply[2:6]!=bytes([0,1,fid,size]):raise ValueError(_ui_tr('Studio 필드 응답 불일치'))
             data=reply[6:6+size]
         return decode(field,data)
@@ -285,7 +355,7 @@ class SettingsClient(StudioClient):
         out={};unsupported=[]
         optional=[f for f in fields if f[1] in LIGHTBAR_FIELDS]
         rumble=[f for f in fields if f[1] in RUMBLE_FIELDS]
-        modes=[f for f in fields if f[1] in (USB_MODE_FIELDS | RUMBLE_MODE_FIELDS | EDGE_SERIAL_FIELDS)]
+        modes=[f for f in fields if f[1] in (USB_MODE_FIELDS | RUMBLE_MODE_FIELDS | EDGE_SERIAL_FIELDS | {'ah_highpass'})]
         fields=[f for f in fields if f[1] not in OPTIONAL_FIELDS]
         for f in modes:
             try:out[f[1]]=self.read_one(f)

@@ -97,6 +97,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
     def __init__(self,app,parent):
         self.app=app;self.parent=parent;self.built=False;self.busy=False;self.closed=False;self.uncertain=False;self.reconnect_wait=False;self.external_stale=False;self.pico_recognized=False;self.profile_save_needed=False
         self.init_entry_queries();self.recording=False;self.closing_recording=False;self.doc=SettingsDocument();self.path=None;self.profile_stamp=None;self.device_rows=[];self.results=queue.SimpleQueue();self.cancel=threading.Event()
+        self.profile_revision=None
         self.poll_id=None;self.search_job=None;self.vars={};self.invalid={};self.loaded=False;self.write_ready=False;self.category=0;self.slots_expanded=False;self.live_enabled=False;self.live_job=None;self.live_result=None;self.slots=[];self.resume=False;self.tips=[]
         self.return_list_job=None;self.search_targets={};self._display_fields={}
         self._option_groups=[]
@@ -338,6 +339,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         if key=='flick_angle':return values.get('gyro_output',0)==2
         if key=='flick_counts_360':return values.get('gyro_output',0)==2 or (bool(values.get('gyro_mode',0)) and natural)
         if key.startswith('stick_mouse_'):return bool(values.get('stick_mouse',0))
+        if key.startswith('touch_mouse_'):
+            return bool(values.get('touch_mouse',0)) and (key!='touch_mouse_friction' or bool(values.get('touch_mouse_trackball',0)))
         return True
     def render_fields(self):
         if self.search_job:
@@ -352,11 +355,16 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.tips=[];self.vars={};self.speaker_recommendations=[];self.range_controls={};self.field_views={}
         self.search_targets={};self._display_fields={}
         self._option_groups=[]
+        self._touch_gyro_notices=[]
         self._extra_body=None;self._extra_signature=None
         for child in self.body.winfo_children():child.destroy()
         for i,b in enumerate(self.nav):b.configure(style='Selected.StudioNav.TButton' if i==self.category else 'StudioNav.TButton')
         query=normalized(self.search.get());sections=GROUPS[self.category][1];count=0
-        for section in SECTIONS:
+        displayed_sections=SECTIONS
+        if not query and self.category==3:
+            by_title={section['title']:section for section in SECTIONS}
+            displayed_sections=[by_title[title] for title in sections]
+        for section in displayed_sections:
             if not query and (section['title'] not in sections or section['title']=='Rumble → Trigger'):continue
             ordered=[f for f in section['fields'] if f[1] not in FAST_TRIGGER_FIELDS and f[1] not in ('rumble_gain','rumble_mode','rumble_release','enable_wake') and (query or f[1] not in TRIGGER_FIELDS)]
             if section['title']=='General Haptics & Audio':
@@ -546,6 +554,9 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self._display_fields[f[1]] = f
         key=f[1];valid=key in self.doc.values and self.enabled_for(key);value=self.doc.values.get(key)
         if key=='lightbar_rgb':self.lightbar_colour_row(parent,row,f);return
+        if key == 'ah_highpass':
+            self.haptic_highpass_row(parent, row, key, value, valid)
+            return
         if f[4]=='number' or key=='trigger_reduce':
             self.range_row(parent,row,f,value,valid,default=default)
             return
@@ -585,6 +596,23 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             widget_trace(control,var,lambda *_,k=key,v=var:self.number_changed(k,v.get()));control.bind('<Return>',lambda e:self.render_fields())
         if not controls:controls=[control]
         self.field_views[key]=(title,controls,bits)
+    def haptic_highpass_row(self, parent, row, key, value, valid):
+        from studio_range import RangeSlider
+
+        box = tk.Frame(parent, bg=CARD)
+        box.grid(row=row, column=0, columnspan=2, sticky='ew', pady=(4, 12))
+        box.columnconfigure(0, weight=1)
+        title = self.option_title(box, key, text=ui_text('극저음 차단', 'Haptic high-pass'),
+                                  foreground=FG if valid else MUTED)
+        title.grid(row=0, column=0, sticky='w')
+        variable = tk.StringVar(value='' if value is None else str(value))
+        self.vars[key] = variable
+        labels = (ui_text('끔', 'Off'), '15 Hz', '25 Hz')
+        slider = RangeSlider(box, variable, 0, 2, enabled=valid and not self.busy, tick_labels=labels)
+        slider.grid(row=1, column=0, sticky='ew', pady=(4, 0))
+        self.field_views[key] = (title, [slider], [])
+        widget_trace(box, variable, lambda *_: self.number_changed(key, variable.get()))
+
     @staticmethod
     def update_mix_toggle_text(control,value):
         text=ui_text('켜짐','On') if value else ui_text('꺼짐','Off') if value==0 else ui_text('미확인','Unknown')
@@ -631,7 +659,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         if key=='mix_native_level':self.refresh_read_values(keys=('mix_native_level','mix_native_filter','ah_dsp_source'))
         if self.category==3 and key in ('gyro_mode','gyro_output','gyro_sens_mode'):self.refresh_read_extras()
         self.update_state()
-        if key in ('auto_haptics_enable','gyro_mode','gyro_output','gyro_sens_mode','stick_mouse','r2t_mode','mix_native_level'):
+        if key in ('auto_haptics_enable','gyro_mode','gyro_output','gyro_sens_mode','stick_mouse','touch_mouse','touch_mouse_trackball','r2t_mode','mix_native_level'):
             self.refresh_option_groups()
     def update_speaker_controls(self):
         for key in ('auto_mute_mix','auto_mute_replace'):
@@ -729,7 +757,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 self.read()
                 return
             def choose():
-                self.doc=SettingsDocument();self.profile_stamp=None;self.slots=[]
+                self.doc=SettingsDocument();self.profile_stamp=None;self.profile_revision=None;self.slots=[]
                 self.path=target;self.external_stale=False;self.loaded=False;self.write_ready=False
                 self.read(confirm=False)
             if self.app.engine and target!=self.path:self.app.stop(on_complete=choose)
@@ -850,6 +878,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         baseline=dict(self.doc.baseline);changes=dict(self.doc.changes);effects=copy.deepcopy(self.doc.effect_changes)
         effect_baseline=copy.deepcopy(self.doc.effect_baseline)
         pending_macros=self.doc.macros_pending_flash;profile_stamp=self.profile_stamp
+        profile_revision=self.profile_revision
         refresh_macros='macro_disable' in changes
         self.after_profile_save=after
         edge_serial_changed='disable_usb_sn' in changes
@@ -862,6 +891,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             before=client.profile(include_revision=True) if profile_stamp is not None else None
             if before is not None and any(before.get(k)!=profile_stamp[k] for k in ('index','name','edited')):
                 raise RuntimeError(_ui_tr('현재 프로필이 바뀌었습니다. 다시 읽어 주세요.'))
+            if profile_revision is not None and (before or {}).get('config_token') != profile_revision:
+                raise RuntimeError(_ui_tr('외부에서 설정이 변경되었습니다. 다시 읽어 주세요.'))
             current,missing=client.read_fields([FIELDS[k] for k in baseline])
             for key in baseline:
                 if key not in current or current[key]!=baseline[key]:raise RuntimeError(_ui_tr('외부에서 설정이 변경되었습니다. 다시 읽어 주세요.'))
@@ -887,7 +918,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 verified=client.read_effects()
                 if any(verified[str(t)][i]!=s for (t,i),s in effects.items()):raise RuntimeError(_ui_tr('효과 적용값 불일치 · 새로 고침을 누르세요.'))
             # Read metadata before a flash/reset can remove the USB handle.
-            profile=client.profile()
+            profile=client.profile(include_revision=True)
             profile_saved=False
             if persist:
                 # Recheck the source identity after applying fields. Do not
@@ -896,7 +927,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                     raise RuntimeError(_ui_tr('저장 전 프로필이 바뀌었습니다. 새로 고침으로 확인하세요.'))
                 self.results.put(('progress',_ui_tr('{0} · {1}에 저장 중…').format(f'{target[0] + 1:02d}',f"{target[1] or '이름 없음'}"),None))
                 client.save_slot(*target)
-                profile=client.profile()
+                profile=client.profile(include_revision=True)
                 if profile.get('index')!=target[0] or profile.get('name')!=target[1] or profile.get('edited'):
                     raise RuntimeError(_ui_tr('프로필 저장 후 상태가 다릅니다. 새로 고침으로 확인하세요.'))
                 profile_saved=True
@@ -1042,6 +1073,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 profile=result.get('profile')
                 self.write_ready=profile is not None and result.get('cfg') in (19,20,21,22)
                 self.profile_stamp={k:profile[k] for k in ('index','name','edited')} if profile else None
+                self.profile_revision=profile.get('config_token') if profile else None
                 self.profile_save_needed=bool(profile and profile.get('edited'))
                 from studio_snapshot import device_labels
                 self.device_choice.configure(values=device_labels(self.device_rows,self.path,profile))
@@ -1055,7 +1087,10 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 if result.get('reloaded'):
                     self.app._edge_audio_recheck=True
             self.profile_save_needed=not result.get('profile_saved',False)
-            self.profile_stamp=result.get('profile');self.doc.macros_pending_flash=result.get('macros_pending',False)
+            profile=result.get('profile')
+            self.profile_stamp={k:profile[k] for k in ('index','name','edited')} if profile else None
+            self.profile_revision=profile.get('config_token') if profile else None
+            self.doc.macros_pending_flash=result.get('macros_pending',False)
             self.doc.load(result['values']);self.doc.effect_baseline=copy.deepcopy(self.doc.effects);self.doc.unsaved=not result['saved'];self.doc.save_requested=result['saved']
             self.progress.configure(text=_ui_tr('프로필 슬롯 저장 확인 · Pico 시작 설정 저장 확인') if result['saved'] else _ui_tr('현재 프로필 설정을 임시 적용했습니다.'),kind='saved' if result['saved'] else 'applied');self.app.studio.auto_haptics_mode=self.doc.values.get('auto_haptics_enable')
             if result.get('trigger_changed') and not result['saved']:
@@ -1063,6 +1098,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                                                      'Trigger settings verified · Check Pico effect status if there is no response'),kind='action')
             if result.get('reloaded'):
                 fresh=result['reloaded'];self.uncertain=False
+                self.profile_revision=(fresh.get('profile') or {}).get('config_token')
                 self.doc.load(fresh['values']);self.merge_entry_snapshot(fresh)
                 if not self.doc.macro_changes:
                     self.doc.macros=copy.deepcopy(fresh['macros']);self.doc.macro_baseline=copy.deepcopy(fresh['macros'])

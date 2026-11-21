@@ -7,8 +7,8 @@ from studio_scope import EDITABLE
 
 # Custom effect records are excluded, so their enable flags must be excluded too.
 FIELDS = {key: field for key, field in EDITABLE.items() if not key.startswith('ce_')}
-from studio_scope import LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB_MODE_FIELDS,RUMBLE_MODE_FIELDS,OPTIONAL_FIELDS,config_version
-from studio_settings_protocol import EDGE_SERIAL_STORAGE_FIELD,EdgeSerialUnsupported,USBModeUnsupported,RumbleModeUnsupported,encode,validate_changes
+from studio_scope import LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB_MODE_FIELDS,RUMBLE_MODE_FIELDS,OPTIONAL_FIELDS,TOUCH_MOUSE_FIELDS,config_version
+from studio_settings_protocol import EDGE_SERIAL_STORAGE_FIELD,EdgeSerialUnsupported,USBModeUnsupported,RumbleModeUnsupported,TouchMouseUnsupported,HapticHighpassUnsupported,encode,validate_changes
 from studio_records import effect_states,macro_records
 
 # The slot wire command reads flash directly. Missing legacy tails are
@@ -17,7 +17,7 @@ _SLOT_DEFAULTS = {
     'auto_haptics_enable': 0, 'auto_haptics_gain': 100, 'auto_haptics_smooth': 40,
     'auto_haptics_gate': 20, 'mix_native_level': 0, 'mix_native_filter': 1,
     'ah_dsp_source': 0, 'auto_haptics_lowpass_hz': 60, 'ah_low_gain': 100,
-    'ah_high_gain': 100, 'auto_haptics_slope': 12, 'auto_mute_replace': 1,
+    'ah_high_gain': 100, 'ah_highpass': 0, 'auto_haptics_slope': 12, 'auto_mute_replace': 1,
     'auto_mute_mix': 0, 'rumble_haptic_strength': 100, 'haptics_gain': 1.0,
     'speaker_volume': 100, 'headset_volume': 100, 'speaker_gain': 2,
     'sync_spk_headset_volume': 1, 'lock_volume': 0, 'disable_mic': 0,
@@ -33,6 +33,8 @@ _SLOT_DEFAULTS = {
     'gyro_natural_y_x10': 0, 'gyro_scale_trim_x100': 100, 'rstick_invert': 0,
     'stick_mouse': 0, 'stick_mouse_sens': 0, 'stick_mouse_sens_y': 0,
     'stick_mouse_deadzone': 8, 'stick_mouse_curve': 18, 'stick_mouse_invert': 0,
+    'touch_mouse': 0, 'touch_mouse_sens': 100, 'touch_mouse_min': 1,
+    'touch_mouse_invert': 0, 'touch_mouse_trackball': 0, 'touch_mouse_friction': 10,
 }
 
 _SLOT_DEFAULTS['ps_shortcut_enabled']=0
@@ -60,8 +62,13 @@ def backup_all(client,progress=lambda text:None,*,indices=None):
     available={k:f for k,f in FIELDS.items() if (lightbar or k not in LIGHTBAR_FIELDS) and (rumble or k not in RUMBLE_FIELDS)}
     try:client.read_one(FIELDS['usb_gamepad_mode'])
     except USBModeUnsupported:available.pop('usb_gamepad_mode',None)
+    try:client.read_one(FIELDS['ah_highpass'])
+    except HapticHighpassUnsupported:available.pop('ah_highpass',None)
     try:client.read_one(FIELDS['rumble_mode'])
     except RumbleModeUnsupported:available.pop('rumble_mode',None)
+    try:client.read_one(FIELDS['touch_mouse'])
+    except TouchMouseUnsupported:
+        for key in TOUCH_MOUSE_FIELDS:available.pop(key,None)
     targets=client.slots() if indices is None else (client.info(index) for index in indices)
     for slot in targets:
         if slot.state not in ('saved','empty'):
@@ -113,7 +120,15 @@ def restore_all(client,rows,macros,progress=lambda text:None,*,recovery_path):
     if any(extended(row) for row in macros.values()):
         client.require_macro_features(list(macros.values()))
     original,missing=client.read_fields()
-    if set(missing)-OPTIONAL_FIELDS:raise RuntimeError(_ui_tr('현재 설정을 완전히 읽지 못해 복원을 시작하지 않습니다.'))
+    if set(missing)-OPTIONAL_FIELDS-TOUCH_MOUSE_FIELDS:raise RuntimeError(_ui_tr('현재 설정을 완전히 읽지 못해 복원을 시작하지 않습니다.'))
+    if any(TOUCH_MOUSE_FIELDS.intersection(row['fields']).difference(original) for row in rows):
+        raise RuntimeError(_ui_tr('복원 대상에서 터치패드 마우스 설정을 읽지 못했습니다.'))
+    if 'ah_highpass' in original:
+        rows=[dict(row,fields={'ah_highpass':0,**row['fields']}) for row in rows]
+    elif any(row['fields'].get('ah_highpass',0) for row in rows):
+        raise RuntimeError(_ui_tr('복원 대상 펌웨어에서 극저음 차단을 지원하지 않습니다.'))
+    else:
+        rows=[dict(row,fields={k:v for k,v in row['fields'].items() if k!='ah_highpass'}) for row in rows]
     if not LIGHTBAR_FIELDS.issubset(original):
         if any('lightbar_rgb' in row['fields'] or row['fields'].get('lightbar_fixed',0) for row in rows):
             raise RuntimeError(_ui_tr('복원 대상 펌웨어에서 라이트바 색상 고정을 지원하지 않습니다.'))

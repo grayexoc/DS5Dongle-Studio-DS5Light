@@ -2,6 +2,32 @@
 #include <cstdint>
 #include <cstring>
 
+// SET_INTERFACE events are observations, not ownership grants or drain confirmations.
+struct UsbPlaybackObservation {
+    uint32_t generation = 0, opens = 0, closes = 0, invalidations = 0;
+    bool known = false, active = false, local_discard_complete = false;
+
+    void set_alternate(uint8_t alt) {
+        ++generation;
+        local_discard_complete = false;
+        known = true;
+        active = alt != 0;
+        if (active) ++opens;
+        else ++closes;
+    }
+
+    void mark_local_discard_complete() {
+        if (known && !active) local_discard_complete = true;
+    }
+
+    void invalidate() {
+        local_discard_complete = false;
+        ++generation;
+        ++invalidations;
+        known = active = false;
+    }
+};
+
 // Only retain the control bytes needed to distinguish PCM from emulated rumble.
 struct OutputDiagnostics {
     static constexpr unsigned offsets[8] = {0, 1, 2, 3, 9, 36, 38, 39};
