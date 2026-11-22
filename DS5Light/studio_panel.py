@@ -267,6 +267,10 @@ class StudioPanel(StartupDiscovery):
 
         if self.app.engine and not (allow_running and kind in ('discover','startup')):return
 
+        if kind=='activate':
+            editor=getattr(self.app,'studio_settings',None)
+            if editor is not None:editor.invalidate_profile()
+
         self.operation=kind;self.busy=True;self.render();self.app.last_render=None;self.app.render()
 
         def worker():
@@ -500,6 +504,10 @@ class StudioPanel(StartupDiscovery):
     def rear_control_required(self):
         profile = self.observed_profile or {}
         return profile.get('auto_haptics_enable') == 2 and profile.get('ah_dsp_source') == 1
+
+    def mix_front_ai_available(self):
+        profile = self.observed_profile or {}
+        return profile.get('auto_haptics_enable') == 1 and profile.get('ah_dsp_source') == 0
 
     def legacy_output_front_only(self):
         return self.native_mix_front_only()
@@ -800,7 +808,7 @@ class StudioPanel(StartupDiscovery):
 
         editor=getattr(self.app,'studio_settings',None)
 
-        if editor is not None and not confirmed and (editor.profile_changes_pending() or editor.shared_changes_pending()):
+        if editor is not None and not confirmed and (editor.profile_changes_pending() or editor.shared_changes_pending() or editor.invalid):
 
             wanted_path=self.slot_paths[index];wanted_slot=self.slots[index].index
 
@@ -827,10 +835,6 @@ class StudioPanel(StartupDiscovery):
         path=self.slot_paths[index];slot=self.slots[index]
 
         self.selected=(path,slot.index)
-
-        editor=getattr(self.app,'studio_settings',None)
-
-        if editor is not None:editor.invalidate_profile()
 
         def apply_selected():
 

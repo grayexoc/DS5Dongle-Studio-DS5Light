@@ -1,4 +1,5 @@
 #include "haptic_math.h"
+#include "haptic_impact_texture.h"
 #include "haptic_mix.h"
 #include "resample.h"
 #include <cassert>
@@ -58,6 +59,19 @@ struct Pipeline {
 };
 
 int main() {
+    HapticImpactTexture texture;
+    const auto check_texture = [&](int frames, float envelope, float gated) {
+        float peak = 0.0f;
+        for (int i = 0; i < frames; ++i)
+            peak = std::max(peak, texture.update(envelope, gated));
+        return peak;
+    };
+    assert(check_texture(960, .1f, 0.0f) == 0.0f);
+    texture = {};
+    assert(check_texture(960, .1f, .1f) > .35f);
+    assert(check_texture(4800, .1f, .1f) == 0.0f);
+    assert(check_texture(1920, 0.0f, 0.0f) == 0.0f);
+    assert(check_texture(960, .1f, .1f) > .35f);
     using haptic_math::quantize_native;
     if (quantize_native(0) != 0 || quantize_native(.49f) != 0 ||
         quantize_native(-.49f) != 0 || quantize_native(.5f) != 1 ||

@@ -12,6 +12,7 @@ bool audio_profile_chime();
 void audio_loop();
 extern bool spk_active;
 void audio_reset_stream();
+void audio_mix_ai_hit(uint8_t strength, bool strong_test, uint8_t shape, bool tail);
 void audio_rear_link_disconnected();
 void audio_rear_sync();
 uint32_t audio_rear_request(uint8_t operation, uint32_t attempt, uint32_t revision,

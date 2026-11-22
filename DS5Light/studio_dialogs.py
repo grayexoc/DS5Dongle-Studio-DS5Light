@@ -66,7 +66,7 @@ def confirm_bootloader(parent):
     return _confirm(parent,_ui_tr('Pico 부트로더'),_ui_tr('부트로더로 재시작할까요?'),
                     _ui_tr('Pico를 UF2 설치 모드(RPI-RP2)로 재시작합니다.\n듀얼센스 연결이 해제됩니다.'),_ui_tr('재시작'))
 
-def profile_switch(parent,*,profile,shared,profile_applied,shared_applied):
+def profile_switch(parent,*,profile,shared,profile_applied,shared_applied,save_allowed=True):
     owner=parent.winfo_toplevel();dialog=tk.Toplevel(owner);dialog.withdraw()
     dialog.title(_ui_tr('프로필 전환'));dialog.configure(bg='#151515');dialog.transient(owner);dialog.resizable(False,False);_styles(dialog)
     result=[None]
@@ -78,6 +78,7 @@ def profile_switch(parent,*,profile,shared,profile_applied,shared_applied):
                             (_ui_tr(' · 임시 적용값 포함') if profile_applied else ''))
     if shared:lines.append(_ui_tr('Pico 공용 매핑·매크로 · 모든 프로필에 적용')+
                            (_ui_tr(' · 임시 적용값 포함') if shared_applied else ''))
+    if not save_allowed:lines.append(_ui_tr('입력값이 올바르지 않습니다.'))
     tk.Label(box,text='\n'.join(lines),bg='#151515',fg='#eee9df',wraplength=420,justify='left').pack(anchor='w',pady=(12,20))
     actions=tk.Frame(box,bg='#151515');actions.pack()
     focus=None
@@ -85,7 +86,8 @@ def profile_switch(parent,*,profile,shared,profile_applied,shared_applied):
         _ui_tr('공용 매크로 저장 후 전환') if shared else _ui_tr('현재 프로필 저장 후 전환'))
     for caption,value in [(_ui_tr('취소'),None),(_ui_tr('변경 버리기'),'discard'),(save_label,'save')]:
         button=ttk.Button(actions,text=caption,style='Accent.Dialog.TButton' if value=='save' else 'Dialog.TButton',command=lambda v=value:finish(v))
-        if value=='discard' and shared_applied:button.configure(state='disabled')
+        if (value=='discard' and shared_applied) or (value=='save' and not save_allowed):
+            button.configure(state='disabled')
         button.pack(side='left',padx=4)
         if focus is None:focus=button
     dialog.protocol('WM_DELETE_WINDOW',finish);dialog.bind('<Escape>',lambda e:finish())

@@ -17,6 +17,7 @@
 #include "profile_chime.h"
 #include "haptic_mix.h"
 #include "haptic_math.h"
+#include "haptic_impact_texture.h"
 #include "output_diagnostics.h"
 #include "rear_route_lease.h"
 #include "bt.h"
@@ -155,9 +156,36 @@ static UsbPlaybackObservation playback_observation;
 static RearRouteLease rear_lease;
 static RearRouteLease::Rear rear_policy = RearRouteLease::Rear::Legacy;
 static uint32_t rear_link_epoch = 0;
+static uint32_t mix_ai_at = 0, mix_ai_revision = 0;
+static uint8_t mix_ai_strength = 0;
+
+static bool mix_ai_strong_test = false;
+static uint8_t mix_ai_shape = 0;
+static bool mix_ai_tail = false;
+static float mix_ai_phase = 0.0f;
+
+void audio_mix_ai_hit(uint8_t strength, bool strong_test, uint8_t shape, bool tail) {
+    const auto &cfg = get_config();
+    if (!strength) {
+        mix_ai_strength = 0;
+    } else if (strength <= 100 && cfg.auto_haptics_enable == 1 && cfg.ah_dsp_source == 0 &&
+               bt_is_ready() && audio_input_seen && !usb_xinput_active() && !wake_host_is_suspended()) {
+        const uint32_t now = to_ms_since_boot(get_absolute_time());
+        if (mix_ai_strength && now - mix_ai_at < 45) return;
+        mix_ai_strong_test = strong_test;
+        mix_ai_shape = shape;
+        mix_ai_tail = tail;
+        mix_ai_phase = 0.0f;
+        mix_ai_strength = strength;
+        mix_ai_revision = config_revision();
+        mix_ai_at = now;
+    }
+}
+
 enum class StreamReset { None, UsbSessionEnded, FlushUsb };
 static StreamReset stream_reset_requested = StreamReset::None;
 void audio_reset_stream() {
+    mix_ai_strength = 0;
     stream_reset_requested = StreamReset::FlushUsb;
     audio_input_seen = false;
 }
@@ -177,6 +205,7 @@ void audio_rear_sync() {
 }
 
 void audio_rear_link_disconnected() {
+    mix_ai_strength = 0;
     ++rear_link_epoch;
     audio_rear_sync();
 }
@@ -350,6 +379,7 @@ void set_mic_active(bool active) {
 }
 
 void audio_usb_session_reset() {
+    mix_ai_strength = 0;
     // Discard the old FIFO now. The next audio loop may already see a new alt setting.
     if (spk_active || audio_input_seen || stream_reset_requested == StreamReset::FlushUsb) {
         tud_audio_clear_ep_out_ff();
@@ -874,6 +904,14 @@ void __not_in_flash_func(audio_loop)() {
         speaker_filters_reset = false;
     }
     const bool dsp_rear = cfg.ah_dsp_source == 1 && actual_ch == 4;
+    const bool front_texture = auto_mode == 1 && cfg.ah_dsp_source == 0;
+    static HapticImpactTexture texture_l, texture_r;
+    static bool texture_was_active = false;
+    if (reset_haptic_filters || front_texture != texture_was_active) {
+        texture_l = {};
+        texture_r = {};
+        texture_was_active = front_texture;
+    }
     const bool pc_rear_control = auto_mode == 2 && dsp_rear && rear_policy == RearRouteLease::Rear::Control;
     // TPT state-variable high-pass, Butterworth damping, at 48 kHz.
     constexpr float hp_g[] = {0.0f, 0.000981748f, 0.001636248f};
@@ -894,11 +932,28 @@ void __not_in_flash_func(audio_loop)() {
     if (!filter_native || reset_haptic_filters) native_lowpass.reset();
     const float rumble_str = cfg.rumble_haptic_strength / 100.0f;
     const uint8_t gate_cfg = cfg.auto_haptics_gate;
-    const float GATE_THRESH = (gate_cfg > 100 ? 0 : gate_cfg) * 0.001f;
-    // PC Rear control already suppresses background. Keep the configured threshold
-    // and ramp the gain to unity over a smaller range for that input.
-    const float gate_knee = pc_rear_control ? 0.02f : 0.04f;
+    // The leased PC stream encodes its full control range in 0..4915.
+    // Express both gate parameters in the same units as the incoming envelope.
+    constexpr float rear_control_scale = 4915.0f / 32768.0f;
+    const float gate_scale = pc_rear_control ? rear_control_scale : 1.0f;
+    const float GATE_THRESH = (gate_cfg > 100 ? 0 : gate_cfg) * 0.001f * gate_scale;
+    const float gate_knee = pc_rear_control ? 0.02f * rear_control_scale : 0.04f;
     float ah_out_pk = 0.0f;   // peak derived-haptic magnitude this block (diag meter)
+    const uint32_t mix_ai_age = mix_ai_strength ? to_ms_since_boot(get_absolute_time()) - mix_ai_at : 0;
+    // Wire shapes: legacy, sharp, weight, burst, uncertain.
+    constexpr float ai_hz[]{180.0f, 220.0f, 115.0f, 165.0f, 180.0f};
+    constexpr float ai_attack[]{4.0f, 1.5f, 4.0f, 2.0f, 3.0f};
+    constexpr uint32_t ai_duration[]{28, 22, 36, 28, 20};
+    const uint8_t ai_shape = mix_ai_shape;
+    const uint32_t mix_ai_duration = (ai_shape == 3 && mix_ai_tail) ||
+        (ai_shape == 0 && mix_ai_strong_test) ? 44 : ai_duration[ai_shape];
+    // Preserve the 45 ms retrigger guard even after the shorter waveform ends.
+    if (mix_ai_strength && mix_ai_age >= 45) mix_ai_strength = 0;
+    const bool mix_ai_active = mix_ai_strength && mix_ai_age < mix_ai_duration && auto_mode == 1 &&
+                               cfg.ah_dsp_source == 0 && mix_ai_revision == config_revision();
+    const float mix_ai_gain = mix_ai_strength * (mix_ai_strong_test ? .0045f : .001f)
+                              * (ai_shape == 4 ? .35f : 1.0f);
+    const float ai_phase_step = haptic_math::phase_end * ai_hz[ai_shape] / 48000.0f;
     // Fold the raw-input diagnostics into the existing per-sample DSP pass so
     // reading channel peaks does not require a second full scan of the packet.
     int p01 = 0, rear_left = 0, rear_right = 0;
@@ -1115,11 +1170,36 @@ void __not_in_flash_func(audio_loop)() {
             const bool rumble_active = auto_mode == 1 && rumble_str > 0.0f;
             const float rc_lo = rumble_active && rumble_l != 0 ? haptic_math::sine_phase(rc_lo_ph) : 0.0f;
             const float rc_hi = rumble_active && rumble_r != 0 ? haptic_math::sine_phase(rc_hi_ph) : 0.0f;
-            float al = genv_l * carrier * auto_gain;
-            float ar = genv_r * carrier * auto_gain;
+            float carrier_l = carrier, carrier_r = carrier;
+            if (front_texture) {
+                const float blend_l = texture_l.update(env_l, genv_l);
+                const float blend_r = texture_r.update(env_r, genv_r);
+                if (blend_l > 0.0f || blend_r > 0.0f) {
+                    const float phase = carrier_ph * 2.0f;
+                    const float edge = haptic_math::sine_phase(
+                        phase >= haptic_math::phase_end ? phase - haptic_math::phase_end : phase);
+                    carrier_l += blend_l * (edge - carrier);
+                    carrier_r += blend_r * (edge - carrier);
+                }
+            }
+            float al = genv_l * carrier_l * auto_gain;
+            float ar = genv_r * carrier_r * auto_gain;
             // Keep the generator's tanh shaping; Mix limits only combined peaks afterwards.
             al = haptic_math::soft_clip(al);
             ar = haptic_math::soft_clip(ar);
+            if (mix_ai_active) {
+                const float age = mix_ai_age + i / 48.0f;
+                const float attack = ai_attack[ai_shape];
+                const float decay = clamp((mix_ai_duration - age) / (mix_ai_duration - attack), 0.0f, 1.0f);
+                const float envelope = clamp(age / attack, 0.0f, 1.0f) *
+                                       (ai_shape == 1 || (ai_shape == 3 && mix_ai_tail) ? decay * decay : decay);
+                float phase = ai_shape == 0 ? carrier_ph * 2.0f : mix_ai_phase;
+                if (phase >= haptic_math::phase_end) phase -= haptic_math::phase_end;
+                mix_ai_phase = phase + ai_phase_step;
+                const float hit = haptic_math::sine_phase(phase) * envelope * mix_ai_gain;
+                al += hit * (1.0f - fabsf(al));
+                ar += hit * (1.0f - fabsf(ar));
+            }
             // Derived-haptic meter: capture al/ar here, before Mix folds in native
             // passthrough and converted rumble, so the meter shows only what
             // auto-haptics itself produces (al/ar are not reassigned in Mix).

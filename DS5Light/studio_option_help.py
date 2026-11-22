@@ -76,7 +76,7 @@ def option_help(editor,key):
     text=help_text(key,default=default,description=description)
     if getattr(editor,'category',None)==0 and not editor.search.get():
         lighting={
-            'disable_pico_led':('Pico 보드의 LED를 켜거나 끕니다. 금색 원은 ON, 빈 원은 OFF입니다.','Turn the Pico board LED on or off. A gold circle means ON; an empty circle means OFF.'),
+            'disable_pico_led':('Pico 보드 LED의 켜기와 끄기 중 하나를 선택합니다.','Choose On or Off for the Pico board LED.'),
             'lightbar_fixed':('기본은 게임·기기의 라이트바 제어를 사용합니다. 색상 박스에서 색상을 확인하면 고정 모드로 바뀝니다.','Default uses game/device lightbar control. Confirm a color in the color box to enable fixed color.'),
             'lightbar_rgb':('박스를 눌러 고정할 색상을 선택합니다. 확인하면 라이트바 끄기를 해제하고 색상을 고정하며, 취소하면 기존 상태를 유지합니다.','Choose a color. Confirming enables fixed color and clears Off; cancelling keeps the previous state.')}
         if key in lighting:text=lighting[key][LANGUAGE=='en']

@@ -28,6 +28,7 @@ class Controls:
     center: bool = False
     gain: float = 1.0
     impact: float = .85
+    experimental_ai: bool = False
 
 @dataclass(frozen=True)
 class RumbleSample:
@@ -279,7 +280,13 @@ class Processor:
                     and energy[low].sum() >= energy.sum() * MIN_HAPTIC_ENERGY_SHARE):
                 amplitude = np.sqrt(energy[low])
                 attenuation = 10 ** (-14 * self._strength / 20) if controls.background else 1.0
-                haptic_evidence[0] = np.max(amplitude) * attenuation
+                sustained = np.max(amplitude)
+                # Restore weight where the lowest band carries substantial energy. The
+                # slower envelope limits the lift during a sudden attack.
+                bass_share = self.slow_energy[0] / max(self.slow_energy.sum(), 1e-12)
+                bass_weight = min(1.0, max(0.0, (bass_share - .32) / .23))
+                settled_bass = np.sqrt(min(energy[0], self.slow_energy[0]))
+                haptic_evidence[0] = max(sustained, 3.0 * bass_weight * settled_bass) * attenuation
             if low_band_hit:
                 amplitude = np.sqrt(energy[low])
                 protected = protection[low] * amplitude * (self.hold[low] > 0)

@@ -1,3 +1,4 @@
+param([switch]$StrongAiTest = $true)
 $ErrorActionPreference = 'Stop'
 
 $python = $env:DS5LIGHT_RUN_PYTHON
@@ -14,10 +15,13 @@ if (!$python) {
 }
 
 Push-Location -LiteralPath $PSScriptRoot
+$previousAiTest = $env:DS5LIGHT_STRONG_AI_TEST
 try {
+    $env:DS5LIGHT_STRONG_AI_TEST = if ($StrongAiTest) { '1' } else { '0' }
     & $python -B (Join-Path $PSScriptRoot 'app.py') @args
     $appExit = $LASTEXITCODE
 } finally {
+    $env:DS5LIGHT_STRONG_AI_TEST = $previousAiTest
     Pop-Location
 }
 exit $appExit

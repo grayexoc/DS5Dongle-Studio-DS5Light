@@ -56,6 +56,25 @@ class PresentationTests(unittest.TestCase):
         for w in walk(e.body):
             if isinstance(w,ttk.Entry) and not isinstance(w,ttk.Combobox):self.assertEqual(int(w.cget('width')),4)
             if isinstance(w,ttk.Combobox):self.assertEqual(w.cget('justify'),'right')
+    def test_variable_height_cards_draw_a_centered_border_color_chevron(self):
+        e=self.editor()
+        self.root.deiconify()
+        for category,title in ((1,'오디오햅틱'),(2,'커스텀 트리거'),(3,'자이로')):
+            e.select_category(category)
+            self.root.update_idletasks()
+            card=e.search_targets[title]
+            canvas=card._backdrop
+            marker,=canvas.find_withtag('bottom_chevron')
+            x1,y1,x2,y2,x3,y3=canvas.coords(marker)
+            self.assertEqual(canvas.itemcget(marker,'fill'),card._outline)
+            self.assertAlmostEqual(x2,(canvas.winfo_width()-1)/2)
+            self.assertEqual(x2-x1,x3-x2)
+            self.assertEqual(y1,y3)
+            self.assertTrue(y1<y2<canvas.winfo_height())
+        e.select_category(0)
+        self.root.update_idletasks()
+        self.assertFalse(e.search_targets['조명']._backdrop.find_withtag('bottom_chevron'))
+
     def test_slider_end_numbers_and_marker(self):
         e=self.editor();self.root.deiconify();self.root.update_idletasks()
         sliders=[w for w in walk(e.body) if isinstance(w,RangeSlider)]

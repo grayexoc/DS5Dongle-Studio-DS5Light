@@ -31,6 +31,7 @@ static PlayerLedSent player_led_sent;
 static RumbleShape rumble_shape;
 static RumbleSent rumble_sent;
 static bool player_led_restore_pending = false;
+static bool host_released_player_led = false;
 static uint8_t player_led_previous_mode = 0;
 static bool rumble_reset_pending = false;
 static bool rumble_output_pending = false;
@@ -83,9 +84,11 @@ void state_report_sent(const uint8_t *data, bool lightbar_restore) {
     lightbar_fixed_policy.accepted(data, c.lightbar_off, c.lightbar_fixed, c.lightbar_r, c.lightbar_g, c.lightbar_b, lightbar_restore);
     const auto *host = reinterpret_cast<const uint8_t *>(&state);
     const uint8_t player_mode = c.player_led_bright == 3 ? 1 : c.player_led_mode;
-    if ((data[38] & 2) && data[41] == 2 && player_mode == 0) player_led_restore_pending = true;
+    if ((data[38] & 2) && data[41] == 2 && player_mode == 0 && !host_released_player_led)
+        player_led_restore_pending = true;
     if (!led_reset && player_led_restore_pending && player_mode == 0 && (data[1] & 0x10) &&
-        (data[43] & 0x1f) == ((host[1] & 0x10) ? (host[43] & 0x1f) : 4)) player_led_restore_pending = false;
+        data[43] == ((host[1] & 0x10) ? host[43] : (host_released_player_led ? 0 : 0x24)))
+        player_led_restore_pending = false;
     uint8_t current[sizeof(SetStateData)]{};
     state_refresh_rumble(current);
     if ((data[0] & 3) == (current[0] & 3) && (data[38] & 4) == (current[38] & 4) &&
@@ -277,6 +280,7 @@ bool state_synth_tick() {
 }
 
 void state_init() {
+    const auto &c = get_config();
     suspend_release_pending = false;
     output_diagnostics.reset();
     output_test.reset();
@@ -286,11 +290,13 @@ void state_init() {
     g_diag_at_env = 0;
     g_host_cache_size = 0;
     g_host_motor_valid = false;
-    player_led_restore_pending = false;
+    player_led_restore_pending = c.player_led_mode == 0;
+    host_released_player_led = false;
     player_led_previous_mode = 0;
     rumble_sent.reset();
     state_rumble_reset();
     lightbar_fixed_policy.reset(); // Reconnect must reapply even the same colour.
+    if (!c.lightbar_off && !c.lightbar_fixed) lightbar_fixed_policy.connected();
     player_led_sent.reset();
     memcpy(&state, state_init_data, sizeof(state));
     state.VolumeSpeaker = get_config().speaker_volume;
@@ -391,13 +397,13 @@ void __not_in_flash_func(state_set)(uint8_t *data, const uint8_t size) {
     // only going through Off (which writes all-dark) cleared it. Same trap as the
     // lightbar colour that stuck after a battery notification.
     //
-    // On leaving a takeover mode, restore the cached host pattern (player 1 if absent)
-    // until successful submission, including when the host never allowed LED writes.
+    // Use player 1 until the host supplies a pattern or explicitly releases it.
     {
         // Keep restoring until the matching report is successfully submitted.
         if (player_mode == 0 && player_led_restore_pending) {
             data[1]  |= 0x10;                                  // AllowPlayerIndicators
-            data[43] = static_cast<uint8_t>((((reinterpret_cast<const uint8_t *>(&state)[1] & 0x10) ? data[43] : 4) & 0x1f) | 0x20);
+            if (!(reinterpret_cast<const uint8_t *>(&state)[1] & 0x10))
+                data[43] = host_released_player_led ? 0 : 0x24;
         }
     }
 
@@ -497,12 +503,15 @@ void __not_in_flash_func(state_set)(uint8_t *data, const uint8_t size) {
     }
     // Final authority: OFF > fixed colour > game/battery notification.
     // This rewrites existing reports; it never creates a periodic BT sender.
+    lightbar_fixed_policy.tick(to_ms_since_boot(get_absolute_time()), !c.lightbar_off && !c.lightbar_fixed);
     lightbar_fixed_policy.apply(data, c.lightbar_off, c.lightbar_fixed, c.lightbar_r, c.lightbar_g, c.lightbar_b, battery_color_active);
     if (output_test.pending()) output_test.apply(data, to_ms_since_boot(get_absolute_time()));
 }
 
 static void state_host_led_update(const uint8_t *data, uint8_t size) {
-    lightbar_fixed_policy.host_update(data, size);
+    const auto &c = get_config();
+    lightbar_fixed_policy.host_update(data, size, to_ms_since_boot(get_absolute_time()),
+                                     !c.lightbar_off && !c.lightbar_fixed);
     // Only host input can reset cached LEDs; synthesized ticks reuse old packets.
     auto *led_state = reinterpret_cast<uint8_t *>(&state);
     if (size > 1 && (data[1] & 8)) {
@@ -510,6 +519,10 @@ static void state_host_led_update(const uint8_t *data, uint8_t size) {
         led_state[1] &= ~0x10u;
         led_state[43] = 0;
         player_led_sent.release_pattern();
+        host_released_player_led = true;
+        player_led_restore_pending = c.player_led_mode == 0;
+    } else if (size > 43 && (data[1] & 0x10)) {
+        host_released_player_led = false;
     }
 }
 
@@ -520,6 +533,7 @@ bool state_update(const uint8_t *data, const uint8_t size) {
     if (output_test.kind) output_test.start(0, to_ms_since_boot(get_absolute_time()));
     uint8_t normalized[sizeof(SetStateData)]{};
     memcpy(normalized, data, size);
+    if (size > 1 && (data[1] & 8)) normalized[1] &= ~0x10u;
     const bool restore_native = size >= 4 && (data[0] & 3) == 1 &&
         !(size > 38 && (data[38] & 4));
     if (restore_native) normalized[2] = normalized[3] = 0;

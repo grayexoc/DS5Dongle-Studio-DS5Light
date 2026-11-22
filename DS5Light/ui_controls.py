@@ -83,10 +83,11 @@ class RoundedCard(tk.Frame):
     canvas never inherits content padding and cannot be covered by its children.
     """
     def __init__(self, parent, *, background, surface, outline, inset_x=14,
-                 inset_y=14, radius=10):
+                 inset_y=14, radius=10, bottom_chevron=False):
         super().__init__(parent, bg=background, borderwidth=0,
                          highlightthickness=0)
         self._surface, self._outline, self._radius = surface, outline, radius
+        self._bottom_chevron = bottom_chevron
         self._insets=(inset_x,inset_y)
         self._backdrop = tk.Canvas(self, bg=background, borderwidth=0,
                                    highlightthickness=0, takefocus=0)
@@ -120,6 +121,13 @@ class RoundedCard(tk.Frame):
         for points in ((left+r,top,right-r,top), (left+r,bottom,right-r,bottom),
                        (left,top+r,left,bottom-r), (right,top+r,right,bottom-r)):
             canvas.create_line(*points, fill=self._outline)
+        if self._bottom_chevron:
+            center = (left + right) / 2
+            tip = bottom - px(self, 4)
+            wing = tip - px(self, 4)
+            half_width = px(self, 5)
+            canvas.create_line(center-half_width, wing, center, tip, center+half_width, wing,
+                               fill=self._outline, width=px(self, 2), tags='bottom_chevron')
 
 
 class GlobalCaptureOverlay(tk.Frame):

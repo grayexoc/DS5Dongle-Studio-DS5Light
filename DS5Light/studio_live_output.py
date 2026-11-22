@@ -6,6 +6,7 @@ import time
 
 import numpy as np
 
+from audio import StudioInputIdle
 from core import BLOCK, RATE, Processor
 from adaptive_gain import AdaptiveRearLevel
 from device_diagnostics import with_selected_device
@@ -17,6 +18,17 @@ from studio_optimizer_preview import apply_route_preview, read_route_preview, ro
 from studio_replay import confirm_exclusive_close, leased_studio_renderer
 from studio_settings_protocol import PartialApplyError, SettingsClient
 from thread_start import start_thread
+
+
+def live_rear_blocks(data, dsp, controls, sample_index, *, stereo_capture, feature_buffer=None):
+    stereo = np.frombuffer(data, '<i2').reshape(-1, 4)[:, :2].astype(np.float32) / 32768
+    for start in range(0, len(stereo), BLOCK):
+        block = stereo[start:start + BLOCK]
+        _, rear = dsp.process(block, controls, now=sample_index / RATE,
+                              allow_direction=stereo_capture, rear_only=True,
+                              band_features=feature_buffer)
+        sample_index += len(block)
+        yield sample_index, encode_studio_pcm(block * LIVE_PCM_SCALE, rear * LIVE_PCM_SCALE)
 
 
 class StudioLiveOutput:
@@ -53,6 +65,8 @@ class StudioLiveOutput:
             raise RuntimeError(f'Studio exclusive output: {self._error}')
 
     def check(self):
+        if isinstance(self._error, StudioInputIdle):
+            raise self._error
         if self._error or self._stop.is_set() or not self._thread.is_alive():
             raise RuntimeError(f'Studio exclusive output ended: {self._error or "closed"}')
 
@@ -188,13 +202,9 @@ class StudioLiveOutput:
                                 except Empty:
                                     break
                                 last_input = time.monotonic()
-                                stereo = np.frombuffer(data, '<i2').reshape(-1, 4)[:, :2].astype(np.float32) / 32768
-                                for start in range(0, len(stereo), BLOCK):
-                                    block = stereo[start:start + BLOCK]
-                                    _, rear = dsp.process(block, controls, now=sample_index / RATE,
-                                                          allow_direction=stereo_capture, rear_only=True)
-                                    sample_index += len(block)
-                                    encoded = encode_studio_pcm(block * LIVE_PCM_SCALE, rear * LIVE_PCM_SCALE).tobytes()
+                                for sample_index, pcm16 in live_rear_blocks(
+                                        data, dsp, controls, sample_index, stereo_capture=stereo_capture):
+                                    encoded = pcm16.tobytes()
                                     if self.adaptive is not None:
                                         encoded = self.adaptive.process(encoded, controls, self.level, REHEARSAL_PEAK)
                                     elif controls.gain != 1.0 or self.level.current != 1.0:
@@ -203,8 +213,10 @@ class StudioLiveOutput:
 
                             client.check_cancel()
                             now = time.monotonic()
-                            if now >= deadline or now - last_input >= 1:
-                                raise RuntimeError('Studio live output lost its lease or input.')
+                            if now >= deadline:
+                                raise RuntimeError('Studio live output authorization expired.')
+                            if now - last_input >= 1:
+                                raise StudioInputIdle()
                             if pcm:
                                 renderer.write(pcm)
                                 self.submitted_frames += len(pcm) // 8

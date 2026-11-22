@@ -1,4 +1,8 @@
+param([string]$PackageDirectory)
 $ErrorActionPreference = 'Stop'
+if ($PackageDirectory) {
+    $PackageDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($PackageDirectory)
+}
 Set-Location $PSScriptRoot
 New-Item -ItemType Directory -Force reports | Out-Null
 New-Item -ItemType Directory -Force .build-temp | Out-Null
@@ -22,7 +26,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Build dependency check failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Failed to record build dependencies' }
 $ds5AppVersion = & $ds5BuildPython -B -c "from app_version import APP_VERSION; print(APP_VERSION)"
 if ($LASTEXITCODE -ne 0 -or $ds5AppVersion -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid app version' }
-$ds5PackageDirectory = Split-Path -Parent $PSScriptRoot
+$ds5PackageDirectory = if ($PackageDirectory) { $PackageDirectory } else { Split-Path -Parent $PSScriptRoot }
+New-Item -ItemType Directory -Force -Path $ds5PackageDirectory | Out-Null
 $ds5PackagePath = Join-Path $ds5PackageDirectory "DS5Light-win-x64-v$ds5AppVersion.zip"
 if (Test-Path -LiteralPath $ds5PackagePath) { throw "Package already exists; update app_version.py before building: $ds5PackagePath" }
 if ($env:DS5LIGHT_RUN_TESTS -eq '1') {
@@ -36,6 +41,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Process capture helper build failed' }
 # duplicate SVG provenance/notices (preserved by package_notices.py).
 $ds5DataFiles = @(
     'assets/dslight.ico;assets',
+    'assets/tiny-gru-h16-smoke.npz;assets',
     'assets/diagnostic-bg-120.png;assets',
     'assets/diagnostic-bg-160.png;assets',
     'assets/diagnostic-bg-240.png;assets',

@@ -46,7 +46,7 @@ def validate(value):
         raise ValueError(_ui_tr('채널 설정이 올바르지 않습니다.'))
     if type(data.get('channel_auto',True)) is not bool:
         raise ValueError(_ui_tr('채널 설정이 올바르지 않습니다.'))
-    if data.get('process_sort', 'audio') not in ('recent', 'cpu', 'audio'):
+    if data.get('process_sort', 'audio') not in ('recent', 'cpu', 'audio', 'name'):
         raise ValueError(_ui_tr('프로세스 정렬 설정이 올바르지 않습니다.'))
     for key, default in (('window_width',860),('window_height',1000)):
         dimension=data.get(key,default)
@@ -59,10 +59,11 @@ def validate(value):
     if not isinstance(controls, dict):
         raise ValueError(_ui_tr('오디오 옵션 형식이 올바르지 않습니다.'))
     allowed = set(defaults['controls'])
-    if set(controls)-allowed or allowed-set(controls)-{'gain','impact'}:
+    if set(controls)-allowed or allowed-set(controls)-{'gain','impact','experimental_ai'}:
         raise ValueError(_ui_tr('오디오 옵션 항목이 올바르지 않습니다.'))
     controls=dict(controls); controls.setdefault('gain',1.0)
     controls.setdefault('impact',.85)
+    controls['experimental_ai'] = False
     c = Controls(**controls)
     if c.mode not in ('normal', 'pure') or type(c.bypass) is not bool or type(c.background) is not bool or type(c.transient) is not bool:
         raise ValueError(_ui_tr('오디오 옵션 값이 올바르지 않습니다.'))

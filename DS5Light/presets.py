@@ -24,7 +24,7 @@ def validate(value):
         raise ValueError(_ui_tr('캡처 범위/채널 오류'))
     c = value['controls']
     required = {'mode', 'bypass', 'strength', 'background', 'transient'}
-    if not isinstance(c, dict) or not required <= set(c) or set(c) - required - {'rear','lfe','limiter','center','gain','impact'}:
+    if not isinstance(c, dict) or not required <= set(c) or set(c) - required - {'rear','lfe','limiter','center','gain','impact','experimental_ai'}:
         raise ValueError(_ui_tr('필터 설정 형식 오류'))
     if c.get('limiter','hard') not in ('hard','soft'):
         raise ValueError(_ui_tr('합산 제한 방식 오류'))
@@ -32,7 +32,7 @@ def validate(value):
         raise ValueError(_ui_tr('모드 오류'))
     if any(type(c[k]) is not bool for k in ('bypass', 'background', 'transient')):
         raise ValueError(_ui_tr('필터 스위치 오류'))
-    if any(type(c.get(k,False)) is not bool for k in ('rear','lfe','center')):
+    if any(type(c.get(k,False)) is not bool for k in ('rear','lfe','center','experimental_ai')):
         raise ValueError(_ui_tr('채널 스위치 오류'))
     if type(c['strength']) not in (float, int) or not math.isfinite(c['strength']) or not 0 <= c['strength'] <= 1:
         raise ValueError(_ui_tr('억제 세기 범위 오류'))

@@ -55,7 +55,7 @@ def validate_changes(values,changes,*,profile_snapshot=False):
                                      for k in ('auto_haptics_enable','mix_native_level','ah_dsp_source'))
             and merged.get('auto_haptics_enable')==1 and merged.get('mix_native_level',0)>0
             and merged.get('ah_dsp_source')==1):
-        raise ValueError(_ui_tr('네이티브 햅틱을 혼합하려면 햅틱 입력 채널을 앞 채널로 선택하세요.'))
+        raise ValueError(_ui_tr('네이티브 햅틱을 혼합하려면 햅틱 입력 채널을 앞 채널(Front)로 선택하세요.'))
     split=merged.get('ah_xover_hz',0)
     cutoff=merged.get('auto_haptics_lowpass_hz')
     split_edited=any(key in changes and changes[key]!=values.get(key)

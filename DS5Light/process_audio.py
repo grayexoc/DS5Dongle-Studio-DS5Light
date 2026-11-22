@@ -101,24 +101,30 @@ class ProcessSampler:
         finally:
             self.kernel.CloseHandle(handle)
 
-    def snapshot(self):
-        now = time.perf_counter()
+    def snapshot(self, *, cpu_interval=0):
         rows = processes()
+        rows = [(name,pid) for name,pid in rows if pid!=os.getpid() and not is_excluded_process(name)]
         audio=audio_snapshot()
+        previous = self.previous
+        sampled_at = self.last_sample
+        if cpu_interval:
+            sampled_at = time.perf_counter()
+            previous = {pid:self._read_times(pid) for _,pid in rows}
+            time.sleep(cpu_interval)
+        now = time.perf_counter()
         current = {}
+        elapsed = now - sampled_at if sampled_at is not None else 0
         result = []
-        elapsed = now - self.last_sample if self.last_sample is not None else 0
         for name, pid in rows:
-            if is_excluded_process(name) or pid==os.getpid():continue
             times = self._read_times(pid)
             started = times[0] if times else None
             cpu_seconds = times[1] if times else None
-            old = self.previous.get(pid)
+            old = previous.get(pid)
             cpu_percent = None
             if times and old and old[0] == started and elapsed > 0:
                 cpu_percent = max(0.0, min(100.0, (cpu_seconds - old[1]) / elapsed / self.cores * 100))
             if times:
-                current[pid] = (started, cpu_seconds)
+                current[pid] = times
             session=audio['sessions'].get(pid)
             activity=('playing' if (session.get('peak') or 0)>.0001 else 'active') if session else 'inactive' if audio['complete'] else 'unknown'
             result.append({'name': name, 'pid': pid, 'started': started, 'cpu': cpu_percent,'audio':activity})

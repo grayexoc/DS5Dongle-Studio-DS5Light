@@ -42,7 +42,7 @@ class StateReviewTests(unittest.TestCase):
         app.scope.set('device');app.render()
         self.assertEqual(overlay.master.winfo_manager(),'grid')
         self.assertEqual(overlay.winfo_manager(),'place')
-        self.assertEqual(overlay.label.cget('text'),'전역 캡쳐')
+        self.assertEqual(overlay.label.cget('text'),'전역 캡처')
         app.scope.set('process');app.render()
         self.assertEqual(overlay.master.winfo_manager(),'grid')
         self.assertEqual(overlay.winfo_manager(),'')
@@ -89,7 +89,7 @@ class StateReviewTests(unittest.TestCase):
         editor.doc.unsaved=True;editor.doc.macros_pending_flash=True
         with patch('studio_save_flow.profile_switch',return_value=None) as dialog:
             editor.request_profile_switch(lambda:self.fail('Cancelled switch continued'))
-        self.assertEqual(dialog.call_args.kwargs,dict(profile=True,shared=True,profile_applied=True,shared_applied=True))
+        self.assertEqual(dialog.call_args.kwargs,dict(profile=True,shared=True,profile_applied=True,shared_applied=True,save_allowed=True))
 
     def test_duplicate_process_hint_is_empty_and_owned_message_is_removed(self):
         app=self.ui;app.scope.set('process');app.desired_game='Game.exe'

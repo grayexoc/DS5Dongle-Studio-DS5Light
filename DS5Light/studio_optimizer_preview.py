@@ -59,7 +59,7 @@ def read_route_preview(client, *, live_output, endpoint_verified):
         context['live_route_verified'] = True
         reasons = {
             'auto_haptics_enable': 'PC 후면 제어 스트림에는 Replace 모드가 필요합니다.',
-            'ah_dsp_source': 'PC 제어값은 후면 CH2–3으로 전달됩니다.',
+            'ah_dsp_source': 'PC 제어값은 뒤 채널(Rear) · CH2–3으로 전달됩니다.',
             'auto_mute_replace': 'Studio 독점 출력은 Replace의 스피커 자동 음소거를 요구합니다.',
         }
         changes = {key: (values[key], value) for key, value in LIVE_ROUTE.items() if values[key] != value}
@@ -67,7 +67,7 @@ def read_route_preview(client, *, live_output, endpoint_verified):
                   else 'Studio 독점 출력의 설정 조건이 충족됐습니다. 독점권은 시작할 때 확인합니다.')
     elif native_mix and values['ah_dsp_source'] == 1:
         changes = {'ah_dsp_source': (1, 0)}
-        reason = 'Native Mix의 후면 채널을 유지하려면 DSP 입력을 전면으로 선택하세요.'
+        reason = 'Native Mix의 뒤 채널(Rear)을 유지하려면 DSP 입력을 앞 채널(Front)로 선택하세요.'
         reasons = {'ah_dsp_source': reason}
     else:
         changes = {}

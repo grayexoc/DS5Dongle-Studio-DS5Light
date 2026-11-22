@@ -61,7 +61,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '불러옴 · ': 'Loaded · ',
  '저장한 장치가 없습니다. 연결 설정에서 직접 선택하세요.': 'Saved device unavailable. Select a device in Connection & help.',
  '장치 선택': 'Select devices',
- '연결 설정에서 입출력 장치를 선택하세요.': 'Select input and output devices in Connection & help.',
+ '설정·진단에서 입력 장치와 출력 장치를 선택하세요.': 'Select the input and output devices in Settings · Diagnostics.',
  '게임 선택': 'Select a game',
  '게임을 실행하고 새로 고침 후 실제 게임 exe를 선택하세요.': 'Start your game, refresh the list, then select its actual '
                                        'executable.',
@@ -95,7 +95,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '잘못된 캡처 패킷': 'Invalid capture packet',
  '종료': 'Ended',
  '게임 캡처 버퍼 부족': 'Game capture buffer underrun',
- 'Studio설정': 'Studio settings',
+ 'Studio 설정': 'Studio settings',
  '마이크 버튼 키보드매핑': 'Microphone button keyboard mapping',
  '자동 채널': 'Auto channels',
  '단축키': 'Shortcut',
@@ -206,15 +206,15 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '캡처 ': 'Capture ',
  '출력: ': 'Output: ',
  '듀얼센스 연결됨': 'DualSense connected',
- '목록에서 캡쳐할 프로세스를 선택하세요.': 'Select a process to capture from the list.',
+ '목록에서 캡처할 프로세스를 선택하세요.': 'Select a process to capture from the list.',
  '게임 실행 후 새로 고침을 눌러 주세요.': 'Launch your game, then select Refresh.',
  'Studio 연결 확인 완료': 'Studio connection verified',
  '설정·진단': 'Settings & diagnostics',
  '장치 전체: 큐 길이 기반 추정 · 하드웨어 시각/손실 횟수 미계측': 'Whole device: queue-based estimate; hardware timestamps and loss '
                                           'counts unavailable',
- '전역 캡쳐': 'Global capture',
+ '전역 캡처': 'Global capture',
  '사용할 오디오 장치를 자동으로 선택합니다.': 'Automatically select the audio device to use.',
- '캡쳐 모드': 'Capture mode',
+ '캡처 모드': 'Capture mode',
  '채널 구성': 'Channel mix',
  'PC 억제 필터': 'PC suppression filter',
  '현재 프로필:': 'Current profile:',
@@ -234,7 +234,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
                                                        'Enter a name of up to 16 UTF-8 bytes.',
  '프로필 이름은 UTF-8 16바이트 이내로 입력하세요.': 'Enter a profile name of up to 16 UTF-8 bytes.',
  '이름에 사용할 수 없는 문자가 있습니다.': 'The name contains an unsupported character.',
- '프로필을 수정하지 않고, 앱이 켜져 오디오를 전송하는 동안만 적용되는 간단 세기 조절입니다.\n먼저 원하는 햅틱 반응을 맞춘 뒤 세기를 보완하세요. 100%가 기본입니다.\nStudio설정의 오디오햅틱 세기와 중복 적용되므로 함께 높이면 과도한 증폭이나 포화가 생길 수 있습니다.': 'A '
+ '프로필을 수정하지 않고, 앱이 켜져 오디오를 전송하는 동안만 적용되는 간단 세기 조절입니다.\n먼저 원하는 햅틱 반응을 맞춘 뒤 세기를 보완하세요. 100%가 기본입니다.\nStudio 설정의 오디오햅틱 세기와 중복 적용되므로 함께 높이면 과도한 증폭이나 포화가 생길 수 있습니다.': 'A '
                                                                                                                                                                  'simple '
                                                                                                                                                                  'adjustment '
                                                                                                                                                                  'that '
@@ -769,7 +769,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  ' · 키보드 ': '· Keyboard',
  '+ 매핑·매크로 추가': '+ Add mapping and macro',
  '#RRGGBB 형식의 색상값을 입력하세요.': 'Enter a color value in the format #RRGGBB.',
- '0/1 채널 · 기본': '0/1 Channel · Basic',
+ '앞 채널(Front)': 'Front',
  '% · 보정값 ': '% · Correction value',
  '01 · 실행할 입력 버튼을 선택하세요.': '01 · Select the input button to execute.',
  '0~9 구간 중 저항이 시작될 위치입니다.': 'This is where resistance will begin in the 0 to 9 range.',
@@ -780,7 +780,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '24 dB/oct · 급격': '24 dB/oct · rapid',
  '02 · 출력 동작을 선택하세요.': '02 · Select the output operation.',
  '1 가장 약함 · 10 기본': '1 Weakest · 10 Basic',
- '2/3 채널 · 후방 입력': '2/3 channels / rear input',
+ '뒤 채널(Rear)': 'Rear',
  '1단위는 10ms입니다. 0은 기본 750ms를 사용합니다.': '1 unit is 10ms. 0 uses the default 750ms.',
  '32개 매크로가 모두 사용 중입니다.': 'All 32 macros are in use.',
  ': 0 또는 1이어야 합니다.': ': Must be 0 or 1.',
@@ -847,7 +847,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  'L2를 누르는 동안': 'While holding L2',
  'L2를 누를 때': 'When pressing L2',
  'L2 클릭': 'Click L2',
- 'Mix · 기본 진동과 혼합': 'Mix · Mix with basic vibration',
+ 'Mix · 네이티브 햅틱과 혼합': 'Mix · With native haptics',
  'Mix · 게임 진동과 혼합': 'Mix · Mix with game vibration',
  'Mix 모드에서 듀얼센스 스피커의 일반 오디오를 자동으로 음소거합니다.': 'Automatically mutes normal audio from DualSense speakers in Mix '
                                             'mode.',
@@ -958,7 +958,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  'Pico 절전 실패 · ': 'Pico sleep failure ·',
  'Pico 펌웨어 설치': 'Install Pico firmware',
  'Pico 절전 요청 중에는 장치 작업을 실행할 수 없습니다.': 'Device operations cannot be performed during a Pico sleep request.',
- 'Pico가 오디오햅틱을 만들 때 분석할 USB 오디오 채널 쌍입니다. 앱의 캡쳐 채널 구성과는 별도입니다. 0/1은 일반 스피커 채널, 2/3은 후방 채널로 보내는 입력을 사용합니다.': 'A '
+ 'Pico가 오디오햅틱을 만들 때 분석할 USB 오디오 채널 쌍입니다. 앱의 캡처 채널 구성과는 별도입니다. 0/1은 앞 채널(Front) · 스피커, 2/3은 뒤 채널(Rear)로 보내는 입력을 사용합니다.': 'A '
                                                                                                            'pair '
                                                                                                            'of '
                                                                                                            'USB '
@@ -1639,13 +1639,13 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '다른 장치를 읽으면 미적용 변경이 취소됩니다.': 'Reading another device will cancel any unapplied changes.',
  '누르는 동안·누를 때·놓을 때 중 발생 조건입니다.': 'This condition occurs while pressing, when pressing, or when releasing.',
  '다른 프로필에 저장': 'Save to another profile',
- '다음 Studio설정 진입 시 다시 읽습니다.': 'It will be read again the next time you enter Studio settings.',
+ '다음 Studio 설정 진입 시 다시 읽습니다.': 'It will be read again the next time you enter Studio settings.',
  '다음 실행부터 한국어로 표시됩니다.': 'From the next run, it will be displayed in Korean.',
  '다음: 실행 동작': 'Next: Execution behavior',
  '되돌리기': 'revert',
  '단계 · ': 'Step ·',
  '동작 규칙': 'Behavior Rules',
- '동글이 진동을 만들 때 분석할 USB 오디오 채널 쌍입니다. 앱의 캡쳐 채널 구성과 구분하세요.': 'A pair of USB audio channels to analyze when the '
+ '동글이 진동을 만들 때 분석할 USB 오디오 채널 쌍입니다. 앱의 캡처 채널 구성과 구분하세요.': 'A pair of USB audio channels to analyze when the '
                                                           'dongle makes vibrations. Distinguish this from '
                                                           "your app's capture channel configuration.",
  '동글 안에서 오디오를 쌓는 양입니다. 앱의 PC 전송 블록과는 다릅니다.': 'This is the amount of audio stacked inside the dongle. This is '
@@ -2507,6 +2507,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
                                                                                    'other settings for the '
                                                                                    'target slot.',
  '의 입력값을 확인하세요.': 'Check the input values.',
+ '입력값이 올바르지 않습니다.': 'One or more values are invalid.',
  '마이크 버튼': 'microphone button',
  '이름': 'name',
  '이름 변경': 'change name',
@@ -3542,7 +3543,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
                                           'battery indicator.',
  '플레이어 표시 LED의 밝기입니다. 라이트바 RGB와는 다릅니다.': 'The brightness of the player indicator LED. It is different from '
                                          'light bar RGB.',
- '플레이어 LED의 밝기를 라이트바와 별도로 조절합니다. 게임 설정 따름에서도 어떤 LED를 켤지는 게임이 정하지만 여기서 지정한 밝기는 유지합니다. 밝게는 밝기까지 게임에 맡깁니다.': 'Adjust '
+ '플레이어 LED의 밝기를 라이트바와 별도로 조절합니다. 기본 모드에서는 게임이 LED 패턴을 지정할 수 있으며 여기서 지정한 밝기는 유지합니다. 밝게는 밝기까지 게임에 맡깁니다.': 'Adjust '
                                                                                                           'the '
                                                                                                           'brightness '
                                                                                                           'of '
@@ -3895,7 +3896,7 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  'DualSense 출력 장치가 여러 개입니다. 직접 선택하세요.': 'Multiple DualSense outputs found. Select one explicitly.',
  '선택한 출력 장치의 재연결을 기다립니다.': 'Waiting for the selected output to reconnect.',
  '출력 장치가 4채널 48kHz 형식을 지원하지 않습니다.': 'The output does not support 4-channel 48 kHz audio.',
- '전역 오디오 캡쳐 작동중..': 'Global audio capture running..',
+ '전역 오디오 캡처 중…': 'Global audio capture running..',
  '컨트롤러 출력 조합키': 'DualSense output chord',
  '배터리 ': 'battery',
  '사용 중': 'In use',
@@ -4328,7 +4329,7 @@ EN.update({'4채널 오디오 출력 없음 · 듀얼센스 연결과 Windows �
 
 EN['오디오 전송 실패 · 출력 장치 연결 상태를 확인하세요']='Audio transmission failed · Check the output device connection'
 
-EN.update({'출력 확인': 'Confirm output', '선택한 출력을 안전하게 식별할 수 없습니다. 장치 이름을 구분하고 새로 고침하세요.': 'Cannot safely identify this output. Use distinct device names and refresh.', '선택한 출력이 현재 Pico의 듀얼센스 오디오 장치인지 확인하세요. 이 출력으로 연결할까요?': 'Verify that this is the DualSense audio output of the current Pico. Connect using this output?', '오디오 입력 열기 실패 · 재생 장치와 캡쳐 권한을 확인하세요': 'Cannot open audio input · Check playback device and capture permissions', '출력 식별 실패 · 설정·진단에서 Pico 오디오 출력을 직접 선택하고 시작하세요': 'Cannot identify output · Select the Pico audio output in Settings & diagnostics, then start'})
+EN.update({'출력 확인': 'Confirm output', '선택한 출력을 안전하게 식별할 수 없습니다. 장치 이름을 구분하고 새로 고침하세요.': 'Cannot safely identify this output. Use distinct device names and refresh.', '선택한 출력이 현재 Pico의 듀얼센스 오디오 장치인지 확인하세요. 이 출력으로 연결할까요?': 'Verify that this is the DualSense audio output of the current Pico. Connect using this output?', '오디오 입력 열기 실패 · 재생 장치와 캡처 권한을 확인하세요': 'Cannot open audio input · Check playback device and capture permissions', '출력 식별 실패 · 설정·진단에서 Pico 오디오 출력을 직접 선택하고 시작하세요': 'Cannot identify output · Select the Pico audio output in Settings & diagnostics, then start'})
 
 EN['XBOX 모드 지원을 확인하지 못했습니다.'] = 'Could not verify XBOX Mode support.'
 
@@ -4680,11 +4681,11 @@ EN.update({
 OPTION_TEXT = {
  'Mix with native':'Mix · game feedback + audio haptics', 'Replace (audio only)':'Replace · audio haptics only',
  'Filtered (default) — blocks 4ch mirror leakage':'Filtered', 'Raw — keep native haptics intact':'Raw',
- 'ch0/1 (default) — same feed as speaker + leak':'Front · channels 0/1',
- 'ch2/3 — script feed only (run ds5audio --map rear)':'Rear · channels 2/3',
+ 'ch0/1 (default) — same feed as speaker + leak':'Front',
+ 'ch2/3 — script feed only (run ds5audio --map rear)':'Rear',
  '6 dB/oct (gentle)':'6 dB/oct', '12 dB/oct (default)':'12 dB/oct', '24 dB/oct (steep)':'24 dB/oct',
  'DualSense (DS5)':'DualSense', 'DualSense Edge (DSE)':'DualSense Edge', 'Auto-detect':'Auto',
- 'Passthrough':'Game-controlled', 'Battery gauge':'Battery level', 'Mid':'Medium',
+ 'Passthrough':'Default', 'Battery gauge':'Battery level', 'Mid':'Medium',
  'Off — raw & gritty (pre-1.0.4 texture)':'Off', 'Light — kills grit, keeps snap (recommended)':'Light',
  'Strong — maximum smooth (can feel muted)':'Strong',
  'Right stick (works everywhere)':'Right stick', 'Mouse (finer aim; needs the pad hidden in most games)':'Mouse',
@@ -4708,7 +4709,7 @@ for _button in ('L1','R1'):
 EN.update({
  '장치 전체':'All system audio', '선택한 게임만':'Selected process',
  '설정·진단':'Settings · Diagnostics', '오디오햅틱':'Audio haptics', '오디오햅틱 세기':'Audio haptics strength',
- 'Studio설정':'Studio settings', '세기':'Strength', '위':'Up', '초록':'Green',
+ 'Studio 설정':'Studio settings', '세기':'Strength', '위':'Up', '초록':'Green',
  '오디오햅틱 모드':'Audio haptics mode', '오디오햅틱만':'Audio haptics only',
  '오디오햅틱 안정형':'Audio haptics · Balanced', '오디오햅틱 반응형':'Audio haptics · Responsive',
  '느껴짐':'Felt it', '안 느껴짐':'Did not feel it',
@@ -4716,7 +4717,7 @@ EN.update({
 
 EN.update({
  '체크':'Checked', '체크 해제':'Unchecked', '추천':'Recommended', '기본값':'Default',
- '캡쳐 모드':'Capture mode', '캡쳐모드':'Capture mode', '채널 구성':'Channels', 'PC 억제 필터':'PC suppression filter',
+ '캡처 모드':'Capture mode', '채널 구성':'Channels', 'PC 억제 필터':'PC suppression filter',
  '햅틱 세기':'Audio haptics strength', '설정.진단':'Settings · Diagnostics',
  '마이크 버튼 키보드매핑':'Microphone button shortcut', '키 지정':'Set shortcut',
  '키보드 입력 지정':'Record keyboard shortcut', '버튼 눌러 지정':'Record button input',
@@ -4728,8 +4729,8 @@ EN.update({
  '현재 설정 저장':'Save current settings', '현재값 저장':'Save current settings',
  '전체 슬롯 가져오기':'Import all slots', '전체 슬롯 내보내기':'Export all slots',
  '목록은 모든 프로필이 공유':'Mappings and macros are shared across profiles',
- '장치 전체':'All system audio', '전역 캡쳐':'System audio capture',
- '전역 오디오 캡쳐 작동중..':'System audio capture running…',
+ '장치 전체':'All system audio', '전역 캡처':'System audio capture',
+ '전역 오디오 캡처 중…':'System audio capture running…',
  '자동 적용 중..':'Auto configuration active…', '2채널 스테레오 적용중..':'Stereo active…',
  '연결된 듀얼센스가 없습니다.':'No DualSense connected.',
  '스피커 꺼짐':'Speaker audio disabled',
@@ -4737,7 +4738,7 @@ EN.update({
  '{0}개 편집에 반영 · {1}개 제외 · 아직 장치에 적용되지 않음':'Staged {0} settings · Skipped {1} · Not yet applied',
  '{0} · {1}을 현재 설정으로 덮어쓸까요?\n공유 매크로 정의는 저장하지 않습니다.':'Overwrite {0} · {1} with current settings?\nShared mappings and macros are not included.',
  '각 축에서 스틱을 얼마나 기울이면 지정한 키를 누를지 정합니다. 기본값 48은 최대 이동량의 약 38%입니다. 낮추면 조금만 기울여도 작동하고, 높이면 더 많이 기울여야 합니다. 기본값에서는 48 이상에서 작동하고 38 미만으로 돌아오면 해제되어 경계에서 입력이 반복되는 것을 줄입니다.':'Stick deflection needed to activate a key. Default: 48 (about 38%). Releases below 38 to prevent rapid toggling.',
- '프로필을 수정하지 않고, 앱이 켜져 오디오를 전송하는 동안만 적용되는 간단 세기 조절입니다.\n먼저 원하는 햅틱 반응을 맞춘 뒤 세기를 보완하세요. 100%가 기본입니다.\nStudio설정의 오디오햅틱 세기와 중복 적용되므로 함께 높이면 과도한 증폭이나 포화가 생길 수 있습니다.':'App-only strength control; does not modify the profile. Default: 100%.\nCombines with Studio audio haptics strength. Raising both can cause clipping.',
+ '프로필을 수정하지 않고, 앱이 켜져 오디오를 전송하는 동안만 적용되는 간단 세기 조절입니다.\n먼저 원하는 햅틱 반응을 맞춘 뒤 세기를 보완하세요. 100%가 기본입니다.\nStudio 설정의 오디오햅틱 세기와 중복 적용되므로 함께 높이면 과도한 증폭이나 포화가 생길 수 있습니다.':'App-only strength control; does not modify the profile. Default: 100%.\nCombines with Studio audio haptics strength. Raising both can cause clipping.',
 })
 # Normalize bundled text only, never device names, profile names or user input.
 for _key,_value in tuple(EN.items()):
@@ -4749,7 +4750,7 @@ for _key,_value in tuple(EN.items()):
 # Concise text used outside field tooltips.
 EN.update({'Pico가 오디오를 쌓아 처리하는 버퍼 크기입니다. 작으면 지연이 줄고, 크면 전송이 안정적입니다. 추천값은 48입니다. 소리나 햅틱이 끊기는 등 문제가 있으면 64로 변경하세요. 앱의 PC 전송 블록 크기와는 별도입니다.': 'Pico audio buffer. Recommended: 48; try 64 if audio breaks up. Separate from the PC processing block size.', '게임의 네이티브 햅틱 파형과 Pico가 생성하는 오디오햅틱을 증폭합니다. 1은 원래 배율이며, 큰 값은 포화를 일으킬 수 있습니다. 일반 진동 세기·잔향 및 Mix 일반 진동 혼합 세기는 별도 설정입니다.': 'Scales haptic waveforms. 1 is unchanged; higher values can saturate. Separate from rumble strength and Mix rumble strength.', '게임이 보내는 효과의 형태를 유지하면서 적응형 트리거 모터의 힘을 줄입니다. 게임의 네이티브 효과에도 적용됩니다. 10은 기본 세기, 1은 가장 약함입니다. 펌웨어의 원래 11단계를 유지하므로 중간값은 소수로 표시합니다.': 'Reduces adaptive trigger force while preserving the game effect. 1: weakest. 10: original strength. Intermediate values follow the firmware steps.', '끔은 게임의 일반 진동과 네이티브 햅틱을 그대로 사용하는 모드입니다. Mix는 오디오햅틱에 게임의 네이티브 햅틱과 일반 진동 변환 신호를 섞습니다. Replace는 오디오햅틱만 사용합니다. 게임이 제공하는 신호와 연결 방식에 따라 재생되는 성분은 달라집니다.': 'Off: game rumble and native haptics. Mix: adds audio haptics. Replace: audio haptics only.', '네이티브 햅틱을 저역 통과 필터로 처리한 뒤 섞을지, 원본 그대로 섞을지 정합니다. 복제 오디오의 대사·고음이 새어 들어올 때는 필터가 도움이 되지만, 실제 네이티브 햅틱을 온전히 유지하려면 원본을 선택하세요.': 'Filtered reduces mirrored audio leakage. Raw preserves native game haptics.', '듀얼센스 스피커와 듀얼센스 단자에 연결한 헤드셋의 소리 출력을 끕니다. PC에 직접 연결한 USB 헤드셋에는 영향을 주지 않습니다. 오디오햅틱 모드를 Mix·Replace로 바꾸면 자동 체크되고 Off로 바꾸면 해제됩니다. 이후 수동으로 변경할 수 있습니다. 체크 중에는 하위 모드별 음소거가 적용되지 않으며, 적용 시 USB 재연결이 필요할 수 있습니다.': 'Disables the DualSense speaker and its headset jack, not PC USB headsets. Mode changes select this automatically; manual changes are allowed. Overrides mode-specific mutes. Applying may reconnect USB.', '변경값을 적용하고 표시된 프로필 슬롯에 저장한 뒤 Pico 시작 설정 저장을 요청합니다. 공유 매크로 정의는 별도의 Pico 매핑·매크로 저장으로 저장합니다. 전송은 잠시 정지하며 확인할 수 없는 결과는 완료로 표시하지 않습니다.': 'Applies changes, saves the indicated profile slot and requests Pico startup storage. Save shared mappings and macros separately. Audio pauses briefly.', '수동은 게임마다 체감으로 감도를 맞추는 방식입니다. 자연 감도는 듀얼센스 회전과 화면 회전의 비율을 사용합니다. 1배이면 듀얼센스를 10도 돌렸을 때 화면도 10도 돌아가도록 맞춥니다. 정확한 360도 회전 마우스 이동량이 필요하며, 자연 감도는 마우스로 출력할 때만 적용됩니다. 스틱 출력은 회전각이 아닌 회전 속도를 전달합니다.': 'Manual: tune by feel. Natural: controller-to-view rotation ratio; requires mouse output and calibrated counts per 360°.', '수평 조준에 사용할 회전축을 정합니다. 좌우 회전은 듀얼센스를 돌리는 움직임, 좌우 기울임은 옆으로 기울이는 움직임을 사용합니다. 잡은 방향 기준은 가속도계로 아래 방향을 판단해 두 축을 섞으므로, 듀얼센스를 평평하게 들거나 세워도 비슷하게 조준할 수 있습니다.': 'Yaw: turn left or right. Roll: tilt sideways. Player space combines both using controller orientation.', '오디오에서 만든 햅틱의 전체 세기를 조절합니다. 네이티브 햅틱 혼합량과 Mix 일반 진동 혼합 세기는 별도입니다. 앱 상단 햅틱 세기와 함께 높이면 과도하게 증폭될 수 있습니다.': 'Scales audio-generated haptics. Raising this and the main window strength together can cause saturation.', '자이로 움직임을 어떤 입력으로 전달할지 정합니다. 오른쪽 스틱은 별도 마우스 설정 없이 쓸 수 있습니다. 마우스는 미세 조준에 유리하고 빠른 회전에서도 스틱의 최대 속도에 묶이지 않지만, 게임이 게임패드와 마우스의 동시 입력을 막으면 패드를 숨기는 별도 설정이 필요할 수 있습니다. 변경하면 USB 장치를 다시 연결합니다.': 'Choose right stick or mouse output. Some games block simultaneous mouse and gamepad input. Applying reconnects USB.', '자이로 작동 기준을 마우스로 적용한 후 사용하세요.': 'Apply Mouse output first. Switch to the game during the 3-second countdown. Disable mouse acceleration and smoothing.', '자이로 작동 기준을 마우스로 적용한 뒤 측정하세요. 전송 버튼을 누르면 3초 후 마우스 이동이 시작됩니다. 그동안 게임을 전면으로 전환하고 게임의 마우스 가속·스무딩을 끄세요.': 'Apply Mouse output first. Switch to the game during the 3-second countdown. Disable mouse acceleration and smoothing.', '작은 소리 차단 25, 24dB 기울기와 50Hz 대역 분리로 작은 소리 및 50~80Hz 대역의 반응을 줄입니다. 배경음에 의한 지속적인 반응을 줄이고 정돈된 오디오햅틱을 원할 때 사용합니다. 약한 효과음도 줄어들 수 있으며 음악·대사를 정확히 분리하는 기능은 아닙니다.': 'Reduces sustained background responses using gate 25, a 24 dB/oct filter and a 50 Hz crossover. May weaken subtle effects; does not isolate dialogue or music.', '저음·고음 분리 기준 주파수입니다. 각 좌우 채널 안에서 대역을 나누고, 저음 충격 세기와 고음 대역 세기를 반영해 다시 합칩니다. 0이면 분리를 끄며 두 세기 값은 적용되지 않습니다. 사용할 때는 저역 통과 기준보다 낮게 설정하세요.': 'Splits each channel into low and high bands for separate gain. 0 disables the split. Set below the low-pass cutoff.', '저음·고음 분리 기준부터 저역 통과 기준까지의 높은 쪽 대역이 햅틱에 기여하는 세기입니다. 낮추면 이 대역의 음악·대사와 효과음 반응이 함께 줄어듭니다. 100%는 해당 대역의 원래 비율, 0%는 해당 대역 제외입니다. 저음·고음 분리 기준이 0이면 적용되지 않습니다.': 'Gain between crossover and low-pass cutoff. Affects effects, music and dialogue. 100% is unchanged; 0% removes the band. Inactive at crossover 0.', '저음·고음 분리 기준보다 낮은 대역의 세기입니다. 분리 기준이 0이면 적용되지 않습니다.': 'Gain below the crossover, including bass in music and dialogue. 100% is unchanged; 0% removes the band. Inactive at crossover 0.', '저음·고음 분리 기준보다 높은 햅틱 대역의 세기입니다. 분리 기준이 0이면 적용되지 않습니다.': 'Gain below the crossover, including bass in music and dialogue. 100% is unchanged; 0% removes the band. Inactive at crossover 0.', '저음·고음 분리 기준보다 낮은 대역이 햅틱에 기여하는 세기입니다. 묵직한 충격과 울림을 조절하며 음악·대사의 저음도 포함됩니다. 100%는 해당 대역의 원래 비율, 0%는 해당 대역 제외입니다. 저음·고음 분리 기준이 0이면 적용되지 않습니다.': 'Gain below the crossover, including bass in music and dialogue. 100% is unchanged; 0% removes the band. Inactive at crossover 0.', '전송할 햅틱 파형의 거친 질감을 부드럽게 합니다. 네이티브 햅틱뿐 아니라 오디오햅틱과 Mix에 섞인 일반 진동 변환 신호에도 적용됩니다. 강하게 처리하면 짧은 충격이 약해질 수 있습니다. 오디오햅틱 끔에서 사용하는 일반 진동 전달 경로에는 적용되지 않습니다.': 'Smooths haptic waveforms. Strong smoothing can soften impacts. Does not affect rumble with audio haptics off.', '측정 중 듀얼센스를 수평으로 잡고 오른쪽으로 한 바퀴(360°) 돌려 시작 방향으로 돌아오세요. 남은 시간에는 가만히 유지하고 2~3회 반복해 비교하세요. 반대 방향 움직임도 합산되므로 한 방향으로만 돌리세요.': 'Hold DualSense level and rotate 360° to the right, then keep still. Avoid reverse rotation. Repeat 2–3 times.', '터치패드 아래 흰색 LED 5개의 표시 방식을 정합니다. 게임 설정 따름은 게임·듀얼센스에 맡기고, 끔은 LED를 끕니다. 배터리 잔량은 20%마다 왼쪽부터 하나씩 켜며, 충전 중에는 다음 LED가 천천히 점멸하고 20% 미만에서는 첫 LED만 깜박입니다. 잔량 표시를 쓰면 게임의 플레이어 번호 표시는 대체됩니다.': 'Controls the five white player LEDs. Battery mode shows one LED per 20%; the next blinks while charging, the first below 20%. Replaces player-number display.', '현재 게임에서 화면을 한 바퀴 돌리는 데 필요한 마우스 이동량입니다.': 'Mouse counts for a full turn: cm/360 × DPI ÷ 2.54. To calibrate a backward flick: new value = current value × 180 ÷ measured angle. Use raw input; disable acceleration. Recalibrate after changing game sensitivity.', '현재 게임에서 화면을 한 바퀴 돌리는 데 필요한 마우스 이동량입니다. 알고 있는 값이 있으면 (360도 회전에 필요한 cm) × (DPI ÷ 2.54)로 계산할 수 있습니다. 모르면 6500에서 시작해 스틱을 뒤로 끝까지 기울인 뒤 실제 회전각을 보고 현재 값 × 180 ÷ 실제 회전각으로 보정하세요. 마우스 가속은 끄고 원시 입력은 켜는 것이 좋으며, 게임 감도를 바꾸면 다시 맞춰야 합니다.': 'Mouse counts for a full turn: cm/360 × DPI ÷ 2.54. To calibrate a backward flick: new value = current value × 180 ÷ measured angle. Use raw input; disable acceleration. Recalibrate after changing game sensitivity.', '안정형보다 적극적인 오디오햅틱 반응을 원할 때 사용합니다. 작은 소리 차단 16과 부드러움 32로 미세한 반응을 줄이고 진동 변화를 완화합니다. 100Hz 저역 통과와 60Hz 대역 분리, 고음 대역 세기 60%를 사용합니다. 배경음에도 반응할 수 있으며 음악·대사를 정확히 분리하는 기능은 아닙니다.': 'More responsive than Balanced. Gate 16, smoothing 32, low-pass 100 Hz, crossover 60 Hz, high-band gain 60%. May also respond to background audio; does not isolate dialogue or music.'})
 
-EN.update({'햅틱·스피커':'Haptics & speaker','네이티브 햅틱 세기':'Native haptics strength','일반진동 잔향':'Rumble decay','일반 진동을 트리거에 연동':'Rumble to triggers'})
+EN.update({'햅틱·스피커':'Haptics & speaker','네이티브 햅틱 세기':'Native haptics strength','일반 진동 잔향':'Rumble decay','일반 진동을 트리거에 연동':'Rumble to triggers'})
 FIELD_LABELS.update({'haptics_gain':'Native haptics strength','rumble_release':'Rumble decay'})
 
 EN.update({'듀얼센스 스피커 증폭':'DualSense speaker gain','햅틱 질감':'Haptic texture','음량이 부족할 때 조절\n높이면 왜곡될 수 있음':'Boosts quiet speaker audio. High values can distort.'})
@@ -4810,9 +4811,9 @@ EN.update({
 })
 
 EN.update({
-    'Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널로 변경하세요.':
+    'Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널(Front)로 변경하세요.':
         'Select the front channels as the haptic input to mix in native haptics.',
-    '네이티브 햅틱을 혼합하려면 햅틱 입력 채널을 앞 채널로 선택하세요.':
+    '네이티브 햅틱을 혼합하려면 햅틱 입력 채널을 앞 채널(Front)로 선택하세요.':
         'Select the front channels as the haptic input to mix in native haptics.',
 })
 
@@ -4935,7 +4936,7 @@ EN['Studio Replace와 후면 DSP, 스피커 자동 음소거, Windows 독점 모
 EN['Studio 프레임 · 큐 등록 / WASAPI 제출: '] = 'Studio frames · queued / submitted to WASAPI: '
 EN['승인 갱신: '] = 'Lease renewals: '
 
-EN.update({'DSP Only 최적화 미리보기': 'DSP Only optimization preview', '오디오햅틱 모드': 'Audio haptics mode', 'DSP 입력': 'DSP input', '전면 CH0–1': 'Front CH0–1', '후면 CH2–3': 'Rear CH2–3', 'Replace 스피커 자동 음소거': 'Replace speaker auto-mute', '현재 Studio 설정과 프로필 리비전을 다시 확인하세요.': 'Check the current Studio settings and profile revision again.', '실시간 독점 출력은 현재 Native Mix 설정과 충돌합니다.': 'Live exclusive output conflicts with the current Native Mix settings.', 'Studio 독점 출력의 장치 식별 또는 펌웨어 지원을 확인하세요.': 'Verify the Studio exclusive output device or firmware support.', 'Studio 실시간 독점 출력에 필요한 설정 후보입니다.': 'Candidate settings required for Studio live exclusive output.', 'Studio 독점 출력의 설정 조건이 충족됐습니다. 독점권은 시작할 때 확인합니다.': 'The Studio settings meet the requirements. Exclusive access will be checked at startup.', 'Native Mix의 후면 채널을 유지하려면 DSP 입력을 전면으로 선택하세요.': 'Select front DSP input to preserve the rear channels for Native Mix.', '확인된 설정에서 변경할 경로 후보가 없습니다.': 'The verified settings have no route change candidate.'})
+EN.update({'DSP Only 최적화 미리보기': 'DSP Only optimization preview', '오디오햅틱 모드': 'Audio haptics mode', 'DSP 입력': 'DSP input', '앞 채널(Front) · CH0–1': 'Front CH0–1', '뒤 채널(Rear) · CH2–3': 'Rear CH2–3', 'Replace 스피커 자동 음소거': 'Replace speaker auto-mute', '현재 Studio 설정과 프로필 리비전을 다시 확인하세요.': 'Check the current Studio settings and profile revision again.', '실시간 독점 출력은 현재 Native Mix 설정과 충돌합니다.': 'Live exclusive output conflicts with the current Native Mix settings.', 'Studio 독점 출력의 장치 식별 또는 펌웨어 지원을 확인하세요.': 'Verify the Studio exclusive output device or firmware support.', 'Studio 실시간 독점 출력에 필요한 설정 후보입니다.': 'Candidate settings required for Studio live exclusive output.', 'Studio 독점 출력의 설정 조건이 충족됐습니다. 독점권은 시작할 때 확인합니다.': 'The Studio settings meet the requirements. Exclusive access will be checked at startup.', 'Native Mix의 뒤 채널(Rear)을 유지하려면 DSP 입력을 앞 채널(Front)로 선택하세요.': 'Select front DSP input to preserve the rear channels for Native Mix.', '확인된 설정에서 변경할 경로 후보가 없습니다.': 'The verified settings have no route change candidate.'})
 
 EN['Studio 상태가 바뀌었습니다. 최적화 미리보기를 다시 조회하세요.'] = 'Studio state changed. Refresh the optimization preview.'
 
@@ -4959,7 +4960,7 @@ EN['PC 게인 적용 · {before}% → {after}%'] = 'PC gain applied · {before}%
 
 EN['USB 진단과 Studio 설정의 리비전이 다릅니다. 다시 조회하세요.'] = 'USB diagnostics and Studio settings have different revisions. Refresh the preview.'
 EN['PC 후면 제어 스트림에는 Replace 모드가 필요합니다.'] = 'The PC rear-control stream requires Replace mode.'
-EN['PC 제어값은 후면 CH2–3으로 전달됩니다.'] = 'The PC sends control values on rear channels CH2–3.'
+EN['PC 제어값은 뒤 채널(Rear) · CH2–3으로 전달됩니다.'] = 'The PC sends control values on rear channels CH2–3.'
 EN['Studio 독점 출력은 Replace의 스피커 자동 음소거를 요구합니다.'] = 'Studio exclusive output requires speaker auto-mute in Replace mode.'
 EN['적응 PC 게인 목표: {gain}%'] = 'Adaptive PC gain target: {gain}%'
 EN['Studio 강도 후보 적용'] = 'Apply Studio intensity candidate'
@@ -4991,10 +4992,10 @@ EN.update({
 EN.update({
     '오디오햅틱 믹스': 'Audio haptics · Mix',
     '오디오햅틱 대체': 'Audio haptics · Replace',
-    '오디오햅틱을 네이티브 햅틱 원본과 섞습니다. Rear에 네이티브 신호가 들어오는 게임에서 사용하세요. 앱 필터를 켜고 앱 강도 100%부터 시작하세요.':
-        'Mixes audio haptics with raw native haptics. Use with games that send native signals to Rear. Enable the app filter and start at 100% app strength.',
-    'Front 입력에서 만든 오디오햅틱만 사용합니다. 앱 필터 켬, 배경 억제량 55%, 앱 강도 100% 기준입니다.':
-        'Uses audio haptics derived from Front input. Tuned for the app filter on, background suppression at 55%, and app strength at 100%.',
+    '오디오햅틱을 네이티브 햅틱 원본과 섞습니다. 뒤 채널(Rear)에 네이티브 신호가 들어오는 게임에서 사용하세요. 앱 필터를 켜고 앱의 오디오햅틱 세기 1x부터 시작하세요.':
+        'Mixes audio haptics with raw native haptics. Use with games that send native signals to Rear. Enable the app filter and start at 1x audio haptics strength in the app.',
+    '앞 채널(Front)에서 만든 오디오햅틱만 사용합니다. 앱 필터 켬, 배경 억제량 55%, 앱의 오디오햅틱 세기 1x 기준입니다.':
+        'Uses audio haptics derived from Front input. Tuned for the app filter on, background suppression at 55%, and app audio haptics strength at 1x.',
 })
 
 EN.update({'Studio 개발 진단 열기': 'Show Studio developer diagnostics',

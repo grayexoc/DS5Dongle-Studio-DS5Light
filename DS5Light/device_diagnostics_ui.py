@@ -812,7 +812,7 @@ class DeviceDiagnosticsDialog:
             elif kind == 'optimizer_preview':
                 labels = {
                     'auto_haptics_enable': ('오디오햅틱 모드', ('Off', 'Mix', 'Replace')),
-                    'ah_dsp_source': ('DSP 입력', ('전면 CH0–1', '후면 CH2–3')),
+                    'ah_dsp_source': ('DSP 입력', ('앞 채널(Front) · CH0–1', '뒤 채널(Rear) · CH2–3')),
                     'auto_mute_replace': ('Replace 스피커 자동 음소거', ('끔', '켬')),
                 }
                 lines = [tr(value['reason'])]

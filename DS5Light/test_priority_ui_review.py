@@ -63,6 +63,40 @@ class PriorityUITests(unittest.TestCase):
         self.assertNotIn('disabled',ui.read_button.state())
         self.assertEqual(str(entry.cget('state')),'normal')
         self.assertEqual(ui.cancel_button.winfo_manager(),'')
+
+    def test_slot_worker_start_failure_hides_overlay(self):
+        ui=self.ready()
+        ui.select_category(5)
+        with patch('studio_settings_ui.start_thread',side_effect=RuntimeError('start failure')):
+            with self.assertRaisesRegex(RuntimeError,'start failure'):
+                ui.task('slots',lambda:[])
+        self.assertFalse(ui.busy)
+        self.assertEqual(ui.slot_loading_overlay.winfo_manager(),'')
+
+    def test_slot_activation_retry_keeps_editor_loaded(self):
+        ui=self.ready()
+        ui.loaded=True
+        ui.write_ready=True
+        ui.slots=[Slot(0,'saved','Native')]
+        with patch.object(self.ui.studio,'connection_missing',return_value=True):
+            with patch.object(self.ui.studio,'discover') as discover:
+                ui.activate_slot(0)
+        discover.assert_called_once()
+        self.assertTrue(ui.loaded)
+        self.assertTrue(ui.write_ready)
+
+    def test_invalid_entry_requires_discard_before_profile_switch(self):
+        ui=self.ready()
+        ui.vars['auto_haptics_smooth'].set('invalid')
+        callback=Mock()
+        with patch('studio_save_flow.profile_switch',side_effect=[None,'discard']) as dialog:
+            ui.request_profile_switch(callback)
+            callback.assert_not_called()
+            self.assertFalse(dialog.call_args.kwargs['save_allowed'])
+            self.assertIn('auto_haptics_smooth',ui.invalid)
+            ui.request_profile_switch(callback)
+        callback.assert_called_once()
+        self.assertFalse(ui.invalid)
     def test_tab_switch_during_slot_read_unlocks_new_controls(self):
         ui=self.ready();ui.select_category(5);gate=threading.Event()
         try:
@@ -72,6 +106,26 @@ class PriorityUITests(unittest.TestCase):
             gate.set();self.finish(ui)
             self.assertEqual(str(ui.range_controls['auto_haptics_gain'][0].cget('state')),'normal')
         finally:gate.set()
+    def test_slot_placeholder_rows_and_loading_overlay(self):
+        ui=self.ready();ui.select_category(5);gate=threading.Event()
+        overlay=ui.slot_loading_overlay
+        rows=[child for child in overlay.master.grid_slaves() if int(child.grid_info()['row'])>=3]
+        self.assertEqual(len(rows),8)
+        self.assertTrue(all('disabled' in button.state() for row in rows
+                            for button in row.winfo_children() if hasattr(button,'state')))
+        self.assertEqual(overlay.winfo_manager(),'')
+        try:
+            ui.task('slots',lambda:(gate.wait(2),[Slot(0,'saved','Native')])[1])
+            self.assertEqual(overlay.winfo_manager(),'place')
+            self.assertEqual(overlay.cget('text'),'불러오는중...')
+            gate.set();self.finish(ui)
+            self.assertEqual(ui.slot_loading_overlay.winfo_manager(),'')
+            self.assertEqual(ui.slots,[Slot(0,'saved','Native')])
+        finally:gate.set()
+        def fail():
+            raise RuntimeError('slot read failed')
+        ui.task('slots',fail);self.finish(ui)
+        self.assertEqual(ui.slot_loading_overlay.winfo_manager(),'')
     def test_search_during_read_and_jump_preserve_edit(self):
         ui=self.ready();ui.changed('auto_haptics_gain',124);before=dict(ui.doc.changes)
         gate=threading.Event()

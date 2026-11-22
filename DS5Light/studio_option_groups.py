@@ -44,7 +44,9 @@ class OptionGroups:
             'Auto-Haptics & Speaker Effect Leak': ('오디오햅틱', 'Audio haptics'),
         }
         heading = card_titles.get(section, plan[0][:2])
-        card = self.card(title(*heading))
+        changes_height = any((detail or conditional) and any(key in available for key in names.split())
+                             for _, _, names, detail, conditional in plan)
+        card = self.card(title(*heading), bottom_chevron=changes_height)
         for index, (ko, en, names, detail, conditional) in enumerate(plan):
             keys = [key for key in names.split() if key in available]
             if not keys:

@@ -41,7 +41,7 @@ TITLES={'Auto-Haptics & Speaker Effect Leak':_ui_tr('오디오에서 만드는 �
 
 CHOICES={'Off':_ui_tr('끔'),'On':_ui_tr('켬'),'None':_ui_tr('없음'),'Both':_ui_tr('양쪽'),'Auto-detect':_ui_tr('자동 인식'),'Always on':_ui_tr('항상'),
 
- 'Mix with native':_ui_tr('Mix · 기본 진동과 혼합'),'Replace (audio only)':_ui_tr('Replace · 오디오만'),
+ 'Mix with native':_ui_tr('Mix · 네이티브 햅틱과 혼합'),'Replace (audio only)':_ui_tr('Replace · 오디오만'),
 
  'DualSense (DS5)':'DualSense','DualSense Edge (DSE)':'DualSense Edge',
 
@@ -49,7 +49,7 @@ CHOICES={'Off':_ui_tr('끔'),'On':_ui_tr('켬'),'None':_ui_tr('없음'),'Both':_
 
  'Mouse + Flick Stick (right stick flicks to a bearing)':_ui_tr('마우스 + Flick Stick'),
 
- 'Passthrough':_ui_tr('게임 설정 따름'),'Battery gauge':_ui_tr('배터리 잔량'),'Bright':_ui_tr('밝게'),'Mid':_ui_tr('중간'),'Dim':_ui_tr('어둡게')}
+ 'Passthrough':_ui_tr('기본'),'Battery gauge':_ui_tr('배터리 잔량'),'Bright':_ui_tr('밝게'),'Mid':_ui_tr('중간'),'Dim':_ui_tr('어둡게')}
 
 def label(key):
 
@@ -124,7 +124,7 @@ CHOICES.update({
 
  'Vibration thump (buzz)':_ui_tr('진동 반동'),'Rumble + audio (strongest)':_ui_tr('일반 진동 + 오디오'),'Rumble only':_ui_tr('일반 진동만'),'Real-time':_ui_tr('실시간'),
 
- 'ch0/1 (default) — same feed as speaker + leak':_ui_tr('0/1 채널 · 기본'),'ch2/3 — script feed only (run ds5audio --map rear)':_ui_tr('2/3 채널 · 후방 입력'),
+ 'ch0/1 (default) — same feed as speaker + leak':_ui_tr('앞 채널(Front)'),'ch2/3 — script feed only (run ds5audio --map rear)':_ui_tr('뒤 채널(Rear)'),
 
  '6 dB/oct (gentle)':_ui_tr('6 dB/oct · 완만'),'12 dB/oct (default)':_ui_tr('12 dB/oct · 기본'),'24 dB/oct (steep)':_ui_tr('24 dB/oct · 급격'),'10 — weakest':_ui_tr('10 · 가장 약함'),
 
@@ -182,7 +182,7 @@ DESCRIPTIONS.update({
 
  'mix_native_filter':_ui_tr('복제 오디오가 기본 햅틱 신호로 새어 들어오는 성분을 걸러냅니다.'),
 
- 'ah_dsp_source':_ui_tr('동글이 진동을 만들 때 분석할 USB 오디오 채널 쌍입니다. 앱의 캡쳐 채널 구성과 구분하세요.'),
+ 'ah_dsp_source':_ui_tr('동글이 진동을 만들 때 분석할 USB 오디오 채널 쌍입니다. 앱의 캡처 채널 구성과 구분하세요.'),
 
  'auto_haptics_slope':_ui_tr('차단 주파수보다 높은 소리를 얼마나 급하게 줄일지 정합니다.'),
 
@@ -480,7 +480,7 @@ CHOICES.update({'Mix with native':_ui_tr('Mix · 게임 진동과 혼합'),'Only
 
 
 
-LABELS.update({'rumble_gain':_ui_tr('일반 진동 세기'),'rumble_mode':_ui_tr('일반 진동 모드'),'rumble_release':_ui_tr('일반진동 잔향')})
+LABELS.update({'rumble_gain':_ui_tr('일반 진동 세기'),'rumble_mode':_ui_tr('일반 진동 모드'),'rumble_release':_ui_tr('일반 진동 잔향')})
 
 DESCRIPTIONS.update({
 
@@ -525,7 +525,7 @@ if _USB_MODE_LANGUAGE != 'en':
         'auto_haptics_gate': '오디오햅틱을 만드는 최소 소리 크기\n너무 높으면 작은 발소리나 효과음도 제외',
         'mix_native_level': 'Mix에서 섞는 네이티브 햅틱의 양\n0% · 혼합 안 함',
         'mix_native_filter': '복제 오디오에 섞인 대사·고음 억제\n원본 · 게임의 네이티브 햅틱 유지',
-        'ah_dsp_source': '오디오햅틱 분석에 사용할 USB 오디오 채널\n0/1 · 일반 스피커 채널\n2/3 · 후방 채널',
+        'ah_dsp_source': '오디오햅틱 분석에 사용할 USB 오디오 채널\n0/1 · 앞 채널(Front) · 스피커\n2/3 · 뒤 채널(Rear)',
         'auto_haptics_lowpass_hz': '지정 주파수보다 높은 소리를 억제\n낮을수록 저음 위주로 반응',
         'ah_xover_hz': '저음·고음 세기를 따로 조절할 분리 주파수\n0 · 대역 분리 끔\n저역 통과 기준보다 낮게 설정',
         'auto_haptics_slope': '저역 통과 기준보다 높은 소리의 감쇠 기울기\n높을수록 고음 억제 증가',
@@ -562,7 +562,7 @@ TITLES['Native Haptics Filter']=_ui_tr('햅틱 질감')
 DESCRIPTIONS['speaker_gain']=_ui_tr('스피커 소리가 작을 때 이 옵션으로 조절하면 효과적')
 
 LABELS['disable_inactive_disconnect']=_ui_tr('자동 연결 해제 안함')
-DESCRIPTIONS['mix_native_level']=_ui_tr('게임이 보낸 네이티브 햅틱을 함께 출력\n적용하면 DS5Light의 오디오를 앞 채널로 전송')
+DESCRIPTIONS['mix_native_level']=_ui_tr('게임이 보낸 네이티브 햅틱을 함께 출력\n적용하면 DS5Light의 오디오를 앞 채널(Front)로 전송')
 
 DESCRIPTIONS['ps_shortcut_enabled']=_ui_tr('PS 기본 단축키: 짧게 Win+G, 길게 Win+Tab. 켜져 있으면 PS를 포함한 Pico 매핑·시프트 조합은 비활성화됩니다. 해당 매핑을 사용하려면 기본 단축키를 끄세요.')
 

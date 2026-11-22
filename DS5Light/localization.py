@@ -68,7 +68,7 @@ def tr(text):
     if text=='햅틱 세기':return '햅틱 세기' if LANGUAGE=='ko' else 'Haptic strength'
     if text=='설정 및 진단':return '설정 및 진단' if LANGUAGE=='ko' else 'Settings & diagnostics'
     if text==AUTO_KO:return '자동 선택' if LANGUAGE=='ko' else 'Automatic'
-    if LANGUAGE=='ko': return text.replace('캡처','캡쳐').replace('동글','Pico')
+    if LANGUAGE=='ko': return text.replace('동글','Pico')
     if text in EN: return EN[text]
     if not any('가' <= c <= '힣' for c in text): return text
     return _dynamic_english(text)

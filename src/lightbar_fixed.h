@@ -21,6 +21,8 @@ class LightbarFixed {
     bool host_release_ = false, host_setup_pending_ = false;
     uint8_t host_setup_ = 0;
     bool host_color_valid_ = false;
+    bool host_cleared_ = false, default_color_due_ = false;
+    uint32_t host_clear_at_ = 0;
     bool sent_color_valid_ = false;
     uint8_t sent_r_ = 0, sent_g_ = 0, sent_b_ = 0;
     static Key key(bool off, bool fixed, uint8_t r, uint8_t g, uint8_t b) {
@@ -33,10 +35,18 @@ public:
         valid_ = false; setup_pending_ = true; restore_pending_ = false;
         restore_prepared_ = false; host_release_ = host_setup_pending_ = false;
         host_color_valid_ = sent_color_valid_ = false;
+        host_cleared_ = default_color_due_ = false;
     }
     // Only original host reports enter here; synthesis must not replay one-shot commands.
-    void host_update(const uint8_t *data, uint8_t size) {
-        if (size > 1 && (data[1] & 8)) {
+    void host_update(const uint8_t *data, uint8_t size, uint32_t now_ms = 0, bool default_mode = true) {
+        const bool releases = size > 1 && (data[1] & 8);
+        const bool writes_color = size > 46 && (data[1] & 4);
+        if (releases || writes_color) {
+            host_cleared_ = default_mode && (releases || !(data[44] | data[45] | data[46]));
+            default_color_due_ = false;
+            if (host_cleared_) host_clear_at_ = now_ms;
+        }
+        if (releases) {
             host_release_ = true;
             restore_pending_ |= host_color_valid_;
             restore_prepared_ = false;
@@ -45,12 +55,24 @@ public:
             host_setup_pending_ = true; host_setup_ = data[41]; restore_prepared_ = false;
             if (data[41] == 2) restore_pending_ = true;
         }
-        if (size > 46 && (data[1] & 4)) {
+        if (writes_color) {
             host_color_valid_ = true;
             if (host_release_ || !sent_color_valid_ || data[44] != sent_r_ || data[45] != sent_g_ || data[46] != sent_b_)
                 restore_pending_ = true;
             if (data[44] != restore_r_ || data[45] != restore_g_ || data[46] != restore_b_)
                 restore_prepared_ = false;
+        }
+    }
+    void connected() { restore_pending_ = true; }
+    void tick(uint32_t now_ms, bool default_mode = true) {
+        if (!default_mode) {
+            host_cleared_ = default_color_due_ = false;
+            return;
+        }
+        if (host_cleared_ && !default_color_due_ && now_ms - host_clear_at_ >= 3000) {
+            default_color_due_ = true;
+            restore_pending_ = true;
+            restore_prepared_ = false;
         }
     }
     bool pending(bool off, bool fixed, uint8_t r, uint8_t g, uint8_t b) const {
@@ -63,13 +85,13 @@ public:
         data[1] &= ~0x08u;
         data[38] &= ~0x02u;
         data[41] = 0;
-        // Preserve untouched startup LEDs; after an override, restore the
-        // requested startup blue only when no game colour has been received.
-        if (!next.mode && !host_color_valid_ && !temporary && restore_pending_ &&
-            !host_release_ && !host_setup_pending_) {
-            data[44] = 0; data[45] = 0; data[46] = 255;
+        if (!next.mode && !temporary) {
+            if (host_cleared_ || (!host_color_valid_ && restore_pending_)) {
+                data[44] = 0; data[45] = 0;
+                data[46] = !host_cleared_ || default_color_due_ ? 255 : 0;
+            }
         }
-        if (setup_pending_ && (next.mode || host_color_valid_ || temporary)) {
+        if (setup_pending_ && (next.mode || host_color_valid_ || temporary || restore_pending_)) {
             // Take Bluetooth lightbar ownership only for a requested colour or override.
             data[38] |= 2; data[41] = 2;
             data[1] &= ~0x14u;

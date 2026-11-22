@@ -9,7 +9,7 @@
 
 int main() {
     static_assert(sizeof(Config_body) <= SLOT_MAX_BODY_LEN);
-    static_assert(sizeof(Config_body) == offsetof(Config_body, rumble_mode) + 1);
+    static_assert(sizeof(Config_body) == offsetof(Config_body, ah_highpass) + 1);
     Config_body defaults;memset(&defaults,0xff,sizeof(defaults));config_body_valid(defaults);
     assert(std::fabs(defaults.haptics_gain-1.0f)<0.0001f && defaults.haptics_aa==1);
     assert(defaults.mix_native_level == 0 && defaults.mix_native_filter == 1);
@@ -103,6 +103,50 @@ int main() {
     memset(host,0,63);host[1]=4;
     for(int i=0;i<1000;i++) { p.host_update(host,63);assert(!p.pending(false,false,0,0,0)); }
     p.reset();assert(!p.pending(false,false,0,0,0));
+
+    // Connection setup precedes startup blue even with no host write.
+    p.connected();
+    memset(report,0,63);p.apply(report,false,false,0,0,0);
+    assert((report[38]&2)&&!(report[1]&4));
+    p.accepted(report,false,false,0,0,0);
+    memset(report,0,63);p.apply(report,false,false,0,0,0);
+    assert((report[1]&4)&&report[46]==255);
+    p.accepted(report,false,false,0,0,0,p.is_restore_report(report));
+    assert(!p.pending(false,false,0,0,0));
+
+    // Explicit black stays dark for the grace period, including clock wrap.
+    const uint32_t clear_at = UINT32_MAX - 100;
+    memset(host,0,63);host[1]=4;p.host_update(host,63,clear_at);
+    memcpy(report,host,63);p.apply(report,false,false,0,0,0);
+    p.accepted(report,false,false,0,0,0,p.is_restore_report(report));
+    p.tick(clear_at+2999);
+    assert(!p.pending(false,false,0,0,0));
+    p.tick(clear_at+3000);
+    assert(p.pending(false,false,0,0,0));
+    memcpy(report,host,63);p.apply(report,false,false,0,0,0);
+    assert((report[1]&4)&&report[46]==255);
+    p.accepted(report,false,false,0,0,0,p.is_restore_report(report));
+    assert(!p.pending(false,false,0,0,0));
+    memcpy(report,host,63);p.apply(report,false,false,0,0,0);
+    assert(report[46]==255); // Cached black cannot undo the fallback.
+
+    p.host_update(host,63,4000);
+    host[44]=90;p.host_update(host,63,5000);
+    p.tick(8000);
+    memcpy(report,host,63);p.apply(report,false,false,0,0,0);
+    assert((report[1]&4)&&report[44]==90&&report[46]==0);
+
+    // Fixed/off modes do not accrue a timed restore into the default mode.
+    memset(host,0,63);host[1]=4;
+    p.host_update(host,63,10000,false);
+    p.tick(13000);
+    memcpy(report,host,63);p.apply(report,false,false,0,0,0);
+    assert((report[1]&4)&&report[46]==0);
+    p.host_update(host,63,14000);
+    p.tick(15000,false);
+    p.tick(17000);
+    memcpy(report,host,63);p.apply(report,false,false,0,0,0);
+    assert((report[1]&4)&&report[46]==0);
 
     Config_body legacy;
     memset(&legacy, 0xff, sizeof(legacy));

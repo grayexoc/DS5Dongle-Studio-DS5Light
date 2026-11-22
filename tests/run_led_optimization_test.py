@@ -33,6 +33,7 @@ static uint64_t now_us=0;
 static uint32_t get_absolute_time() { return now_us/1000; }
 static uint32_t to_ms_since_boot(uint32_t t) { return t; }
 static bool player_led_restore_pending=false;
+static bool host_released_player_led=false;
 static uint8_t player_led_previous_mode=0;
 static uint64_t time_us_64() { return now_us; }
 static LightbarFixed lightbar_fixed_policy;
@@ -118,7 +119,7 @@ int main() {
     assert((data[1]&0x10) && !(data[43]&0x1f) && !(data[38]&1));
     config.player_led_bright=0;
     state.bytes[43]=0;
-    state.bytes[44]=25;
+    state.bytes[44]=25;state_host_led_update(state.bytes,63);
     state_set(data,63);assert(data[44]==25 && data[43]==0); // game regains colour
     state.bytes[44]=0;config.lightbar_off=1;
     state_set(data,63);assert(data[44]==0 && (data[43]&0x1f)==0);
@@ -127,7 +128,7 @@ int main() {
     assert(player_led_wants_report());
     state_set(data,63);
     assert(player_led_wants_report()); // composed or queued is not sent
-    send();
+    send();if(player_led_wants_report())send();
     for(int i=0;i<1000;++i) {now_us+=50000;assert(!player_led_wants_report());}
     config.player_led_bright=2;assert(player_led_wants_report());send();assert(!player_led_wants_report());
     player_led_sent.reset();assert(player_led_wants_report());send(); // reconnect
@@ -209,7 +210,7 @@ int main() {
     uint8_t release_only[63]{};release_only[1]=8;
     state_report_sent(release_only,false);
     assert(player_led_wants_report());send();assert(!player_led_wants_report());
-    // Reset commands carry no RGB. Restore the last explicit RGB afterwards.
+    // An explicit release leaves both LEDs dark, then restores RGB only.
     memset(state.bytes,0,63);state.bytes[1]=0x14;state.bytes[43]=4;state.bytes[44]=90;
     uint8_t command[63]{};command[1]=8;
     state_host_led_update(command,1);assert(state.bytes[44]==90);
@@ -217,16 +218,22 @@ int main() {
     assert(!(state.bytes[1]&0x10)&&(state.bytes[1]&4)&&state.bytes[43]==0&&state.bytes[44]==90);
     state_set(data,63);assert(data[1]&8);
     state_report_sent(data,false);state_set(data,63);assert(!(data[1]&8));
+    assert((data[43]&31)==0 && data[44]==0 && data[46]==0);
+    send();
+    now_us+=3000000;
+    assert(state_prepare_report(data,false)&&data[46]==255&&!(data[1]&16));
+    send();
     command[1]=0;command[38]=2;command[41]=2;state.bytes[1]=4;state.bytes[44]=90;
     state_host_led_update(command,41);assert(state.bytes[44]==90);
     state_host_led_update(command,42);assert(state.bytes[44]==90&&(state.bytes[1]&4));
     state_set(data,63);assert((data[38]&2)&&data[41]==2&&!(data[1]&0x14));
     state_report_sent(data,false);state_set(data,63);
-    assert(!(data[38]&2)&&(data[1]&0x14)==0x14&&data[44]==90);
+    assert(!(data[38]&2)&&(data[1]&0x14)==4&&data[46]==255);
     send();
 
     // LIGHT_OUT and a switch from player-off to default share one restore.
     memset(state.bytes,0,63);lightbar_fixed_policy.reset();player_led_sent.reset();
+    host_released_player_led=false;
     player_led_previous_mode=0;player_led_restore_pending=false;
     config.player_led_mode=1;
     assert(state_prepare_report(data,false));send();
@@ -269,6 +276,15 @@ int main() {
     state.bytes[1]=0x14;state.bytes[43]=0;
     config.player_led_mode=1;state_prepare_report(data,false);send();config.player_led_mode=0;
     state_prepare_report(data,false);assert((data[43]&31)==0);send();
+    for (uint8_t brightness : {0, 1, 2}) {
+        memcpy(state.bytes,state_init_data,63);
+        lightbar_fixed_policy.reset();lightbar_fixed_policy.connected();
+        player_led_sent.reset();player_led_restore_pending=true;
+        config.player_led_bright=brightness;
+        assert(state_prepare_report(data,false)&&(data[38]&2));send();
+        assert(state_prepare_report(data,false)&&(data[1]&0x14)==0x14);
+        assert(data[43]==0x24&&data[42]==brightness&&data[46]==255);send();
+    }
     puts("PASS: LED policies, no-game native/audio roundtrip x100, explicit game off, mapped mute isolation");
 }
 '''

@@ -67,16 +67,17 @@ class SaveFlow:
         if self.uncertain:
             self.progress.configure(text=_ui_tr('저장 결과를 확인하지 못해 프로필 전환을 중단했습니다. 미저장 매핑은 내보내기로 보관한 뒤 새로 고침하세요.'),kind='warning');self.update_state();return
         profile_pending=self.profile_changes_pending();shared_pending=self.shared_changes_pending()
-        if not (profile_pending or shared_pending):callback();return
-        decision=profile_switch(self.parent,profile=profile_pending,shared=shared_pending,
+        invalid=bool(self.invalid)
+        if not (profile_pending or shared_pending or invalid):callback();return
+        decision=profile_switch(self.parent,profile=profile_pending or invalid,shared=shared_pending,
                                 profile_applied=self.doc.unsaved or self.profile_save_needed,
-                                shared_applied=self.doc.macros_pending_flash)
+                                shared_applied=self.doc.macros_pending_flash,save_allowed=not invalid)
         if decision=='discard':
             if self.doc.macros_pending_flash:
                 messagebox.showinfo(_ui_tr('공유 매크로'),_ui_tr('이미 장치에 적용된 공용 매핑은 프로필 전환으로 되돌릴 수 없습니다. 내보내기로 보관한 뒤 새로 고침으로 확인하세요.'),parent=self.parent)
                 return
             self.doc.revert();self.invalid.clear();callback()
-        elif decision=='save':
+        elif decision=='save' and not invalid:
             if profile_pending and self.current_save_target() is None:
                 self.select_category(5);self.progress.configure(text=_ui_tr('저장할 프로필 슬롯을 먼저 선택하세요.'));return
             def save_profile():

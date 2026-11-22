@@ -85,7 +85,7 @@ CHANNELS={_ui_tr('자동'):0,_ui_tr('2채널 (스테레오)'):2,_ui_tr('5.1채�
 
 LIMITERS={_ui_tr('초과분 자르기'):'hard',_ui_tr('부드러운 제한'):'soft'}
 
-PROCESS_SORTS={_ui_tr('최근 실행'):'recent',_ui_tr('CPU 사용률'):'cpu',_ui_tr('오디오 출력'):'audio'}
+PROCESS_SORTS={_ui_tr('최근 실행'):'recent',_ui_tr('CPU 사용률'):'cpu',_ui_tr('오디오 출력'):'audio',_ui_tr('프로세스'):'name'}
 
 AUDIO_STATES={'playing':_ui_tr('출력 중'),'active':_ui_tr('세션 활성'),'inactive':'·','unknown':_ui_tr('확인 불가')}
 
@@ -769,6 +769,7 @@ class App:
         self.source=tk.StringVar(value=source if source in self.inputs else AUTO); self.destination=tk.StringVar(value=destination if destination in self.outputs else AUTO)
 
         self.mode=tk.StringVar(value=c.mode); self.filter_on=tk.BooleanVar(value=not c.bypass)
+        self.experimental_ai=tk.BooleanVar(value=False)
 
         self.strength=tk.DoubleVar(value=c.strength*100); self.bg=tk.BooleanVar(value=c.background); self.transient=tk.BooleanVar(value=c.transient)
 
@@ -857,7 +858,7 @@ class App:
 
         self.studio_settings=StudioSettings(self,self.studio_page)
 
-        self.tabs=TabStrip(tab_area,[_ui_tr('오디오햅틱'),_ui_tr('설정·진단'),_ui_tr('Studio설정')],self.select_tab)
+        self.tabs=TabStrip(tab_area,[_ui_tr('오디오햅틱'),_ui_tr('설정·진단'),_ui_tr('Studio 설정')],self.select_tab)
         tab_offset=px(tab_area,10)
         self.tabs.grid(row=0,column=0,sticky='ew',pady=(tab_offset,max(0,16-tab_offset)))
 
@@ -875,7 +876,7 @@ class App:
 
         caphead=ttk.Frame(capture); caphead.grid(row=0,column=0,sticky='ew')
 
-        self.section_title(caphead,_ui_tr('캡쳐 모드')).pack(side='left')
+        self.section_title(caphead,_ui_tr('캡처 모드')).pack(side='left')
 
         self.scope_buttons=[]
 
@@ -916,6 +917,8 @@ class App:
         self.process_table.heading('audio',text=_ui_tr('오디오 출력'))
 
         self.process_table.heading('cpu',text='CPU')
+        for column, sort in (('#0','name'),('audio','audio'),('cpu','cpu'),('started','recent')):
+            self.process_table.heading(column,command=lambda key=sort:self.sort_processes(key))
 
         self.process_table.column('#0',width=420,anchor='w',stretch=True,minwidth=180)
 
@@ -935,7 +938,7 @@ class App:
 
         self.process_table.bind('<<TreeviewSelect>>',self.process_selected)
 
-        self.global_capture_overlay=GlobalCaptureOverlay(tablewrap,text=_ui_tr('전역 캡쳐'))
+        self.global_capture_overlay=GlobalCaptureOverlay(tablewrap,text=_ui_tr('전역 캡처'))
         FieldTip(self.global_capture_overlay.label,lambda:_ui_tr('오디오햅틱을 사용하려면 Studio 프로필의 오디오햅틱 모드를 Mix 또는 Replace로 변경하세요.') if self.studio.haptics_blocked else '')
 
         self.game=ttk.Combobox(capture,state='disabled'); self.game.bind('<<ComboboxSelected>>',self.game_selected)
@@ -1006,6 +1009,12 @@ class App:
         self.filter_switch=Switch(fh,self.filter_on,self.update_controls); self.filter_switch.pack(side='right')
 
         self.filter_badge=ttk.Label(fh); self.filter_badge.pack(side='right',padx=7)
+        self.ai_switch=Switch(fh,self.experimental_ai,self.update_controls)
+        self.ai_switch.pack(side='right')
+        ttk.Label(fh,text='AI').pack(side='right',padx=(0,4))
+        HoverHint(self.ai_switch,lambda: (
+            '실험용 AI · 필터를 켠 Studio 믹스/Front에서 작동합니다.'
+            if LANGUAGE=='ko' else 'Experimental AI · Requires the filter and Studio Mix/Front.'))
 
         self.filter_widgets=[]
 
@@ -1036,7 +1045,7 @@ class App:
 
             HoverHint(slider, lambda help_text=description: help_text if self.filter_on.get()
                       else ('오디오햅틱 필터를 켜면 조절할 수 있습니다.' if LANGUAGE == 'ko'
-                            else 'Turn on the Audio Haptics Filter to adjust this option.'))
+                            else 'Turn on the audio haptics filter to adjust this option.'))
             self.filter_widgets.append(slider)
 
         self.device_page.columnconfigure(0,weight=1);self.device_page.rowconfigure(3,weight=1)
@@ -1446,7 +1455,7 @@ class App:
     def section_title(self,parent,key):
 
         symbol={
-            _ui_tr('캡쳐 모드'):'camera',
+            _ui_tr('캡처 모드'):'camera',
             _ui_tr('채널 구성'):'channels',
             _ui_tr('오디오햅틱 세기'):'sliders',
             _ui_tr('오디오햅틱 필터'):'filter',
@@ -1480,7 +1489,8 @@ class App:
     def _read_controls(self):
         controls = self.configured_controls()
         if not controls.bypass:
-            controls = replace(controls, background=True, transient=True)
+            controls = replace(controls, background=True, transient=True,
+                               experimental_ai=self.experimental_ai.get() and self.studio.mix_front_ai_available())
         if CHANNELS[self.channel.get()] in (6, 8):
             controls = replace(controls, rear=True, lfe=True, center=True, limiter='hard')
         return controls
@@ -1531,11 +1541,12 @@ class App:
         self._last_engine_display = self._engine_display_state()
         self._render_slider_values()
         ch=self.capture_channels(); active=bool(self.engine); filtering=self.filter_on.get()
+        self.ai_switch.set_enabled(filtering and self.studio.mix_front_ai_available())
 
         native=self.studio.haptics_blocked
         process_scope=self.scope.get()=='process'
         self._refresh_processes_on_capture_change()
-        overlay_text=_ui_tr('네이티브 햅틱') if native else _ui_tr('전역 캡쳐')
+        overlay_text=_ui_tr('네이티브 햅틱') if native else _ui_tr('전역 캡처')
         if self.global_capture_overlay.label.cget('text')!=overlay_text:
             self.global_capture_overlay.label.configure(text=overlay_text)
         self.global_capture_overlay.set_visible(not process_scope or native)
@@ -1552,6 +1563,7 @@ class App:
         if state==self.last_render: return
 
         self.last_render=state
+        self.studio_settings.refresh_slot_loading()
 
         choices=[key for key,value in CHANNELS.items() if value in (0,ch)] if self.scope.get()=='device' and ch in (2,6,8) else list(CHANNELS)
 
@@ -1582,7 +1594,7 @@ class App:
             if button.instate(['disabled'])!=disabled:
                 button.state(['disabled' if disabled else '!disabled'])
 
-        target=target or (_ui_tr('선택한 게임만') if process_scope else _ui_tr('전역 캡쳐'))
+        target=target or (_ui_tr('선택한 게임만') if process_scope else _ui_tr('전역 캡처'))
         output=output or self.destination.get()
         output_name=_ui_tr('자동 선택') if output==AUTO else output
         if opened:
@@ -1729,7 +1741,7 @@ class App:
 
         if not self.desired_game or is_excluded_process(self.desired_game):
 
-            return _ui_tr('목록에서 캡쳐할 프로세스를 선택하세요.')
+            return _ui_tr('목록에서 캡처할 프로세스를 선택하세요.')
 
         count=sum(name.casefold()==self.desired_game.casefold() for name in self.game_names.values())
 
@@ -1840,7 +1852,12 @@ class App:
 
     def process_sort_changed(self,event=None):
 
-        self.process_sort.set(PROCESS_SORTS.get(self.process_sort_label.get(),'audio'))
+        self.sort_processes(PROCESS_SORTS.get(self.process_sort_label.get(),'audio'))
+
+    def sort_processes(self,sort):
+        if self.process_table.instate(['disabled']):return
+        self.process_sort.set(sort)
+        self.process_sort_label.set(next(label for label,key in PROCESS_SORTS.items() if key==sort))
 
         self.render_games()
 
@@ -1865,6 +1882,10 @@ class App:
             priority={'playing':3,'active':2,'unknown':1,'inactive':0}
 
             rows.sort(key=lambda row:(priority.get(row.get('audio','unknown'),1),row['started'] or 0),reverse=True)
+
+        elif self.process_sort.get()=='name':
+
+            rows.sort(key=lambda row:(row['name'].casefold(),row['pid']))
 
         else:
 
@@ -1979,7 +2000,7 @@ class App:
 
         def collect():
 
-            try: result=self._process_sampler.snapshot(); error=None
+            try: result=self._process_sampler.snapshot(cpu_interval=.25); error=None
 
             except Exception as exc: result=None; error=exc
 
@@ -2433,7 +2454,7 @@ class App:
 
         if self.studio.native_mix_conflict():
             self.run_intent.stop('invalid_route')
-            self.status.set(tr('Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널로 변경하세요.'))
+            self.status.set(tr('Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널(Front)로 변경하세요.'))
             self.last_render=None;self.render();return
 
         exclusive=self.studio.rear_control_required() and self.filter_on.get()
@@ -2449,7 +2470,7 @@ class App:
                 self.open_connection()
                 self.status.set(_ui_tr('Studio 독점 출력 시작 실패 · 입출력 장치를 확인하세요.'))
                 return
-            messagebox.showerror(_ui_tr('장치 선택'),_ui_tr('연결 설정에서 입출력 장치를 선택하세요.'),parent=self.root); return
+            messagebox.showerror(_ui_tr('장치 선택'),_ui_tr('설정·진단에서 입력 장치와 출력 장치를 선택하세요.'),parent=self.root); return
 
         pid=self.game_map.get(self.game.get()) if self.scope.get()=='process' else None
 
@@ -2739,7 +2760,7 @@ class App:
         if not route_changed:return
         self.studio._observe_profile(path,profile);self.studio._sync_current_profile(path,profile)
         if self.engine and self.studio.native_mix_conflict():
-            self.stop(message=tr('Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널로 변경하세요.'),reason='invalid_route')
+            self.stop(message=tr('Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널(Front)로 변경하세요.'),reason='invalid_route')
         elif (self.engine and not self.studio.haptics_blocked
               and getattr(self.engine,'studio_live',False)!=(self.studio.rear_control_required() and self.filter_on.get())):
             self.stop(message=_ui_tr('Studio 출력 경로가 변경되었습니다. 다시 시작하세요.'),reason='invalid_route')
@@ -2912,6 +2933,9 @@ class App:
                 engine_status=_ui_tr('지정 프로세스 · ')+self.active_process_name+(' · '+tail[1] if len(tail)>1 else '')
 
             engine_status=tr(engine_status)
+            ai_status=getattr(self.engine,'ai_status','')
+            if ai_status:
+                engine_status+=f' · {ai_status}'
 
             if self.controller_presence.disconnected:
 

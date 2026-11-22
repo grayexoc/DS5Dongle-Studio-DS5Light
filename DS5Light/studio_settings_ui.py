@@ -115,7 +115,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.standby_policy=(None,None)
         if self.built:
             self.identity.set(_ui_tr('프로필 변경됨 · 다시 조회 필요'))
-            self.progress.configure(text=_ui_tr('이전 편집값 보관 중 · 새로 고침으로 확인하세요.') if self.doc.dirty else _ui_tr('다음 Studio설정 진입 시 다시 읽습니다.'))
+            self.progress.configure(text=_ui_tr('이전 편집값 보관 중 · 새로 고침으로 확인하세요.') if self.doc.dirty else _ui_tr('다음 Studio 설정 진입 시 다시 읽습니다.'))
             if 'disable_usb_sn' in self.field_views:self.render_fields()
             else:self.refresh_read_extras()
             self.update_state()
@@ -262,7 +262,9 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         from studio_option_help import option_help
         self.help_icon(box,lambda k=key:option_help(self,k)).pack(side='left',padx=(5,0))
         return box
-    def make_card(self,parent,padding=18):return RoundedCard(parent,background=BG,surface=CARD,outline=BORDER,inset_x=padding,inset_y=padding)
+    def make_card(self,parent,padding=18,*,bottom_chevron=False):
+        return RoundedCard(parent,background=BG,surface=CARD,outline=BORDER,
+                           inset_x=padding,inset_y=padding,bottom_chevron=bottom_chevron)
     def wheel(self,event):
         if self.built and not self.closed and self.app.selected_tab==2 and self.canvas.winfo_viewable() and not isinstance(event.widget,(ttk.Combobox,ttk.Spinbox,tk.Text)):
             self.canvas.yview_scroll(-int(event.delta/120),'units')
@@ -277,8 +279,9 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         if self.transfer_locked:return
         if index==self.category and not self.search.get():return
         self.stop_live();self.category=index;self.search.set('');self.render_fields();self.begin_entry()
-    def card(self,title):
-        card=self.make_card(self.body);card.pack(fill='x',pady=(0,12));content=card.content;content.columnconfigure(0,weight=1)
+    def card(self,title,*,bottom_chevron=False):
+        card=self.make_card(self.body,bottom_chevron=bottom_chevron)
+        card.pack(fill='x',pady=(0,12));content=card.content;content.columnconfigure(0,weight=1)
         self.search_targets[title]=card
         tk.Label(content,text=title,bg=CARD,fg=FG,font=(_ui_tr('맑은 고딕'),11,'bold'),anchor='w').grid(row=0,column=0,columnspan=2,sticky='w',pady=(0,12));return content
     def jump_to_search_result(self,category,target=None,key=None):
@@ -388,7 +391,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             english_titles={'Device & Connection':'Device','Auto-Haptics & Speaker Effect Leak':'Audio haptics','Native Haptics Filter':'Haptic waveform','General Haptics & Audio':'Haptics & speaker','Trigger Strength':'Adaptive triggers','Rumble → Trigger':'Rumble to triggers'}
             title=english_titles.get(section['title'],section['title']) if LANGUAGE=='en' else TITLES.get(section['title'],section['title'])
             if query:
-                category=next((name for name,sections in GROUPS if section['title'] in sections),_ui_tr('Studio설정'))
+                category=next((name for name,sections in GROUPS if section['title'] in sections),_ui_tr('Studio 설정'))
                 title=category+' › '+title
             box=self.card(title)
             if query:
@@ -695,6 +698,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             language_choice=getattr(self.app,'language_choice',None)
             if language_choice is not None:language_choice.configure(state='disabled' if self.transfer_locked else 'readonly')
         if not self.built or self.closed:return
+        self.refresh_slot_loading()
         recommend=self.doc.values.get('auto_haptics_enable') in (1,2) and self.doc.values.get('disable_speaker')==0
         for note in getattr(self,'speaker_recommendations',()):
             if recommend:note.pack(side='left',padx=(8,0))
@@ -819,6 +823,9 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.after_profile_save=None;self.after_shared_save=None
         if self.built and not self.closed:
             try:
+                overlay=getattr(self,'slot_loading_overlay',None)
+                if overlay is not None and overlay.winfo_exists() and overlay.winfo_manager():
+                    self.render_fields()
                 self.read_button.configure(state='normal');self.cancel_button.grid_remove()
                 self.notice.set(_ui_tr('화면 준비 중 오류가 발생했습니다. 새로 고침으로 다시 시도하세요.'))
                 self.fit_notice()
@@ -1407,7 +1414,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         shape = values.get(prefix + 'shape', 0)
         enabled = not self.busy and prefix + 'mode' in values and prefix + 'shape' in values
         title = ui_text('커스텀 트리거', 'Custom triggers')
-        box = self.card(title)
+        box = self.card(title,bottom_chevron=True)
         tabs = tk.Frame(box, bg=CARD)
         tabs.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(0, 8))
 
@@ -1624,25 +1631,44 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
     def show_history(self,records):
         self.progress.configure(text=_ui_tr('커스텀 트리거는 공사 중입니다.'))
     def render_slots(self):
-        box=self.card(_ui_tr('Studio 프로필 슬롯'))
+        box=self.card(_ui_tr('Studio 프로필 슬롯'),bottom_chevron=len(self.slots)>8)
         tools=tk.Frame(box,bg=CARD);tools.grid(row=1,column=0,columnspan=2,sticky='ew')
         for i,(title,action) in enumerate([(_ui_tr('슬롯 목록 새로 고침'),lambda:self.task('slots',lambda:self.with_client(lambda c:c.slots()))),(_ui_tr('전체 슬롯 내보내기'),self.backup),(_ui_tr('전체 슬롯 가져오기'),self.restore_backup)]):
             ttk.Button(tools,text=title,command=action).grid(row=0,column=i,sticky='ew',padx=(0,6));tools.columnconfigure(i,weight=1)
         tk.Label(box,text=_ui_tr('백업 범위: 현재 편집 가능한 설정·일반 매크로'),bg=CARD,fg=MUTED,wraplength=440,justify='left').grid(row=2,column=0,columnspan=2,sticky='w',pady=10)
-        visible=self.slots if self.slots_expanded else self.slots[:8]
+        visible=(self.slots if self.slots_expanded else self.slots[:8]) or [None]*8
         for n,slot in enumerate(visible):
-            index=slot.index
+            index=n if slot is None else slot.index
             row=tk.Frame(box,bg=CARD);row.grid(row=n+3,column=0,columnspan=2,sticky='ew',pady=4);row.columnconfigure(0,weight=1)
             active=bool(self.current_save_target() and self.current_save_target()[0]==index)
-            slot_label=tk.Label(row,text=slot.label(),bg=CARD,fg=GOLD if active else FG,anchor='w',justify='left',width=1)
+            slot_label=tk.Label(row,text=slot.label() if slot else f'{index+1:02d} · —',
+                                bg=CARD,fg=MUTED if slot is None else GOLD if active else FG,anchor='w',justify='left',width=1)
             slot_label.grid(row=0,column=0,sticky='ew')
             slot_label.bind('<Configure>',self.fit_slot_label)
-            ttk.Button(row,text=_ui_tr('현재 설정 저장'),command=lambda i=index:self.save_slot(i),width=0,padding=(12,6)).grid(row=0,column=2,padx=4)
-            ttk.Button(row,text=_ui_tr('불러오기'),command=lambda i=index:self.activate_slot(i),width=9,state='normal' if slot.state=='saved' else 'disabled').grid(row=0,column=3)
-            if self.current_save_target() and self.current_save_target()[0]==index:
+            ttk.Button(row,text=_ui_tr('현재 설정 저장'),command=lambda i=index:self.save_slot(i),width=0,padding=(12,6),
+                       state='normal' if slot else 'disabled').grid(row=0,column=2,padx=4)
+            ttk.Button(row,text=_ui_tr('불러오기'),command=lambda i=index:self.activate_slot(i),width=9,
+                       state='normal' if slot and slot.state=='saved' else 'disabled').grid(row=0,column=3)
+            if slot and active:
                 ttk.Button(row,text=_ui_tr('이름 변경'),command=self.rename_current_profile,width=9).grid(row=0,column=1,padx=(4,0))
         if len(self.slots)>8:
             ttk.Button(box,text=_ui_tr('9–32번 슬롯 접기') if self.slots_expanded else _ui_tr('9–32번 슬롯 펼치기'),command=self.toggle_slots).grid(row=len(visible)+3,column=0,columnspan=2,sticky='ew',pady=(12,0))
+        self.slot_loading_overlay=tk.Label(box,text=ui_text('불러오는중...','Loading…'),bg=BG,fg=FG,
+                                           padx=18,pady=8,font=(_ui_tr('맑은 고딕'),10,'bold'))
+        self.refresh_slot_loading()
+
+    def refresh_slot_loading(self):
+        overlay=getattr(self,'slot_loading_overlay',None)
+        if overlay is None or not overlay.winfo_exists():return
+        panel=self.app.studio
+        loading=(self.busy and getattr(self,'_read_view_kind',None) in ('read','entry_read','slots')
+                 or panel.busy and panel.operation=='activate')
+        if loading and not overlay.winfo_manager():
+            overlay.place(relx=.5,rely=.5,anchor='center')
+            overlay.lift()
+        elif not loading and overlay.winfo_manager():
+            overlay.place_forget()
+
     def toggle_slots(self):self.slots_expanded=not self.slots_expanded;self.render_fields()
     def save_slot(self,index):
         if self.busy or not self.write_ready:return
@@ -1668,7 +1694,15 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         def activate():
             position=next((i for i,s in enumerate(self.slots) if s.index==index),None)
             if position is None:return
-            self.app.studio.slot_paths=[self.path for _ in self.slots];self.app.studio.slots=list(self.slots);self.app.studio.choice.configure(values=[s.label() for s in self.slots]);self.app.studio.choice.current(position);self.doc.revert();self.app.studio.activate(confirmed=True);self.loaded=False;self.progress.configure(text=_ui_tr('프로필 전환 중 · 완료 후 설정 자동 조회'),kind='progress')
+            panel=self.app.studio
+            panel.slot_paths=[self.path for _ in self.slots]
+            panel.slots=list(self.slots)
+            panel.choice.configure(values=[s.label() for s in self.slots])
+            panel.choice.current(position)
+            panel.activate(confirmed=True)
+            if panel.busy and panel.operation=='activate':
+                self.loaded=False
+                self.progress.configure(text=_ui_tr('프로필 전환 중 · 완료 후 설정 자동 조회'),kind='progress')
         def proceed():
             if self.app.engine:self.app.stop(on_complete=activate)
             else:activate()

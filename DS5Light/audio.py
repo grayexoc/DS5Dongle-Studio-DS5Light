@@ -43,6 +43,10 @@ from channel_policy import open_capture
 from reconnect_policy import RetryCadence
 
 
+class StudioInputIdle(Exception):
+    """Exclusive output closed after capture stopped delivering frames."""
+
+
 
 ORIGINAL = Path(__file__).parent/'vendor/ds5audio_original.py'
 
@@ -170,7 +174,7 @@ class OutputProcessor:
 
             self._pcm=np.empty((self._capacity,4),dtype="<i2")
 
-    def process(self, data, controls, *, front_only=False):
+    def process(self, data, controls, *, front_only=False, ai=None):
 
         if controls.mode=='pure':
 
@@ -210,7 +214,14 @@ class OutputProcessor:
 
         for i in range(0,n,240):
 
-            out[i:i+240]=self.processor.process(x[i:i+240],controls,now=time.perf_counter())
+            block=x[i:i+240]
+            out[i:i+240]=self.processor.process(block,controls,now=time.perf_counter(),
+                                                band_features=ai.features if ai is not None else None)
+            if ai is not None:
+                try:
+                    ai.observe(len(block))
+                except Exception as exc:
+                    ai.fail(exc)
 
         np.multiply(out,32768,out=out);np.rint(out,out=out);np.clip(out,-32768,32767,out=out)
 
@@ -290,6 +301,7 @@ class Engine:
         self.blocks=0; self.errors=0; self.peak=0.; self.latencies={}; self.opens=[]
 
         self.output_processor=OutputProcessor()
+        self.ai_status=''
 
         self.process_pid,self.process_channels=process_pid,process_channels
 
@@ -448,11 +460,19 @@ class Engine:
 
                 self.channel_mixer=ChannelMixer()
                 self.signal_check=None
+                self.mix_ai=None
+                self.ai_init_failed=False
 
                 if kwargs.get('input'):
                     engine.capture_channels=kwargs['channels']
                     engine.capture_format=(kwargs['channels'], kwargs['rate'])
                     engine.capture_signal=None
+
+            def close(self):
+                if self.mix_ai is not None:
+                    self.mix_ai.close()
+                    self.mix_ai=None
+                super().close()
 
             def __getattr__(self,name): return getattr(self.stream,name)
 
@@ -529,7 +549,32 @@ class Engine:
                 if engine.studio_live:
                     out = data
                 else:
-                    try: out=engine.output_processor.process(data,engine.controls,front_only=engine.front_only)
+                    try:
+                        controls=engine.controls
+                        enable_ai=(controls.experimental_ai and not controls.bypass and controls.mode=='normal'
+                                   and not engine.silent and engine.binding is not None)
+                        if enable_ai and self.mix_ai is None and not self.ai_init_failed:
+                            try:
+                                from tiny_gru import MixFrontAI
+                                self.mix_ai=MixFrontAI(engine.binding,engine.stop_event.is_set)
+                            except Exception as exc:
+                                self.ai_init_failed=True
+                                engine.ai_status=f"AI · DSP only ({type(exc).__name__}: {exc})"
+                        elif not enable_ai:
+                            if self.mix_ai is not None:
+                                self.mix_ai.close()
+                                self.mix_ai=None
+                            self.ai_init_failed=False
+                            engine.ai_status=''
+                        if self.mix_ai is None:
+                            out=engine.output_processor.process(data,controls,front_only=engine.front_only)
+                        else:
+                            out=engine.output_processor.process(data,controls,front_only=engine.front_only,ai=self.mix_ai)
+                            if self.mix_ai.error:
+                                engine.ai_status=f"AI · DSP only ({self.mix_ai.error})"
+                            else:
+                                label = "AI MAX" if self.mix_ai.strong_test else "AI"
+                                engine.ai_status=f"{label} · HID {self.mix_ai.sent}"
 
                     except Exception as exc:
 
@@ -706,7 +751,7 @@ class Engine:
 
                 except OSError:
 
-                    engine.output_wait_reason=(_ui_tr('오디오 입력 열기 실패 · 재생 장치와 캡쳐 권한을 확인하세요') if kwargs.get('input') else _ui_tr('오디오 출력 열기 실패 · 다른 앱의 독점 사용과 장치 상태를 확인하세요'))
+                    engine.output_wait_reason=(_ui_tr('오디오 입력 열기 실패 · 재생 장치와 캡처 권한을 확인하세요') if kwargs.get('input') else _ui_tr('오디오 출력 열기 실패 · 다른 앱의 독점 사용과 장치 상태를 확인하세요'))
                     # Some drivers reject the smaller host buffer. Fall back on
 
                     # the same selected endpoint, without changing the routing.
@@ -749,7 +794,7 @@ class Engine:
 
                     engine.latencies['output_s']=s.get_output_latency()
 
-                    engine.status=_ui_tr('전역 오디오 캡쳐 작동중..')+(_ui_tr(' · 무음 시험') if engine.silent else '')
+                    engine.status=_ui_tr('전역 오디오 캡처 중…')+(_ui_tr(' · 무음 시험') if engine.silent else '')
 
                     if engine.process_pid: engine.status=_ui_tr('지정 프로세스 PID ')+str(engine.process_pid)+(_ui_tr(' · 무음 시험') if engine.silent else '')
 
@@ -876,13 +921,16 @@ class Engine:
 
             else: self.status=_ui_tr('정지')
 
+        except StudioInputIdle: self.status=_ui_tr('정지 · Studio 캡처 입력 없음')
+
         except KeyboardInterrupt: self.status=_ui_tr('정지')
 
         except Exception as exc: self.status=_ui_tr('오류: ')+str(exc); self.errors+=1
 
         finally:
 
-            self.phase='stopped' if self.stop_event.is_set() or self.status==_ui_tr('정지') else 'error'
+            stopped_statuses = (_ui_tr('정지'), _ui_tr('정지 · Studio 캡처 입력 없음'))
+            self.phase='stopped' if self.stop_event.is_set() or self.status in stopped_statuses else 'error'
             # Also runs if legacy cleanup fails before reaching another stream.
             # Playback first, then capture; each resource has an independent close.
             for owned in sorted(owned_streams, key=lambda item: not item.output):

@@ -68,7 +68,12 @@ class HapticControlDsp:
                 attack = 'weight'
             elif mid > 3 * low:
                 attack = 'sharp'
-        return filtered, self.mapper.process(fuse(*self.evidence), len(filtered), balance, attack=attack)
+        target = fuse(*self.evidence)
+        if rear_only:
+            # Lift quiet PC control before the firmware gate. Unity remains
+            # the maximum and the mapper retains the original stereo ramp.
+            target = 3.0 * target / (1.0 + 2.0 * target)
+        return filtered, self.mapper.process(target, len(filtered), balance, attack=attack)
 
 def encode_studio_pcm(front, rear):
     """Pack matching stereo audio and nonnegative rear control as PCM16."""
