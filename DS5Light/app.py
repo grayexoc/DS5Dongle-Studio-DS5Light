@@ -769,7 +769,6 @@ class App:
         self.source=tk.StringVar(value=source if source in self.inputs else AUTO); self.destination=tk.StringVar(value=destination if destination in self.outputs else AUTO)
 
         self.mode=tk.StringVar(value=c.mode); self.filter_on=tk.BooleanVar(value=not c.bypass)
-        self.experimental_ai=tk.BooleanVar(value=False)
 
         self.strength=tk.DoubleVar(value=c.strength*100); self.bg=tk.BooleanVar(value=c.background); self.transient=tk.BooleanVar(value=c.transient)
 
@@ -1009,12 +1008,6 @@ class App:
         self.filter_switch=Switch(fh,self.filter_on,self.update_controls); self.filter_switch.pack(side='right')
 
         self.filter_badge=ttk.Label(fh); self.filter_badge.pack(side='right',padx=7)
-        self.ai_switch=Switch(fh,self.experimental_ai,self.update_controls)
-        self.ai_switch.pack(side='right')
-        ttk.Label(fh,text='AI').pack(side='right',padx=(0,4))
-        HoverHint(self.ai_switch,lambda: (
-            '실험용 AI · 필터를 켠 Studio 믹스/Front에서 작동합니다.'
-            if LANGUAGE=='ko' else 'Experimental AI · Requires the filter and Studio Mix/Front.'))
 
         self.filter_widgets=[]
 
@@ -1489,8 +1482,7 @@ class App:
     def _read_controls(self):
         controls = self.configured_controls()
         if not controls.bypass:
-            controls = replace(controls, background=True, transient=True,
-                               experimental_ai=self.experimental_ai.get() and self.studio.mix_front_ai_available())
+            controls = replace(controls, background=True, transient=True)
         if CHANNELS[self.channel.get()] in (6, 8):
             controls = replace(controls, rear=True, lfe=True, center=True, limiter='hard')
         return controls
@@ -1541,7 +1533,6 @@ class App:
         self._last_engine_display = self._engine_display_state()
         self._render_slider_values()
         ch=self.capture_channels(); active=bool(self.engine); filtering=self.filter_on.get()
-        self.ai_switch.set_enabled(filtering and self.studio.mix_front_ai_available())
 
         native=self.studio.haptics_blocked
         process_scope=self.scope.get()=='process'

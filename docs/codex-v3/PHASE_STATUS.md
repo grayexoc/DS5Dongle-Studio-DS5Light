@@ -436,3 +436,7 @@ The user authorized building and publishing the current development source with 
 ### 2026-11-22 — v1.1.1 / Studio v50 release
 
 The user requested a release from the current source. Publish DS5Light v1.1.1 and Studio v50 for Pico 2 W, including the current rear-control, buffering, native-mix, UI and input-processing changes. Inspection and test execution remain excluded for this release at user direction. Prior evidence retains its original scope.
+
+### 2026-11-22 — v1.2.0 / Studio v51 release
+
+The user authorized release of the current source with app and firmware versions aligned to DS5Light 1.2.0 and Studio 51. Bilingual release materials state that recommended presets in Studio profile-slot settings provide the comparison reference, perceived response depends on Windows and game/application volume, and other settings use defaults unless specified. This release action continues the user's instruction to omit inspection and test execution. Previous validation records retain their original scope.

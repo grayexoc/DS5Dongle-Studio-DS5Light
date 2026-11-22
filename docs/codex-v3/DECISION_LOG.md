@@ -78,3 +78,7 @@ At user direction, package the current V3 development work as DS5Light v1.1.0 wi
 ### 2026-11-22 — v1.1.1 / Studio v50 release
 
 Publish the current app and firmware together as DS5Light v1.1.1 / Studio v50. Keep the single custom/studio-ds5light branch. Describe the implemented changes without claiming measured latency or physical haptics results. No tests or hardware operations are added to this release action.
+
+### 2026-11-22 — v1.2.0 / Studio v51 release
+
+The user authorized release of the current source with app and firmware versions aligned to DS5Light 1.2.0 and Studio 51. Bilingual release materials state that recommended presets in Studio profile-slot settings provide the comparison reference, perceived response depends on Windows and game/application volume, and other settings use defaults unless specified. This release action continues the user's instruction to omit inspection and test execution. Previous validation records retain their original scope.

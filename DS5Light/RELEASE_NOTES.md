@@ -1,6 +1,39 @@
+# v1.2.0
+
+DS5Light v1.2.0 for Windows x64 pairs with Studio v51 for Raspberry Pi Pico 2 W. Use the app and firmware from this release together.
+
+- **Impact texture.** Added brief harmonic shaping to audio-generated haptics. Low-dominant hits adjust the blend and decay, while sustained bass is guarded against repeated artificial attacks.
+- **Left/right impact response.** Adjusted the initial impact blend using the relative rise of each channel.
+- **Low-band output.** Refined sustained bass handling and transitions between continuous vibration and short impacts.
+- **Lighting controls.** Clarified Pico LED On/Off selection and improved fixed-color selection and lightbar state handling.
+- **Studio settings.** Improved profile-slot loading, expandable slot lists, search-result context, and control layout.
+- **Capture and UI.** Refined process-list CPU sampling, reduced unnecessary updates, and adjusted Korean and English labels and guidance.
+
+Use the recommended presets under Studio profile-slot settings as the reference when comparing audio-haptics changes. The perceived response varies with Windows volume and game/application volume. Unless otherwise specified, other settings assume their defaults.
+
+Back up the destination Studio slot before applying a preset or saving over an existing profile.
+
+## 한국어
+
+Windows x64용 DS5Light v1.2.0은 Raspberry Pi Pico 2 W용 Studio v51과 함께 사용합니다. 이번 릴리즈의 앱과 펌웨어를 함께 사용하세요.
+
+- **타격 질감 처리 추가.** 오디오 햅틱의 타격 시작 구간에 짧은 고조파 성분을 혼합합니다. 저역이 우세한 타격은 혼합량과 감쇠를 조절하고, 지속 저음에서 인위적인 타격이 반복되는 것을 억제합니다.
+- **좌우 타격 반응 조정.** 양쪽 채널의 상승량을 비교해 타격 시작 시 혼합 비율에 반영합니다.
+- **저역 출력 보완.** 지속적인 저음과 짧은 타격 사이의 출력 처리를 다듬었습니다.
+- **조명 설정 개선.** Pico LED 켜기·끄기 선택을 명확히 하고 고정 색상 선택과 라이트바 상태 처리를 보완했습니다.
+- **Studio 설정 개선.** 프로필 슬롯 로딩, 슬롯 목록 펼치기, 검색 결과의 소속 표시와 조작부 배치를 개선했습니다.
+- **캡처·UI 보완.** 프로세스 목록의 CPU 사용량 조회와 불필요한 갱신을 조정하고 한·영 표현과 안내를 다듬었습니다.
+
+오디오 햅틱의 개선 사항은 Studio 프로필 슬롯 설정의 추천 프리셋을 기준으로 확인해 주세요. 체감은 Windows 음량과 게임·앱의 음량 설정에 따라 달라집니다. 별도로 안내한 항목 외의 설정은 기본값을 기준으로 합니다.
+
+프리셋 적용이나 기존 프로필 덮어쓰기 전에 대상 Studio 슬롯을 백업하세요.
+
+
+---
+
 # v1.1.1
 
-DS5Light v1.1.1 for Windows x64 pairs with Studio v50 for Raspberry Pi Pico 2 W. Use the app and firmware from this release together.
+The Windows x64 package `DS5Light-win-x64-v1.1.1.zip` pairs with Studio v50 for Raspberry Pi Pico 2 W. Use the app and firmware from this release together.
 
 - **Rear control and sustained effects.** Preserved low-band continuous haptic output alongside short impacts. Persistent left/right energy differences can steer sustained rear control, while protected impacts retain priority.
 - **Filter switching.** Select the Studio rear-control route only while the PC filter is enabled. A filter change that requires a different output route stops capture and asks for a restart.

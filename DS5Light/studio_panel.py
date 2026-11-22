@@ -505,10 +505,6 @@ class StudioPanel(StartupDiscovery):
         profile = self.observed_profile or {}
         return profile.get('auto_haptics_enable') == 2 and profile.get('ah_dsp_source') == 1
 
-    def mix_front_ai_available(self):
-        profile = self.observed_profile or {}
-        return profile.get('auto_haptics_enable') == 1 and profile.get('ah_dsp_source') == 0
-
     def legacy_output_front_only(self):
         return self.native_mix_front_only()
 

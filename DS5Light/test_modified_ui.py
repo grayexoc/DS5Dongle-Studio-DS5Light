@@ -392,6 +392,9 @@ class ModifiedUITests(unittest.TestCase):
 
     def test_filter_has_no_processing_mode_selector(self):
         self.assertFalse(hasattr(self.ui, 'processing_mode'))
+        self.assertFalse(hasattr(self.ui, 'ai_switch'))
+        self.ui.filter_on.set(True)
+        self.assertFalse(self.ui._read_controls().experimental_ai)
 
     def test_gain_slider_and_filter_are_independent(self):
         self.assertEqual(self.ui.gain.get(),100)

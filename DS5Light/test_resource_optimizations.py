@@ -47,7 +47,8 @@ class ResourceOptimizationTests(unittest.TestCase):
             assert engine.output_processor.processor is None
             cold()
 
-            ui = SimpleNamespace(engine=engine, controls=off,
+            ui = SimpleNamespace(engine=engine, controls=off, _stopping=False,
+                                 studio=SimpleNamespace(rear_control_required=lambda: False),
                                  _read_controls=lambda: on, render=lambda: None)
             load = app.load_signal_filters
 

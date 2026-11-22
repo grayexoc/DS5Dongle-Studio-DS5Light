@@ -32,6 +32,11 @@ class ReleaseMetadataTests(unittest.TestCase):
                 self.assertIn(filename, build)
         defaults = json.loads((ROOT / 'default_config.json').read_text(encoding='utf-8-sig'))
         self.assertFalse(defaults['bypass'])
+        for mode, filename in ((1, 'Audio_Haptic_01.json'), (2, 'Audio_Haptic_02.json')):
+            preset = json.loads((ROOT / 'Studio Presert' / filename).read_text(encoding='utf-8-sig'))
+            for section in ('fields', 'settings'):
+                self.assertEqual(preset[section]['auto_haptics_enable'], mode)
+                self.assertEqual(preset[section]['ah_dsp_source'], 0)
         for name in ('SETUP.md', 'SETUP_KO.md'):
             text = (ROOT / name).read_text(encoding='utf-8-sig')
             for value in ('strength', 'impact', 'gain'):

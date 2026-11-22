@@ -904,13 +904,14 @@ void __not_in_flash_func(audio_loop)() {
         speaker_filters_reset = false;
     }
     const bool dsp_rear = cfg.ah_dsp_source == 1 && actual_ch == 4;
-    const bool front_texture = auto_mode == 1 && cfg.ah_dsp_source == 0;
+    const bool front_texture = HapticImpactTexture::uses_front(auto_mode, cfg.ah_dsp_source);
+    const uint8_t texture_mode = front_texture ? auto_mode : 0;
     static HapticImpactTexture texture_l, texture_r;
-    static bool texture_was_active = false;
-    if (reset_haptic_filters || front_texture != texture_was_active) {
+    static uint8_t previous_texture_mode = 0;
+    if (reset_haptic_filters || texture_mode != previous_texture_mode) {
         texture_l = {};
         texture_r = {};
-        texture_was_active = front_texture;
+        previous_texture_mode = texture_mode;
     }
     const bool pc_rear_control = auto_mode == 2 && dsp_rear && rear_policy == RearRouteLease::Rear::Control;
     // TPT state-variable high-pass, Butterworth damping, at 48 kHz.
@@ -1172,8 +1173,12 @@ void __not_in_flash_func(audio_loop)() {
             const float rc_hi = rumble_active && rumble_r != 0 ? haptic_math::sine_phase(rc_hi_ph) : 0.0f;
             float carrier_l = carrier, carrier_r = carrier;
             if (front_texture) {
-                const float blend_l = texture_l.update(env_l, genv_l);
-                const float blend_r = texture_r.update(env_r, genv_r);
+                float blend_l = texture_l.update(env_l, genv_l,
+                    split_on ? envlo_l : 0.0f, split_on ? envhi_l : 0.0f);
+                float blend_r = texture_r.update(env_r, genv_r,
+                    split_on ? envlo_r : 0.0f, split_on ? envhi_r : 0.0f);
+                blend_l = texture_l.steer_onset(blend_l, texture_r);
+                blend_r = texture_r.steer_onset(blend_r, texture_l);
                 if (blend_l > 0.0f || blend_r > 0.0f) {
                     const float phase = carrier_ph * 2.0f;
                     const float edge = haptic_math::sine_phase(
@@ -1288,13 +1293,15 @@ void __not_in_flash_func(audio_loop)() {
 
 
     // 4. 转换为int8并缓冲，满64字节即组包发送
+    const bool round_output = auto_mode == 0 || (front_texture &&
+        (auto_mode == 2 || (native_lvl == 0.0f && rumble_str == 0.0f)));
     for (int i = 0; i < out_frames; i++) {
         const float gain = auto_mode == 0 ? haptics_gain : 1.0f;
         const float level_l = out_buf[i * 2] * 127.0f * gain;
         const float level_r = out_buf[i * 2 + 1] * 127.0f * gain;
-        const int sample_l = auto_mode == 0 ? haptic_math::quantize_native(level_l)
+        const int sample_l = round_output ? haptic_math::quantize_native(level_l)
                                            : clamp(static_cast<int>(level_l), -128, 127);
-        const int sample_r = auto_mode == 0 ? haptic_math::quantize_native(level_r)
+        const int sample_r = round_output ? haptic_math::quantize_native(level_r)
                                            : clamp(static_cast<int>(level_r), -128, 127);
         haptic_buf[haptic_buf_pos++] = static_cast<int8_t>(sample_l);
         haptic_buf[haptic_buf_pos++] = static_cast<int8_t>(sample_r);
