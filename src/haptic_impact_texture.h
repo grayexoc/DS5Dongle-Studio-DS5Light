@@ -8,7 +8,7 @@ public:
     // rearms only after the signal falls below the trailing envelope.
     float update(float low_envelope, float gated_envelope) {
         fast += .006f * (low_envelope - fast);
-        if (fast <= .80f * slow || gated_envelope <= .004f) armed = true;
+        if (fast <= .80f * slow) armed = true;
         if (armed && remaining == 0 && gated_envelope > .012f &&
             fast > 1.65f * slow + .006f) {
             remaining = 768;

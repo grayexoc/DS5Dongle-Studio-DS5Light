@@ -72,6 +72,18 @@ int main() {
     assert(check_texture(4800, .1f, .1f) == 0.0f);
     assert(check_texture(1920, 0.0f, 0.0f) == 0.0f);
     assert(check_texture(960, .1f, .1f) > .35f);
+    texture = {};
+    float envelope = 0.0f, previous_blend = 0.0f;
+    int attacks = 0;
+    for (int frame = 0; frame < 48000; ++frame) {
+        const float level = std::fabs(.15f * std::sin(frame * haptic_math::phase_end * 20.0f / 48000.0f));
+        envelope += (level > envelope ? .15f : .016f) * (level - envelope);
+        const float gated = envelope * std::clamp((envelope - .016f) / .04f, 0.0f, 1.0f);
+        const float blend = texture.update(envelope, gated);
+        if (blend > 0.0f && previous_blend == 0.0f) ++attacks;
+        previous_blend = blend;
+    }
+    assert(attacks == 1);
     using haptic_math::quantize_native;
     if (quantize_native(0) != 0 || quantize_native(.49f) != 0 ||
         quantize_native(-.49f) != 0 || quantize_native(.5f) != 1 ||
