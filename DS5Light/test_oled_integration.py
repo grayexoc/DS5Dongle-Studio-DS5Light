@@ -277,7 +277,9 @@ class AppPolicyTests(unittest.TestCase):
         try:
             with patch.object(u,'render'),patch.object(u,'stop') as stop:
                 for mode,level,source,front in ((1,50,0,True),(1,0,0,False),(1,100,0,True),
-                                                (2,100,0,False),(2,100,1,True),(2,100,0,False)):
+                                                (2,100,0,False),(2,100,1,False),(2,100,0,False)):
+                    # Rear control uses the managed renderer when filtering;
+                    # the legacy bypass path must still carry both pairs.
                     rear=(mode,source)==(2,1)
                     stop.reset_mock()
                     u._external_profile(dict(path=b'ours',row=hidrow(),profile=dict(AH,auto_haptics_enable=mode,
