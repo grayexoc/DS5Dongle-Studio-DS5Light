@@ -2,6 +2,8 @@
 
 ### English
 
+Pair `DS5Light-win-x64-v1.2.2.zip` with `ds5-studio-light_v53.uf2` for Raspberry Pi Pico 2 W.
+
 **For audio haptics, we strongly recommend applying the updated recommended preset as your starting configuration, including if you used the previous version.** In Studio profile slot settings, apply Mix or Replace. Turn on the PC filter, set intensity to 1× and use the matching slider marks.
 
 - Mix combines front-channel audio haptics with game rumble. Start with 40% background reduction and 90% impact preservation. Replace uses front-channel audio haptics alone. Start with 50% and 95%, respectively.
@@ -11,6 +13,8 @@
 Windows and game volume both affect haptic strength. The recommendations assume other settings are at their defaults.
 
 ### 한국어
+
+Windows 앱 `DS5Light-win-x64-v1.2.2.zip`과 Raspberry Pi Pico 2 W용 펌웨어 `ds5-studio-light_v53.uf2`를 함께 사용하세요.
 
 **오디오햅틱을 사용할 때는 변경된 추천 프리셋을 기본 설정으로 적용할 것을 강력히 권장합니다. 이전 버전의 프리셋을 사용 중인 경우에도 새 프리셋을 다시 적용해 주세요.** Studio의 프로필 슬롯 설정에서 믹스 또는 대체를 적용한 뒤, PC 필터를 켜고 세기를 1배로 설정하고 슬라이더를 해당 모드의 눈금에 맞춰 주세요.
 
