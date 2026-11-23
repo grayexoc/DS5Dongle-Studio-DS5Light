@@ -35,7 +35,8 @@ bool bt_dse_profiles_ready();
 void bt_write(const uint8_t *data, uint16_t len);
 void bt_get_signal_strength(int8_t *rssi);
 bool bt_signal_valid();
-std::vector<uint8_t> get_feature_data(uint8_t reportId,uint16_t len);
+// A null destination only schedules the usual Bluetooth refresh, if needed.
+uint16_t get_feature_data(uint8_t reportId, uint16_t len, uint8_t *buffer = nullptr);
 void init_feature();
 bool set_feature_data(uint8_t reportId, uint8_t* data,uint16_t len);
 void bt_inquiring_led();

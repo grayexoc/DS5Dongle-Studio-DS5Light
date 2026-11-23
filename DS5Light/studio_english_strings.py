@@ -4890,7 +4890,7 @@ EN.update({
     '이전 파일 저장이 끝난 후 다시 시도하세요.': 'Wait for the current file save to finish, then try again.',
     '매핑 편집을 파일로 보관했습니다. 새로 고침 후 다시 가져올 수 있습니다.': 'Mapping edits exported. You can refresh and import them again.',
     '등록·편집·삭제·가져오기·시프트키 변경 시 자동 저장합니다.': 'Edits, deletion, import and shift-key changes save automatically.',
-    '동작 변경은 모든 프로필에 영향을 줍니다.\n사용 체크는 현재 프로필에 별도로 저장합니다.': 'Mapping changes affect all profiles.\nActivation checkboxes are saved separately in the current profile.',
+    '동작 변경은 모든 프로필에 영향을 줍니다.\n사용 체크는 현재 프로필에 별도로 저장합니다.': 'Mapping changes affect all profiles.\nActivation checkboxes are saved per profile.',
     'DualSense Edge의 네이티브 햅틱·스피커 호환성을 위해 USB 시리얼 숨기기를 켜는 것을 권장합니다.': 'Enable Hide USB serial number for better DualSense Edge native haptics and speaker compatibility.',
     'PC로 보내는 패드 입력과 펌웨어의 매핑 처리 상태를 확인합니다. 숨긴 입력은 보이지 않을 수 있으며, 짧은 출력은 진단 조회 사이에 지나갈 수 있습니다.': 'Shows gamepad reports sent to the PC and firmware mapping state. Hidden inputs may not appear, and brief outputs can occur between diagnostic reads.',
     '화면에 보이는 동안 관측한 마지막 입력·출력을 유지합니다. 숨긴 조건 버튼과 짧은 출력은 놓칠 수 있습니다.': 'Keeps the last input and output observed while this view is visible. Hidden condition buttons and brief outputs may be missed.',

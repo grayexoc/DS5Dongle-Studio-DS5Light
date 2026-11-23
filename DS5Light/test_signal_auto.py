@@ -65,7 +65,7 @@ class SignalBehavior(unittest.TestCase):
     def test_steady_low_tones_do_not_keep_triggering_protection(self):
         t=np.arange(3*RATE)/RATE
         for hz in (30,50,60,80):
-            x=.08*np.sin(2*np.pi*hz*t);y,g,p=process(x,Controls())
+            x=.08*np.sin(2*np.pi*hz*t);y,g,p=process(x,Controls(strength=.55))
             self.assertLess(float(np.ptp(20*np.log10(g[-100:,0]))),.04)
             self.assertLess(np.sqrt(np.mean(y[-RATE:]**2)),np.sqrt(np.mean(x[-RATE:]**2))*.46)
 
@@ -106,7 +106,7 @@ class SignalBehavior(unittest.TestCase):
         background=(.065*np.sin(2*np.pi*47*t)+.028*np.sin(2*np.pi*230*t)
                     +.018*np.sin(2*np.pi*820*t))
         background*=np.where(t<2,1,2.1)
-        filtered,_,_=process(background,Controls())
+        filtered,_,_=process(background,Controls(strength=.55))
         early=slice(2*RATE,round(2.08*RATE))
         late=slice(round(2.38*RATE),round(2.9*RATE))
         rms_gain=lambda window: np.linalg.norm(filtered[window])/np.linalg.norm(background[window])
@@ -164,7 +164,7 @@ class AutomaticChannels(unittest.TestCase):
     def test_legacy_options_migrate_to_auto_and_presets_preserve_impact(self):
         data=default_preferences();data.pop('channel_auto');data['channels']=6;data['controls'].pop('impact')
         out=validate_preferences({'version':1,'preferences':data})
-        self.assertTrue(out['channel_auto']);self.assertEqual(out['controls']['impact'],.85)
+        self.assertTrue(out['channel_auto']);self.assertEqual(out['controls']['impact'],.90)
         with tempfile.TemporaryDirectory() as d:
             store=PresetStore(Path(d)/'slots.json')
             value=dict(name='Auto',game_exe='Game.exe',scope='process',channels=0,input='',output='',controls=asdict(Controls(impact=.6)))

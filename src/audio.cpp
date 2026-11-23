@@ -784,7 +784,13 @@ void __not_in_flash_func(audio_loop)() {
     static float hp_band_l = 0.0f, hp_band_r = 0.0f;
     static float hp_low_l = 0.0f, hp_low_r = 0.0f;
     const float hp_step = hp_g[hp_mode];
-    const float hp_norm = 1.0f / (1.0f + hp_step * (hp_damping + hp_step));
+    constexpr auto normalization = [](float step) {
+        return 1.0f / (1.0f + step * (hp_damping + step));
+    };
+    constexpr float hp_norms[] = {
+        normalization(hp_g[0]), normalization(hp_g[1]), normalization(hp_g[2])
+    };
+    const float hp_norm = hp_norms[hp_mode];
     bool seed_hp = reset_haptic_filters || hp_mode != last_hp_mode || dsp_rear != last_hp_rear;
     last_hp_mode = hp_mode;
     last_hp_rear = dsp_rear;

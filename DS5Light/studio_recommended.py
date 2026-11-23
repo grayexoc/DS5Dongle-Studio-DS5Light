@@ -10,6 +10,9 @@ from studio_settings_protocol import needs_reconnect,validate_changes
 from studio_document import SettingsDocument
 from localization import LANGUAGE
 
+def ui_text(ko,en):
+    return en if LANGUAGE=='en' else ko
+
 # Exactly the editable fields shown in Studio's "오디오햅틱" section.
 # Device/audio-buffer settings, native gain/filtering and macro definitions or
 # enable masks are deliberately outside this preset's scope.
@@ -18,21 +21,25 @@ AUDIO_HAPTIC_FIELDS=frozenset((
     'mix_native_level','mix_native_filter','ah_dsp_source','auto_haptics_lowpass_hz',
     'ah_xover_hz','ah_low_gain','ah_high_gain','auto_haptics_slope',
     'auto_mute_replace','auto_mute_mix','rumble_haptic_strength',
+    'ah_highpass',
 ))
+REQUIRED_HAPTIC_FIELDS=AUDIO_HAPTIC_FIELDS-{'ah_highpass'}
 
 PRESETS=(
     ('DS_Native.json',_ui_tr('네이티브 프리셋'),
      _ui_tr('별도 설정을 하지 않았다면 기본값과 같아 적용할 필요가 없습니다. 오디오햅틱을 끄고 게임의 네이티브 햅틱·일반 진동을 사용합니다. 게임·연결 방식이 지원해야 하며 DS5Light 전송은 정지합니다.')),
     ('Audio_Haptic_01.json',_ui_tr('오디오햅틱 믹스'),
-     _ui_tr('오디오햅틱을 네이티브 햅틱 원본과 섞습니다. 뒤 채널(Rear)에 네이티브 신호가 들어오는 게임에서 사용하세요. 앱 필터를 켜고 앱의 오디오햅틱 세기 1x부터 시작하세요.')),
+     ui_text('Front 오디오햅틱에 게임 일반 진동을 섞습니다. 앱 필터 켬, 배경 억제량 40%, 충격 보존 90%, 세기 1x를 권장합니다.',
+             'Combines Front audio haptics with game rumble. Recommended app settings: filter on, 40% background reduction, 90% impact preservation, 1x intensity.')),
     ('Audio_Haptic_02.json',_ui_tr('오디오햅틱 대체'),
-     _ui_tr('앞 채널(Front)에서 만든 오디오햅틱만 사용합니다. 앱 필터 켬, 배경 억제량 55%, 앱의 오디오햅틱 세기 1x 기준입니다.')),
+     ui_text('Front 오디오로 만든 햅틱만 출력합니다. 앱 필터 켬, 배경 억제량 50%, 충격 보존 95%, 세기 1x를 권장합니다.',
+             'Uses Front audio haptics. Recommended app settings: filter on, 50% background reduction, 95% impact preservation, 1x intensity.')),
 )
 if LANGUAGE=='ko':
     descriptions=(
         '오디오햅틱을 끄고 게임이 보내는 네이티브 햅틱과 일반 진동을 사용합니다. 게임과 연결 방식이 이를 지원해야 합니다.',
-        'Front 오디오로 만든 햅틱과 게임이 Rear로 보내는 네이티브 햅틱을 섞습니다. 앱 필터를 켜고 세기를 1x부터 조절하세요.',
-        'Front 오디오로 만든 햅틱만 출력합니다. 앱에서 필터 켜기, 배경 억제량 55%, 세기 1x로 시작하세요.',
+        PRESETS[1][2],
+        PRESETS[2][2],
     )
     PRESETS=tuple((filename,title,description) for (filename,title,_),description in zip(PRESETS,descriptions))
 
@@ -40,6 +47,8 @@ COMMON_HELP=(
     '\n\n현재 Studio 설정에 추천값을 반영해 선택한 슬롯에 덮어씁니다. 앱 필터와 세기는 오디오햅틱 탭에서 조절하세요.'
     if LANGUAGE=='ko' else _ui_tr('\n\n현재 Pico 설정에서 Studio의 오디오햅틱 항목만 추천값으로 바꿔 선택한 슬롯에 저장합니다. 장치·자이로·트리거 등 다른 설정과 매크로는 유지합니다.')
 )
+COMMON_HELP+=ui_text('\n극저음 차단은 지원되는 펌웨어에 적용합니다.',
+                     '\nHaptic high-pass is applied on supported firmware.')
 
 
 def load_preset(filename):
@@ -52,7 +61,7 @@ def load_preset(filename):
     # An explicit allowlist prevents later edits to a JSON file from importing
     # device settings, native haptics settings or global/profile macro data.
     fields={k:v for k,v in fields.items() if k in AUDIO_HAPTIC_FIELDS and k in EDITABLE}
-    if set(fields)!=AUDIO_HAPTIC_FIELDS:raise ValueError(_ui_tr('추천 프리셋의 오디오햅틱 설정이 누락되었습니다.'))
+    if not REQUIRED_HAPTIC_FIELDS <= fields.keys():raise ValueError(_ui_tr('추천 프리셋의 오디오햅틱 설정이 누락되었습니다.'))
     validate_changes({},fields)
     name=data.get('name','')
     if not isinstance(name,str) or not name or '\x00' in name or len(name.encode('utf-8'))>16:raise ValueError(_ui_tr('추천 프리셋 이름이 올바르지 않습니다.'))
@@ -68,6 +77,8 @@ def save_and_activate(client,fields,name,index,expected_slot,stamp,baseline,prog
     """One transaction: verify, apply, save, activate once, request persistence."""
     if not fields or set(fields)-AUDIO_HAPTIC_FIELDS:
         raise ValueError(_ui_tr('추천 프리셋은 Studio 오디오햅틱 항목만 변경할 수 있습니다.'))
+    if 'ah_highpass' in fields and 'ah_highpass' not in baseline:
+        fields={k:v for k,v in fields.items() if k!='ah_highpass'}
     before=client.profile(include_revision=True)
     if any(before.get(k)!=stamp[k] for k in ('index','name','edited')):
         raise RuntimeError(_ui_tr('현재 프로필이 바뀌었습니다. 새로 고침으로 확인하세요.'))
@@ -195,7 +206,8 @@ class RecommendedPresets:
                 profile=fresh['profile']
                 if profile.get('index')!=index or profile.get('name')!=name or profile.get('edited'):
                     raise RuntimeError(_ui_tr('전환 후 프로필이 저장 대상과 다릅니다.'))
-                if any(not equal_value(fresh['values'].get(k),v) for k,v in fields.items()) or fresh['values'].get('macro_disable')!=result['mask']:
+                applied={k:v for k,v in fields.items() if k in result['expected']}
+                if any(not equal_value(fresh['values'].get(k),v) for k,v in applied.items()) or fresh['values'].get('macro_disable')!=result['mask']:
                     raise RuntimeError(_ui_tr('프리셋 또는 매크로 사용 체크의 조회값이 다릅니다.'))
                 result.update(reloaded=fresh,verified=True)
             except Exception as exc:result['notice']=_ui_tr('슬롯 저장 후 상태 확인 필요 · ')+str(exc)

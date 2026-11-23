@@ -160,6 +160,11 @@ int main(){
  control[5]=100;bt_write(control,78);assert(send_fifo.size()==10);
  while(pop_send_fifo(item)){}
  assert(queued_controls==0);
+ for(int i=0;i<8;++i){audio[5]=i;bt_write(audio,398);}
+ const auto before_evict=queue_removals;
+ audio[5]=8;bt_write(audio,398);
+ assert(queue_removals==before_evict+1&&native_queued==8);
+ for(int i=1;i<=8;++i){assert(pop_send_fifo(item)&&item.data[6]==i);}
  puts("PASS: actual bt_write: duplicate lookup without rotation, A-B-A order, retry isolation, short reports, audio eviction and full-queue rejection");
 }
 """)
@@ -755,7 +760,7 @@ uint32_t get_absolute_time(){return now;}uint32_t to_ms_since_boot(uint32_t t){r
 uint16_t bt_control_cid(){return cid;}
 bool bt_control_send(const uint8_t*,uint16_t){return true;}
 bool set_feature_data(uint8_t,uint8_t*,uint16_t){return true;}
-std::vector<uint8_t> get_feature_data(uint8_t,uint16_t){request_count++;return {};}
+uint16_t get_feature_data(uint8_t,uint16_t,uint8_t* = nullptr){request_count++;return 0;}
 """+s+r"""
 int main(){
  dse_on_connect();now=4001;dse_task();

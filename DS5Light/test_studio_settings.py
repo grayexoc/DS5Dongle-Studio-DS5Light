@@ -411,8 +411,8 @@ class RevisionTests(unittest.TestCase):
         self.assertEqual(d.macros['0'],old);self.assertFalse(d.macro_changes)
     def test_reference_and_default_markers(self):
         from studio_help import reference_point
-        self.assertEqual(reference_point('auto_haptics_gain'),(100,'추천'))
-        self.assertEqual(reference_point('auto_haptics_gate'),(16,'추천'))
+        self.assertEqual(reference_point('auto_haptics_gain'),(105,'추천'))
+        self.assertEqual(reference_point('auto_haptics_gate'),(11,'추천'))
         self.assertEqual(reference_point('trigger_reduce'),(0,'기본'))
         for key,f in EDITABLE.items():
             if f[4]=='number' and key!='headset_volume':self.assertIsNotNone(reference_point(key)[0],key)

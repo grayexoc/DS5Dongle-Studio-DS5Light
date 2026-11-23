@@ -14,12 +14,14 @@ MIN_HAPTIC_ENERGY_SHARE = .25
 HAPTIC_GAIN_MIN = 0.5
 HAPTIC_GAIN_MAX = 3.0
 LEGACY_HAPTIC_GAIN_MAX = 4.0
+MIX_FILTER_RECOMMENDED = (.40, .90)
+REPLACE_FILTER_RECOMMENDED = (.50, .95)
 
 @dataclass(frozen=True)
 class Controls:
     mode: str = 'normal'
     bypass: bool = False
-    strength: float = .55
+    strength: float = MIX_FILTER_RECOMMENDED[0]
     background: bool = True
     transient: bool = True
     rear: bool = False
@@ -27,7 +29,7 @@ class Controls:
     limiter: str = 'hard'
     center: bool = False
     gain: float = 1.0
-    impact: float = .85
+    impact: float = MIX_FILTER_RECOMMENDED[1]
 
 def select_stereo(x):
     x = np.asarray(x, dtype=np.float32)
@@ -144,6 +146,10 @@ class Processor:
         if self._envelope_size != n:
             self._fast_alpha = 1-np.exp(-dt/.006)
             self._slow_alpha = 1-np.exp(-dt/self._slow_times)
+            # The background smoothing coefficients also depend only on block length.
+            self._bg_rise_start = 1-np.exp(-dt/.045)
+            self._bg_rise_normal = 1-np.exp(-dt/1.8)
+            self._bg_fall = 1-np.exp(-dt/.22)
             self._envelope_size = n
         fast_a, slow_a = self._fast_alpha, self._slow_alpha
         self.sustained_balance = 0.0
@@ -215,9 +221,10 @@ class Processor:
         self.learn_pause[new_event] = .080
         self.event_cooldown[new_event] = .25
         self.was_event = event.copy()
-        rise_time=.045 if self.age<.20 else 1.8
-        alpha = 1-np.exp(-dt/np.where(self.slow_energy>self.bg,rise_time,.22))
-        alpha = np.where((self.learn_pause>0)&(self.slow_energy>self.bg),0.,alpha)
+        rising = self.slow_energy > self.bg
+        rise_alpha = self._bg_rise_start if self.age < .20 else self._bg_rise_normal
+        alpha = np.where(rising, rise_alpha, self._bg_fall)
+        alpha[(self.learn_pause > 0) & rising] = 0.
         # Learn valleys without letting an impact tail raise the background floor.
         learning_energy = np.minimum(self.slow_energy, self.fast_energy) if self._impact > 0 else self.slow_energy
         self.bg += alpha*(learning_energy-self.bg)
@@ -237,8 +244,9 @@ class Processor:
         protection *= self._impact
         # A real energy valley ends protection; sustained effects keep their decay.
         gap = (self.fast_energy < self.slow_energy*.5) & (self._impact > 0)
-        self.hold[gap] = 0.
-        protection[gap] *= np.clip(self.fast_energy[gap] / np.maximum(self.slow_energy[gap]*.5, floor[gap]), 0, 1)
+        if gap.any():
+            self.hold[gap] = 0.
+            protection[gap] *= np.clip(self.fast_energy[gap] / np.maximum(self.slow_energy[gap]*.5, floor[gap]), 0, 1)
         low = slice(0, HAPTIC_BAND_COUNT)
         # Keep spill from the crossover from opening impact protection.
         low_band_hit = protect_hits and energy[low].sum() >= energy.sum() * MIN_HAPTIC_ENERGY_SHARE

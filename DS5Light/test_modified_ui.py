@@ -439,7 +439,17 @@ class ModifiedUITests(unittest.TestCase):
         gain_card=app.gain_frame.master
         filter_card=app.impact_slider.master.master.master.master
         self.assertEqual(app.scale.master.winfo_height(),app.impact_slider.master.winfo_height())
-        self.assertEqual(tuple(point for point,_ in app.scale.ticks),(30,55,80))
+        self.assertEqual(tuple(point for point,_ in app.scale.ticks),(40,50))
+        for slider in (app.scale,app.impact_slider):
+            slider.draw()
+            captions=[slider.bbox(item) for item in slider.find_all() if slider.type(item)=='text']
+            self.assertEqual(len(captions),2)
+            first,second=captions
+            self.assertLessEqual(first[2],second[0])
+            for left,top,right,bottom in captions:
+                self.assertGreaterEqual(left,0)
+                self.assertLessEqual(right,slider.winfo_width())
+                self.assertLessEqual(bottom,slider.winfo_height())
         self.assertEqual(gain_card.winfo_rooty()+gain_card.winfo_height(),
                          filter_card.winfo_rooty()+filter_card.winfo_height())
         for scope in ('device','process'):

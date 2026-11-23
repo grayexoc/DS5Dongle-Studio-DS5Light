@@ -12,11 +12,10 @@ from test_studio_recommended import Client
 
 
 class ScopeTests(unittest.TestCase):
-    def test_preset_allowlist_preserves_the_user_highpass_setting(self):
+    def test_preset_allowlist_includes_the_highpass_setting(self):
         section=next(s for s in SECTIONS if s['title']=='Auto-Haptics & Speaker Effect Leak')
         visible={f[1] for f in section['fields'] if f[1] in EDITABLE}
-        self.assertEqual(visible-AUDIO_HAPTIC_FIELDS,{'ah_highpass'})
-        self.assertFalse(AUDIO_HAPTIC_FIELDS-visible)
+        self.assertEqual(visible,AUDIO_HAPTIC_FIELDS)
     def test_all_three_files_preserve_every_non_audio_live_field(self):
         for filename,_,_ in PRESETS:
             with self.subTest(filename=filename):
@@ -43,6 +42,12 @@ class RecentUITests(unittest.TestCase):
     setUp=fixture.NativeUITests.setUp
     tearDown=fixture.NativeUITests.tearDown
     editor=fixture.NativeUITests.editor
+
+    def test_app_filter_defaults_and_recommendation_marks_match_mix(self):
+        self.assertEqual((self.ui.strength.get(),self.ui.impact.get(),self.ui.gain.get()),(40,90,100))
+        for slider,mix,replacement in ((self.ui.scale,40,50),(self.ui.impact_slider,90,95)):
+            self.assertEqual(slider.reference,mix)
+            self.assertEqual(slider.ticks,((mix,'믹스'),(replacement,'대체')))
 
     def walk(self,widget):
         for child in widget.winfo_children():

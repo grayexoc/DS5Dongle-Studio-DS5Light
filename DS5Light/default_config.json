@@ -1,7 +1,7 @@
 {
   "mode": "normal",
   "bypass": false,
-  "strength": 0.55,
+  "strength": 0.4,
   "background": true,
   "transient": true,
   "limiter": "hard",
@@ -9,5 +9,5 @@
   "rear": true,
   "lfe": true,
   "gain": 1.0,
-  "impact": 0.85
+  "impact": 0.9
 }

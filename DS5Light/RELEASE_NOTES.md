@@ -1,3 +1,25 @@
+# v1.2.2
+
+### English
+
+**For audio haptics, we strongly recommend applying the updated recommended preset as your starting configuration, including if you used the previous version.** In Studio profile slot settings, apply Mix or Replace. Turn on the PC filter, set intensity to 1× and use the matching slider marks.
+
+- Mix combines front-channel audio haptics with game rumble. Start with 40% background reduction and 90% impact preservation. Replace uses front-channel audio haptics alone. Start with 50% and 95%, respectively.
+- Updated the bundled Studio profiles, added Mix and Replace markers to the filter sliders, and improved English labels and spacing. The presets apply the haptic high-pass setting on supported firmware.
+- Reduced repeated filter calculations in the app and firmware, eliminated temporary allocations when reading cached USB HID reports, and reduced packet copying when the oldest Bluetooth audio packet must be discarded.
+
+Windows and game volume both affect haptic strength. The recommendations assume other settings are at their defaults.
+
+### 한국어
+
+**오디오햅틱을 사용할 때는 변경된 추천 프리셋을 기본 설정으로 적용할 것을 강력히 권장합니다. 이전 버전의 프리셋을 사용 중인 경우에도 새 프리셋을 다시 적용해 주세요.** Studio의 프로필 슬롯 설정에서 믹스 또는 대체를 적용한 뒤, PC 필터를 켜고 세기를 1배로 설정하고 슬라이더를 해당 모드의 눈금에 맞춰 주세요.
+
+- 믹스는 전방 채널에서 만든 오디오햅틱에 게임의 일반 진동을 섞습니다. 배경 억제 40%, 충격 보존 90%를 권장합니다. 전방 오디오햅틱만 출력하는 대체 모드는 배경 억제 50%, 충격 보존 95%를 권장합니다.
+- 동봉 Studio 프로필을 갱신하고 앱 필터 슬라이더에 믹스·대체 권장 위치를 표시했습니다. 영문 탭과 눈금의 글자 간격을 다듬었으며, 지원 펌웨어에서는 프리셋 적용 시 극저음 차단 설정도 반영됩니다.
+- 앱과 펌웨어의 필터 반복 연산을 줄였습니다. 캐시된 USB HID 응답의 임시 메모리 할당을 없애고, Bluetooth 혼잡 시 맨 앞의 오디오 패킷을 폐기하는 데 필요한 복사를 줄였습니다.
+
+햅틱 세기는 Windows 볼륨과 게임 볼륨 모두의 영향을 받습니다. 권장값은 그 밖의 설정이 기본값인 경우를 기준으로 합니다.
+
 # v1.2.1
 
 The Windows x64 package `DS5Light-win-x64-v1.2.1.zip` pairs with Studio v52 for Raspberry Pi Pico 2 W. Use the app and firmware from this release together.

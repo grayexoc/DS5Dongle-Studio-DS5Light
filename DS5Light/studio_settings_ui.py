@@ -614,7 +614,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         title.grid(row=0, column=0, sticky='w')
         variable = tk.StringVar(value='' if value is None else str(value))
         self.vars[key] = variable
-        labels = (ui_text('끔', 'Off'), '15 Hz', '25 Hz')
+        labels = (ui_text('끔', 'Off'), '15 Hz', ui_text('추천25 Hz', 'REC. 25 Hz'))
         slider = RangeSlider(box, variable, 0, 2, enabled=valid and not self.busy, tick_labels=labels)
         slider.grid(row=1, column=0, sticky='ew', pady=(4, 0))
         self.field_views[key] = (title, [slider], [])

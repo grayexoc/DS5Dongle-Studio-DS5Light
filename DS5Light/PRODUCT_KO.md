@@ -40,13 +40,13 @@
 ## 다운로드와 실행
 
 
-**DS5Light v1.2.1 · Studio 펌웨어 v52 호환**
+**DS5Light v1.2.2 · Studio 펌웨어 v53 호환**
 
-[v1.2.1](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.2.1)에서 `DS5Light-win-x64-v1.2.1.zip` 전체를 풀고 `DS5Light.exe`를 실행하세요. `_internal` 폴더를 함께 유지해야 하며 Python 설치는 필요하지 않습니다. Pico 2 W용 펌웨어는 별도 파일 `ds5-studio-light_v52.uf2`입니다.
+[v1.2.2](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.2.2)에서 `DS5Light-win-x64-v1.2.2.zip` 전체를 풀고 `DS5Light.exe`를 실행하세요. `_internal` 폴더를 함께 유지해야 하며 Python 설치는 필요하지 않습니다. Pico 2 W용 펌웨어는 별도 파일 `ds5-studio-light_v53.uf2`입니다.
 
 앱의 **Studio 설정 → 프로필 슬롯 → 추천 프리셋 → 저장 후 사용**을 이용하세요. 파일은 `Studio Presert/DS_Native.json`, `Studio Presert/Audio_Haptic_01.json`, `Studio Presert/Audio_Haptic_02.json`입니다. 현재 오디오햅틱 항목만 바꾸고 다른 현재 설정을 유지한 구성을 선택한 슬롯에 저장합니다. 동글 오디오 전송을 멈추고 대상 슬롯을 백업한 뒤 적용하세요. 기존 슬롯은 자동으로 갱신되지 않습니다.
 
-새 설정의 기본값은 PC 필터 켬·균형·억제량 55%·타격 보존 85%·세기 1x(100%)이며, 기존 저장 설정이 우선합니다. 채널은 자동이 기본이고 스테레오·5.1·7.1 수동 선택도 가능합니다. 캡처 형식이 게임 내부 오디오 설정을 확정하는 것은 아닙니다.
+새 설정의 기본값은 PC 필터 켬·균형·억제량 40%·타격 보존 90%·세기 1x(100%)이며, 기존 저장 설정이 우선합니다. 채널은 자동이 기본이고 스테레오·5.1·7.1 수동 선택도 가능합니다. 캡처 형식이 게임 내부 오디오 설정을 확정하는 것은 아닙니다.
 
 오디오햅틱 개선 확인은 동봉 Mix·대체 추천 프리셋을 기준으로 합니다. 두 프리셋 모두 Front 입력을 사용하며 Mix는 게임의 Rear 네이티브 햅틱 원본도 혼합합니다. 체감은 Windows 및 게임·앱 음량에 영향을 받고 별도 안내가 없는 기타 설정은 기본값 기준입니다. 공유 출력에서 스피커 자동 음소거가 확인되지 않으면 앱 배율은 1x를 유지하므로 Studio의 오디오햅틱 세기로 조절하세요.
 

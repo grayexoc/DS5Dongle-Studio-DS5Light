@@ -35,7 +35,8 @@ from dataclasses import asdict, replace
 
 from audio import Engine, InstanceLock, devices
 
-from core import Controls, HAPTIC_GAIN_MIN, HAPTIC_GAIN_MAX, load_signal_filters
+from core import (Controls, HAPTIC_GAIN_MIN, HAPTIC_GAIN_MAX, MIX_FILTER_RECOMMENDED,
+                  REPLACE_FILTER_RECOMMENDED, load_signal_filters)
 from channel_policy import candidates as capture_candidates
 from app_version import APP_VERSION
 
@@ -275,6 +276,10 @@ class TabStrip(tk.Canvas):
 
                 self.label_tracking[i]=(label_room-text_width)/max(1,len(label)-1)
 
+        if LANGUAGE=='en' and len(self.labels)>=2:
+            shared_width=max(self.tab_widths[:2])
+            self.tab_widths[:2]=[shared_width,shared_width]
+
         self.tab_width=self.tab_widths[-1]
 
         self.configure(height=px(self,44),width=sum(self.tab_widths)+px(self,8)*(len(self.labels)-1))
@@ -406,7 +411,7 @@ class HapticSlider(tk.Canvas):
     def __init__(self,parent,variable,command,maximum=100,reference=None,background=CARD,width=200,*,minimum=0,step=None,ticks=()):
 
         self.ticks = ticks
-        self._logical_height = 36 if reference is not None or ticks else 24
+        self._logical_height = 42 if ticks else 36 if reference is not None else 24
         super().__init__(parent,width=px(parent,width),height=px(parent,self._logical_height),bg=background,highlightthickness=0,borderwidth=0,takefocus=1,cursor='hand2')
 
         self.variable=variable; self.command=command; self.enabled=True
@@ -495,10 +500,19 @@ class HapticSlider(tk.Canvas):
         self.create_oval(knob-px(self,2),y-px(self,2),knob+px(self,2),y+px(self,2),fill=edge,outline=edge)
 
         if self.ticks:
+            previous_end = 0
+            remaining_width = sum(self.label_font.measure(label) + px(self,4) for _,label in self.ticks)
             for point, label in self.ticks:
                 x=left+(right-left)*(point-self.minimum)/span
-                self.create_line(x,px(self,19),x,px(self,23),fill=MUTED)
-                self.create_text(x,px(self,23),text=label,anchor='n',fill=MUTED,font=self.label_font)
+                color=ACCENT if self.enabled and point==self.reference else MUTED
+                radius=px(self,1)
+                dot_y=px(self,21)
+                self.create_oval(x-radius,dot_y-radius,x+radius,dot_y+radius,fill=color,outline='')
+                label_width=self.label_font.measure(label)
+                label_left=max(previous_end,min(x-label_width/2,width-remaining_width))
+                self.create_text(label_left,px(self,24),text=label,anchor='nw',fill=color,font=self.label_font)
+                previous_end=label_left+label_width+px(self,4)
+                remaining_width-=label_width+px(self,4)
         elif self.step is not None:
             for index,point in enumerate(range(self.minimum,self.maximum+1,self.step),start=1):
                 x=left+(right-left)*(point-self.minimum)/span
@@ -858,7 +872,7 @@ class App:
 
         self.studio_settings=StudioSettings(self,self.studio_page)
 
-        self.tabs=TabStrip(tab_area,[_ui_tr('오디오햅틱'),_ui_tr('설정·진단'),_ui_tr('Studio 설정')],self.select_tab)
+        self.tabs=TabStrip(tab_area,[_ui_tr('오디오햅틱'),ui_text('설정·진단','Settings.Diag'),_ui_tr('Studio 설정')],self.select_tab)
         tab_offset=px(tab_area,10)
         self.tabs.grid(row=0,column=0,sticky='ew',pady=(tab_offset,max(0,16-tab_offset)))
 
@@ -1040,8 +1054,12 @@ class App:
 
             value=ttk.Label(row);value.pack(side='right')
 
-            ticks=((30,_ui_tr('약하게')),(55,_ui_tr('표준')),(80,_ui_tr('강하게'))) if key=='strength' else ()
-            slider=HapticSlider(group,var,lambda: self.update_controls(slider=True),ticks=ticks);slider.pack(fill='x')
+            setting = 0 if key=='strength' else 1
+            mix_value = round(100*MIX_FILTER_RECOMMENDED[setting])
+            replace_value = round(100*REPLACE_FILTER_RECOMMENDED[setting])
+            ticks=((mix_value,ui_text('믹스','Mix')),
+                   (replace_value,ui_text('대체','Replace')))
+            slider=HapticSlider(group,var,lambda: self.update_controls(slider=True),reference=mix_value,ticks=ticks);slider.pack(fill='x')
 
             if key=='strength':self.scale=slider;self.value_label=value
 

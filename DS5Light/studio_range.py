@@ -3,6 +3,7 @@ from studio_i18n import text as _ui_tr
 import tkinter as tk
 from studio_scope import trigger_display,trigger_raw
 from ui_dpi import px,watch_scale
+from localization import LANGUAGE
 
 class RangeSlider(tk.Canvas):
     def __init__(self,parent,variable,low,high,enabled=True,marker=None,marker_label='',trigger=False,allowed=None,display_scale=1,reset_to_marker=False,tick_labels=None,**kw):
@@ -36,6 +37,9 @@ class RangeSlider(tk.Canvas):
         x=left+max(0,min(1,(value-lo)/(hi-lo)))*(right-left)
         self.create_line(left,px(self,16),x,px(self,16),fill=color,width=px(self,5))
         marker = self.display(self.marker) if self.marker is not None else None
+        marker_caption = self.marker_label
+        if LANGUAGE == 'en':
+            marker_caption = {_ui_tr('추천'): 'REC. ', _ui_tr('기본'): 'DEF. '}.get(marker_caption, marker_caption)
         label_y = px(self,37)
         label_font = (_ui_tr('맑은 고딕'),8)
         labels = self.tick_labels or (f'{lo:g}', f'{hi:g}')
@@ -46,7 +50,7 @@ class RangeSlider(tk.Canvas):
             endpoint_marker = marker is not None and not self.tick_labels and (
                 (fraction == 0 and marker == lo) or (fraction == 1 and marker == hi))
             item = self.create_text(left + fraction * (right - left), label_y,
-                                    text=f'{self.marker_label}{label}' if endpoint_marker else label,
+                                    text=f'{marker_caption}{label}' if endpoint_marker else label,
                                     anchor=anchor, fill=color if endpoint_marker and self.reset_to_marker else '#aaa393',
                                     font=label_font, tags='default_marker' if endpoint_marker else ())
             ticks.append(item)
@@ -57,7 +61,7 @@ class RangeSlider(tk.Canvas):
             self.create_oval(mx-radius,dot_y-radius,mx+radius,dot_y+radius,
                              fill='#aaa393',outline='',tags='reference_dot')
             if not self.find_withtag('default_marker'):
-                item = self.create_text(mx,label_y,text=f'{self.marker_label}{marker:g}',
+                item = self.create_text(mx,label_y,text=f'{marker_caption}{marker:g}',
                                         fill=color if self.reset_to_marker else '#aaa393',
                                         font=label_font,tags='default_marker')
                 start, _, end, _ = self.bbox(item)

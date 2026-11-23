@@ -89,7 +89,7 @@ class PresentationTests(unittest.TestCase):
         for slider in sliders:
             slider.draw();texts=[slider.itemcget(i,'text') for i in slider.find_all() if slider.type(i)=='text']
             if slider is e.field_views['ah_highpass'][1][0]:
-                self.assertEqual(texts,['끔','15 Hz','25 Hz'])
+                self.assertEqual(texts,['끔','15 Hz','추천25 Hz'])
                 continue
             low,high=slider.limits()
             marker = slider.display(slider.marker) if slider.marker is not None else None

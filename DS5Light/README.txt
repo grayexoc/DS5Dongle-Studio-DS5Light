@@ -1,5 +1,5 @@
-DS5Light v1.2.1 — Studio
-Combined release v1.2.1 / DS5Light v1.2.1 / Studio firmware v52 (Pico 2 W).
+DS5Light v1.2.2 — Studio
+Combined release v1.2.2 / DS5Light v1.2.2 / Studio firmware v53 (Pico 2 W).
 SETUP.md · RELEASE_NOTES.md
 
 Run
@@ -25,7 +25,7 @@ Without a saved profile selected, the Load button queries the available profiles
 In Studio settings → Profile slots → Recommended presets, review Mix or Replace, choose a save slot, then Save and use. Stop dongle audio and back up the destination slot first. Existing slots are not upgraded automatically.
 Studio Presert contains DS_Native.json, Audio_Haptic_01.json and Audio_Haptic_02.json.
 Only audio-haptics fields in the current configuration change; current triggers, gyro and macros remain. The resulting current configuration replaces the chosen slot, including its other settings.
-Use these presets as the comparison reference, with the app filter on, background reduction 55% and app strength 1x (100%). Both use Front input; Mix also combines raw rear native haptics. Perceived response depends on Windows and game/application volume; other settings assume defaults unless specified.
+Use these presets as the comparison reference, with the app filter on, background reduction / impact preservation of 40% / 90% for Mix or 50% / 95% for Replace and app strength 1x (100%). Both use Front input; Mix also combines raw rear native haptics. Perceived response depends on Windows and game/application volume; other settings assume defaults unless specified.
 
 Microphone button keyboard mapping
 Enable the feature under Devices & launch and select Set keys. The default is disabled / F8.

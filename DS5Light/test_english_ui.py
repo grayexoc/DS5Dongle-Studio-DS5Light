@@ -36,6 +36,25 @@ class EnglishUI(unittest.TestCase):
  def test_help_and_catalog(self):
   for key in EDITABLE:self.assertFalse(kr.search(help_text(key)),key)
   for source in EN:self.assertFalse(kr.search(text(source)),source)
+ def test_settings_tab_matches_audio_haptics_tab_at_minimum_size(self):
+  self.root.tk.call('tk','scaling',120/72)
+  width,height=self.root.minsize()
+  self.root.geometry(f'{width}x{height}')
+  self.root.deiconify()
+  self.root.update()
+  tabs=self.ui.tabs
+  tabs._scale_tabs()
+  self.assertEqual(tabs.labels[1],'Settings.Diag')
+  sizes=[]
+  for index in (0,1):
+   items=tabs.find_withtag(f'tab-{index}')
+   left,top,right,bottom=tabs.coords(items[0])
+   sizes.append((right-left,bottom-top))
+   label=next(item for item in items if tabs.type(item)=='text')
+   x1,y1,x2,y2=tabs.bbox(label)
+   self.assertTrue(left<=x1<x2<=right and top<=y1<y2<=bottom,
+                   (index,(left,top,right,bottom),(x1,y1,x2,y2),tabs.itemcget(label,'text')))
+  self.assertEqual(*sizes)
  def test_haptic_highpass_labels_fit_at_minimum_size(self):
   self.root.tk.call('tk', 'scaling', 120/72)
   width,height=self.root.minsize()
@@ -49,11 +68,39 @@ class EnglishUI(unittest.TestCase):
   slider=controls[0]
   self.assertTrue(slider.winfo_viewable())
   labels=[item for item in slider.find_all() if slider.type(item)=='text']
-  self.assertEqual([slider.itemcget(item,'text') for item in labels],['Off','15 Hz','25 Hz'])
+  self.assertEqual([slider.itemcget(item,'text') for item in labels],['Off','15 Hz','REC. 25 Hz'])
   for item in labels:
    left,_,right,_=slider.bbox(item)
    self.assertGreaterEqual(left,0)
    self.assertLessEqual(right,slider.winfo_width())
+
+ def test_slider_markers_and_macro_activation_at_minimum_size(self):
+  import tkinter as tk
+  from tkinter import font
+  from studio_range import RangeSlider
+  self.root.tk.call('tk', 'scaling', 120/72)
+  width,height=self.root.minsize()
+  self.root.geometry(f'{width}x{height}')
+  slider=RangeSlider(self.root,tk.StringVar(value='25'),0,100,marker=25,marker_label=text('추천'))
+  slider.draw()
+  self.assertEqual(slider.itemcget('default_marker','text'),'REC. 25')
+  slider.marker=0;slider.marker_label=text('기본');slider.draw()
+  self.assertEqual(slider.itemcget('default_marker','text'),'DEF. 0')
+  slider.destroy()
+  ui=self.editor()
+  ui.select_category(4)
+  self.root.deiconify()
+  self.root.update()
+  candidates=[ui.parent]
+  for widget in candidates:
+   candidates.extend(widget.winfo_children())
+  note=next(w for w in candidates if isinstance(w,tk.Label) and 'Activation checkboxes' in w.cget('text'))
+  self.assertTrue(note.winfo_viewable())
+  mapping,activation=note.cget('text').split('\n')
+  self.assertEqual(activation,'Activation checkboxes are saved per profile.')
+  measure=font.Font(root=self.root,font=note.cget('font')).measure
+  self.assertLessEqual(max(measure(mapping),measure(activation)),
+                       min(note.winfo_width(),int(note.cget('wraplength'))))
 
 class TemplateTests(unittest.TestCase):
  def test_arguments_preserved(self):

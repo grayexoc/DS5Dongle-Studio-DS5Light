@@ -2,6 +2,7 @@
 // Created by awalol on 2026/3/4.
 //
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include "bt.h"
@@ -1185,7 +1186,13 @@ void __not_in_flash_func(bt_write)(const uint8_t *data, const uint16_t len) {
         static send_element retained;
         for (uint i = 0; i < count; ++i) {
             if (!queue_try_remove(&send_fifo, &retained)) break;
-            if (!removed && retained.data[1] == 0x36) { removed = true; if (retained.native_audio) --native_queued; ++g_audio_transport_stats.overflow; continue; }
+            if (!removed && retained.data[1] == 0x36) {
+                removed = true;
+                if (retained.native_audio) --native_queued;
+                ++g_audio_transport_stats.overflow;
+                if (i == 0) break;  // No preceding packets were rotated.
+                continue;
+            }
             queue_try_add(&send_fifo, &retained);
         }
         if (!removed && data[0] == 0x36) { ++g_audio_transport_stats.overflow; return; }
@@ -1221,12 +1228,14 @@ void __not_in_flash_func(bt_write)(const uint8_t *data, const uint16_t len) {
     }
 }
 
-vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
-    // 若为0x81则会请求新内容，其他若有旧数据则不进行请求
-    auto ret = vector<uint8_t>{};
-    const bool has_cached_report = feature_data.contains(reportId);
-    if (has_cached_report) {
-        ret = feature_data[reportId];
+uint16_t get_feature_data(uint8_t reportId, uint16_t len, uint8_t *buffer) {
+    const auto report = feature_data.find(reportId);
+    const bool has_cached_report = report != feature_data.end();
+    uint16_t copied = 0;
+    if (buffer && len && has_cached_report && report->second.size() > 1) {
+        const auto &bytes = report->second;
+        copied = std::min<size_t>(len, bytes.size() - 1);
+        memcpy(buffer, bytes.data() + 1, copied);
     }
     if (!has_cached_report ||
         // Get Test Command Result
@@ -1247,7 +1256,7 @@ vector<uint8_t> get_feature_data(uint8_t reportId, uint16_t len) {
 #endif
         }
     }
-    return ret;
+    return copied;
 }
 
 bool set_feature_data(uint8_t reportId, uint8_t *data, uint16_t len) {

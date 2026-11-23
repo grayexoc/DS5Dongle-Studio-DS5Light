@@ -3,7 +3,7 @@ import copy,unittest,tkinter as tk
 from unittest.mock import patch
 import test_studio_settings as fixture
 from studio_slots import Slot
-from studio_recommended import PRESETS,AUDIO_HAPTIC_FIELDS,load_preset,save_and_activate
+from studio_recommended import PRESETS,AUDIO_HAPTIC_FIELDS,REQUIRED_HAPTIC_FIELDS,load_preset,save_and_activate
 
 
 class Client:
@@ -42,16 +42,28 @@ class RecommendedTests(unittest.TestCase):
         a=profiles['Audio_Haptic_01.json'];b=profiles['Audio_Haptic_02.json']
         self.assertEqual((a[0],b[0]),('Audio Haptic Mix','Haptic Replace'))
         self.assertEqual((a[1]['auto_haptics_enable'],b[1]['auto_haptics_enable']),(1,2))
-        self.assertEqual((a[1]['mix_native_level'],a[1]['mix_native_filter']),(100,0))
-        for _,fields in (a,b):
-            self.assertEqual((fields['auto_haptics_gain'],fields['auto_haptics_gate'],fields['auto_haptics_smooth']),
-                             (100,16,15))
+        self.assertEqual(a[1]['rumble_haptic_strength'],45)
+        for (_,fields), expected in zip((a,b),((105,11,145),(115,10,165))):
+            self.assertEqual((fields['auto_haptics_gain'],fields['auto_haptics_gate'],fields['auto_haptics_lowpass_hz']),expected)
+            self.assertEqual((fields['auto_haptics_smooth'],fields['ah_xover_hz'],fields['mix_native_level'],
+                              fields['ah_dsp_source'],fields['ah_highpass']), (22,0,0,0,2))
+            self.assertEqual(set(fields),AUDIO_HAPTIC_FIELDS)
         self.assertNotIn('lightbar_fixed',b[1])
         self.assertNotIn('audio_buffer_length',b[1])
-        self.assertEqual((a[1]['ah_xover_hz'],b[1]['ah_xover_hz']),(55,50))
-        for _,fields in (a,b):
-            self.assertEqual((fields['auto_haptics_lowpass_hz'],fields['ah_high_gain']),(120,45))
-        for _,fields in profiles.values():self.assertEqual(set(fields),AUDIO_HAPTIC_FIELDS)
+        self.assertEqual(set(profiles['DS_Native.json'][1]),REQUIRED_HAPTIC_FIELDS)
+
+    def test_highpass_is_saved_on_supported_device_only(self):
+        for supported in (False,True):
+            with self.subTest(supported=supported):
+                client=Client()
+                name,fields=load_preset('Audio_Haptic_01.json')
+                client.values.update({k:v for k,v in fields.items() if k!='ah_highpass'})
+                if supported:client.values['ah_highpass']=0
+                baseline=dict(client.values)
+                result=save_and_activate(client,fields,name,2,('empty',''),dict(client.stamp),
+                                         baseline,lambda _:None)
+                self.assertEqual('ah_highpass' in result['expected'],supported)
+                self.assertEqual(client.saved_values.get('ah_highpass'),2 if supported else None)
     def test_save_activate_once_and_preserve_mask(self):
         client=Client();mask=client.values['macro_disable'];result=self.run_transaction(client)
         self.assertEqual(client.values['macro_disable'],mask)

@@ -3,7 +3,7 @@ from studio_i18n import text as _ui_tr
 import json
 import math
 from pathlib import Path
-from core import LEGACY_HAPTIC_GAIN_MAX
+from core import Controls, LEGACY_HAPTIC_GAIN_MAX
 from file_write import replace_text
 
 SLOT_COUNT = 12
@@ -39,7 +39,7 @@ def validate(value):
     gain=c.get('gain',1.0)
     if type(gain) not in (int,float) or not math.isfinite(gain) or not 0<=gain<=LEGACY_HAPTIC_GAIN_MAX:
         raise ValueError(_ui_tr('진동 세기 범위 오류'))
-    impact=c.get('impact',.85)
+    impact=c.get('impact',Controls.impact)
     if type(impact) not in (int,float) or not math.isfinite(impact) or not 0<=impact<=1:
         raise ValueError(_ui_tr('충격 보존 범위 오류'))
     if 'experimental_ai' in c:

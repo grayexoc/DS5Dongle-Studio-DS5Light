@@ -5,9 +5,9 @@
 ## Package and firmware
 
 
-Use the complete `DS5Light-win-x64-v1.2.1.zip` package on Windows 10/11 x64. Extract it into a writable folder, keep `_internal` beside `DS5Light.exe`, and run the executable. Python is not required for the packaged app.
+Use the complete `DS5Light-win-x64-v1.2.2.zip` package on Windows 10/11 x64. Extract it into a writable folder, keep `_internal` beside `DS5Light.exe`, and run the executable. Python is not required for the packaged app.
 
-This app build is v1.2.1 and supports Studio firmware v52. Firmware is a separate release attachment: `ds5-studio-light_v52.uf2`. That attachment is for Raspberry Pi Pico 2 W; it is not for RP2040 Pico W or Waveshare boards. The app does not flash firmware automatically.
+This app build is v1.2.2 and supports Studio firmware v53. Firmware is a separate release attachment: `ds5-studio-light_v53.uf2`. That attachment is for Raspberry Pi Pico 2 W; it is not for RP2040 Pico W or Waveshare boards. The app does not flash firmware automatically.
 
 Back up current settings and slots before changing firmware or saving profiles. This fork's additional settings and diagnostics require corresponding firmware support. An existing compatible Studio installation may support basic audio forwarding without all of these additions. A flash_nuke reset is not part of the routine setup.
 
@@ -36,7 +36,7 @@ Recommended presets change only the allowed **audio-haptics fields of the curren
 
 1. Keep the original game audio on your usual speakers/headphones.
 2. In **Audio haptics**, select whole-device or selected-game capture. For a game, start it, refresh the process list and select its actual executable. Select the intended dongle output in the connection controls.
-3. New preferences default to **PC suppression filter on**, **Balanced**, 55% suppression, 85% impact preservation, 100% gain and automatic channel selection. Existing saved preferences take precedence; check the controls before starting.
+3. New preferences default to **PC suppression filter on**, **Balanced**, 40% suppression, 90% impact preservation, 100% gain and automatic channel selection. Existing saved preferences take precedence; check the controls before starting.
 4. Start processing. Adjust suppression, impact preservation and gain separately. The filter does not fully separate music, dialogue and effects.
 5. Store useful settings in one of the 12 PC game presets. PC presets and dongle profile slots are separate: saving or loading PC settings does not itself activate a dongle slot.
 

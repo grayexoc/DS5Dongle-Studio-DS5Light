@@ -483,7 +483,11 @@ DESCRIPTIONS.update({
 DEFAULTS.update({'rumble_gain':100,'rumble_release':0,'rumble_haptic_strength':100,
                  'at_strength':70,'at_strength_b':70,'at_pushback':0,'at_pushback_freq':35,
                  'mix_native_filter':1,'mix_native_level':0,'haptics_gain':1.0})
-REFERENCE['rumble_haptic_strength'] = 100
+REFERENCE.update(auto_haptics_gain=105, auto_haptics_smooth=22, auto_haptics_gate=11,
+                 auto_haptics_lowpass_hz=145, ah_xover_hz=0, mix_native_level=0,
+                 rumble_haptic_strength=45)
+for key in ('ah_low_gain','ah_high_gain'):
+    REFERENCE.pop(key,None)
 REFERENCE['disable_mic'] = 1
 
 

@@ -123,11 +123,11 @@ constexpr uint32_t kControlRetryMs=40;
 int control_fifo=0, power_offs=0, usb_queries=0;
 bool queue_is_full(int*){return control_full;}
 void bt_power_off_controller(){++power_offs;}
-std::vector<uint8_t> get_feature_data(uint8_t id,uint16_t){
- ++usb_queries;
- const auto report=feature_data.find(id);
- return report==feature_data.end()?std::vector<uint8_t>{}:report->second;
-}
+uint16_t hid_control_cid=1;
+bool dse_is_profile_report(uint8_t id);
+bool bt_control_send(const uint8_t* data,uint16_t len){assert(len==2&&data[0]==0x43);++usb_queries;return true;}
+uint16_t get_feature_data(uint8_t,uint16_t,uint8_t* = nullptr);
+'''+bt[bt.index('uint16_t get_feature_data('):bt.index('\nbool set_feature_data(')] +r'''
 int edge_unlocks=0,sleep_acks=0;
 void dse_on_connect(){++edge_unlocks;}
 bool dse_is_profile_report(uint8_t id){return id>=0x70&&id<=0x7b;}
@@ -251,7 +251,7 @@ int main() {
  pico_portal_reply={0x66,0x04,0x01};
  receive_control(native,sizeof(native));
  const int prior_queries=usb_queries;
- assert(get_feature_data(0x81,63)[1]==0xaa); // Edge's internal poll
+ assert(get_feature_data(0x81,63,usb_reply)==1&&usb_reply[0]==0xaa); // Edge's internal poll
  assert(tud_hid_get_report_cb(0,0x81,3,usb_reply,63)==3&&usb_reply[0]==0x66);
  assert(usb_queries==prior_queries+1); // the local read doesn't poll Bluetooth
  assert(tud_hid_get_report_cb(0,0x81,3,usb_reply,63)==1&&usb_reply[0]==0xaa);

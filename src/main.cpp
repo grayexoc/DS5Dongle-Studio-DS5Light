@@ -1319,14 +1319,7 @@ uint16_t tud_hid_get_report_cb(uint8_t itf, uint8_t report_id, hid_report_type_t
         return 0;
     }
 
-    std::vector<uint8_t> feature_data = get_feature_data(report_id, reqlen);
-    if (!feature_data.empty()) {
-        const uint16_t n = (uint16_t)(((feature_data.size() - 1) < reqlen) ? (feature_data.size() - 1) : reqlen);
-        memcpy(buffer, feature_data.data() + 1, n);
-        return n;
-    }
-
-    return 0;
+    return get_feature_data(report_id, reqlen, buffer);
 }
 
 bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_request) {
