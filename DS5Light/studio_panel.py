@@ -444,8 +444,10 @@ class StudioPanel(StartupDiscovery):
             self.observed_profile.update({key:profile[key] for key in ('mix_native_level','ah_dsp_source') if key in profile})
         elif profile['auto_haptics_enable']==2 and 'ah_dsp_source' in profile:
             self.observed_profile['ah_dsp_source']=profile['ah_dsp_source']
+        self.observed_profile.update({key: profile[key] for key in ('auto_mute_mix', 'auto_mute_replace') if key in profile})
         if getattr(self.app,'engine',None):
             self.app.engine.front_only=self.legacy_output_front_only()
+            self.app.engine.allow_shared_gain=self.shared_gain_allowed()
 
         if old is not None and old!=self.observed_profile:self.catalog_invalid=True
 
@@ -504,6 +506,12 @@ class StudioPanel(StartupDiscovery):
     def rear_control_required(self):
         profile = self.observed_profile or {}
         return profile.get('auto_haptics_enable') == 2 and profile.get('ah_dsp_source') == 1
+
+    def shared_gain_allowed(self):
+        profile = self.observed_profile or {}
+        mode = profile.get('auto_haptics_enable')
+        field = {1: 'auto_mute_mix', 2: 'auto_mute_replace'}.get(mode)
+        return bool(field and profile.get(field) == 1)
 
     def legacy_output_front_only(self):
         return self.native_mix_front_only()

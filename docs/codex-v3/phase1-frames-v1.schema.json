@@ -41,24 +41,6 @@
     {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind","version","stream_generation","profile_revision","sequence","feature_schema_id","inference_epoch","sample_index","model_id","probabilities","valid"],
-      "properties": {
-        "kind": {"const":"inference_result"},
-        "version": {"const":1},
-        "stream_generation": {"type":"integer","minimum":1,"maximum":4294967295},
-        "profile_revision": {"type":"integer","minimum":0,"maximum":4294967295},
-        "sequence": {"type":"integer","minimum":0,"maximum":4294967295},
-        "feature_schema_id": {"type":"string","minLength":1,"maxLength":96,"pattern":"^[A-Za-z0-9_.:-]+$"},
-        "inference_epoch": {"type":"integer","minimum":1,"maximum":4294967295},
-        "sample_index": {"type":"integer","minimum":0,"maximum":9007199254740991},
-        "model_id": {"type":"string","minLength":1,"maxLength":96,"pattern":"^[A-Za-z0-9_.:-]+$"},
-        "probabilities": {"type":"array","items":{"type":"number","minimum":0,"maximum":1},"minItems":1,"maxItems":64},
-        "valid": {"type":"boolean"}
-      }
-    },
-    {
-      "type": "object",
-      "additionalProperties": false,
       "required": ["kind","version","stream_generation","profile_revision","layout_id","first_sample","frames","sample_rate_hz","control_lr"],
       "properties": {
         "kind": {"const":"haptic_frame"},

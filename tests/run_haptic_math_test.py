@@ -8,7 +8,8 @@ import json
 from test_support import firmware_build
 
 root=Path(__file__).resolve().parents[1]
-bin_dir=root.parent/'DS5Dongle-Studio-build/source/toolchain/mingw64/mingw64/bin'
+tool_root=Path(os.environ.get('DS5_FIRMWARE_TOOLS',root.parent/'DS5Dongle-Studio-build'))
+bin_dir=tool_root/'source/toolchain/mingw64/mingw64/bin'
 env=dict(os.environ,PATH=str(bin_dir)+os.pathsep+os.environ.get('PATH',''))
 with tempfile.TemporaryDirectory(prefix='haptic-math-') as temporary:
     out=Path(temporary)

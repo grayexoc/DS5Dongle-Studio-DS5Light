@@ -66,9 +66,9 @@ def process_array(x, rate=RATE, controls=Controls(), *, feature_frames=None, con
             block = np.clip(np.rint(block * 32768), -32768, 32767) / 32768
         band_features = np.empty((4, 4), dtype=np.float32) if feature_frames is not None and len(block) else None
         if haptic_dsp is None:
-            y = p.process(block, controls, now=i/rate, band_features=band_features)
+            y = p.process(block, controls, band_features=band_features)
         else:
-            y, control_lr = haptic_dsp.process(block, controls, now=i/rate, band_features=band_features,
+            y, control_lr = haptic_dsp.process(block, controls, band_features=band_features,
                                                rear_only=live_pcm_scale)
         if control_frames is not None and len(y):
             control_frames.append(dict(kind='haptic_frame', version=1, stream_generation=1,

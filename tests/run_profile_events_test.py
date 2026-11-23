@@ -25,7 +25,7 @@ stub='''
 #define SLOT_NAME_LEN 16
 #define ENABLE_WAKE_HID
 uint32_t clock_ms=0;bool ready=true,reconnect=false,accept=true;unsigned sent=0;uint8_t slot=1;bool edited=false,mute=false;
-struct Config{uint8_t auto_haptics_enable=1,mix_native_level=0,ah_dsp_source=0;} cfg;
+struct Config{uint8_t auto_haptics_enable=1,mix_native_level=0,ah_dsp_source=0,auto_mute_mix=0,auto_mute_replace=0;} cfg;
 Config&get_config(){return cfg;}
 bool active_profile_get(uint8_t&s,bool&e,uint8_t*){s=slot;e=edited;return true;}
 bool macro_uses_mute_button(){return mute;}
@@ -48,12 +48,16 @@ clock_ms=400;cfg.mix_native_level=80;usb_profile_event_task();assert(sent==5);
 clock_ms=500;cfg.ah_dsp_source=1;usb_profile_event_task();assert(sent==6);
 assert(profile_event_data[4]==1&&profile_event_data[13]==0&&profile_event_data[14]==0);
 clock_ms=600;usb_profile_event_slot_saved();usb_profile_event_task();assert(sent==7);
-clock_ms=65000;slot=4;usb_profile_event_task();assert(sent==7);
-usb_profile_event_get(b,15);usb_profile_event_task();assert(sent==8);
+clock_ms=700;cfg.auto_mute_mix=1;usb_profile_event_task();assert(sent==8);
+clock_ms=800;cfg.auto_mute_replace=1;usb_profile_event_task();assert(sent==9);
+usb_profile_event_task();assert(sent==9);
+clock_ms=65000;slot=4;usb_profile_event_task();assert(sent==9);
+usb_profile_event_get(b,15);usb_profile_event_task();assert(sent==10);
 }
 '''
 p=out/'event.cpp';p.write_text(stub+code+checks,encoding='utf-8')
-bin=r.parent/'DS5Dongle-Studio-build/source/toolchain/mingw64/mingw64/bin';env=dict(os.environ);env['PATH']=str(bin)+os.pathsep+env.get('PATH','')
+tool_root=Path(os.environ.get('DS5_FIRMWARE_TOOLS',r.parent/'DS5Dongle-Studio-build'))
+bin=tool_root/'source/toolchain/mingw64/mingw64/bin';env=dict(os.environ);env['PATH']=str(bin)+os.pathsep+env.get('PATH','')
 subprocess.run([str(bin/'g++.exe'),'-std=c++17',str(p),'-o',str(out/'event.exe')],env=env,check=True)
 subprocess.run([str((out/'event.exe').resolve())],env=env,check=True)
 print('PASS firmware event state, idle, dedupe, backpressure and mode/mute changes',flush=True)

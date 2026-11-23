@@ -140,7 +140,7 @@ class MacroEditor(InlineCapture):
         self.rules=tk.StringVar();tk.Label(three,textvariable=self.rules,bg=CARD,fg=MUTED,wraplength=560,justify='left').grid(row=3,column=0,columnspan=2,sticky='ew',pady=8)
         self.release_details=tk.Frame(self.key_area,bg=CARD);self.release_details.grid(row=2,column=0,columnspan=4,sticky='ew',pady=(8,0));self.release_details.columnconfigure(1,weight=1)
         self.hold_row=self.numeric(one,5,_ui_tr('길게 누르기 기준'),_ui_tr('1단위는 10ms입니다. 0은 기본 750ms를 사용합니다.'),self.hold,0,255)
-        self.threshold_row=self.numeric(one,6,_ui_tr('스틱 작동 경계'),_ui_tr('각 축에서 스틱을 얼마나 기울이면 지정한 키를 누를지 정합니다. 기본값 48은 최대 이동량의 약 38%입니다. 낮추면 조금만 기울여도 작동하고, 높이면 더 많이 기울여야 합니다. 기본값에서는 48 이상에서 작동하고 38 미만으로 돌아오면 해제되어 경계에서 입력이 반복되는 것을 줄입니다.'),self.threshold,10,120,marker=48,marker_label=_ui_tr('기본값'))
+        self.threshold_row=self.numeric(one,6,_ui_tr('스틱 작동 경계'),_ui_tr('각 축에서 스틱을 얼마나 기울이면 지정한 키를 누를지 정합니다. 기본값 48은 최대 이동량의 약 38%입니다. 낮추면 조금만 기울여도 작동하고, 높이면 더 많이 기울여야 합니다. 기본값에서는 48 이상에서 작동하고 38 미만으로 돌아오면 해제되어 경계에서 입력이 반복되는 것을 줄입니다.'),self.threshold,10,120,marker=48,marker_label=_ui_tr('기본'))
         self.orders={' → '.join(str(n+1) for n in p):sum(n<<(2*i) for i,n in enumerate(p)) for p in permutations(range(4))}
         self.release_name=tk.StringVar(value=next((k for k,v in self.orders.items() if v==old['release']),_ui_tr('기존 순서 {0}').format(f"{old['release']}")))
         self.release_row=tk.Frame(self.release_details,bg=CARD);self.release_row.columnconfigure(1,weight=1);self.release_row.grid(row=0,column=0,columnspan=2,sticky='ew')

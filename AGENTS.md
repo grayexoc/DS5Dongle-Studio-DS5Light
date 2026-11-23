@@ -15,12 +15,10 @@ These instructions apply to work in this repository.
 - Never assume a channel count proves channel meaning. Verify metadata, descriptor semantics, runtime stream layout, and physical routing.
 - Never assume Studio telemetry proves physical actuator vibration. Distinguish commanded, received, processed, and physically measured output.
 - Do not apply legacy recommended presets as defaults or optimization ground truth. Legacy values are unverified references only.
-- Initial AI model is Tiny Causal GRU. TCN is deferred unless GRU fails acceptance gates or the user requests it.
-- No online learning. Training is offline only.
-- Keep DSP Only fully functional without AI.
-- Audio callback / real-time thread must never wait for AI, disk, UI, network, or firmware configuration operations.
-- Preserve causal processing and avoid added lookahead. Proposed 5 ms DSP blocks and 10 ms AI cadence are targets to verify, not proven end-to-end latency.
-- Keep one shared feature extraction path. Do not duplicate filters or spectral analysis for DSP and AI.
+- Use DSP for audio haptics. Pitch Matching, generic metal detection, and the AI prototype were retired.
+- The audio thread must never wait for disk, UI, network, or firmware configuration operations.
+- Preserve causal processing and avoid added lookahead. Verify block timing and end-to-end latency separately.
+- Reuse one shared DSP feature extraction path.
 - Keep one Decision Fusion and one Event-to-Haptic mapping authority.
 - PC Unified Profile is the desired-state source of truth for DS5Light audio/haptics settings. Studio retains ownership of unrelated controller settings and reports applied state.
 - Apply settings with validation, readback where supported, partial-failure handling, and rollback/recovery.
@@ -30,8 +28,8 @@ These instructions apply to work in this repository.
 
 ## Required workflow
 Default collaboration: Sol investigates/implements/tests -> Astra reviews complex decisions and risks -> Sol revises.
-- Astra 6.2: architecture, difficult DSP/GRU/fusion decisions, firmware/protocol risk review, safety, acceptance criteria, and final review.
-- Sol 6.2: repository inventory, implementation, scripts, tests, builds, training pipeline, documentation, diagnostics, and routine iteration.
+- Astra 6.2: architecture, difficult DSP/fusion decisions, firmware/protocol risk review, safety, acceptance criteria, and final review.
+- Sol 6.2: repository inventory, implementation, scripts, tests, builds, documentation, diagnostics, and routine iteration.
 The 15–20% Astra / 80–85% Sol split is a planning heuristic, not a quota. Model selection is performed by the user; Codex must not claim it can switch models itself.
 
 ## Phase gates

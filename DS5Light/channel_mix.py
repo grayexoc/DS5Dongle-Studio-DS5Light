@@ -120,44 +120,48 @@ class ChannelMixer:
         np.add(mixed,term,out=mixed)
         np.multiply(x[:,2:3],c,out=term)
         np.add(mixed,term,out=mixed)
-        # Linked stereo peak gain: immediate attack, linear recovery to unity
-        # (at most 50 ms). No lookahead, no added audio buffering.
-        overload=self._overload[:n]
-        required=self._required[:n]
-        np.max(mixed,axis=1,out=overload)
-        np.divide(overload,32767,out=overload)
-        np.min(mixed,axis=1,out=required)
-        np.negative(required,out=required)
-        np.divide(required,32768,out=required)
-        np.maximum(overload,required,out=overload)
-        np.maximum(1.,overload,out=required)
-        np.divide(1.,required,out=required)
-        release_step = 1 / max(1, round(rate * .05))
-        steps=self._steps[:n]
-        np.multiply(release_step,self._float_positions,out=steps)
-        # Vector form of gain[i] = min(required[i], gain[i-1] + release_step).
-        gains=self._gains[:n]
-        np.subtract(required,steps,out=gains)
-        np.minimum.accumulate(gains,out=gains)
-        np.minimum(gains,self.gain,out=gains)
-        np.add(gains,steps,out=gains)
-        self.gain = float(gains[-1])
         target = float(limiter == 'soft')
         if self.soft_mix is None:
             self.soft_mix = target
         # Crossfade limiting policies over 20 ms without reopening devices.
         step = 1 / max(1, round(rate * .02))
         start = self.soft_mix
-        if start == target == 0:
-            # The hard path does not need a parallel soft-limiter signal.
-            np.clip(mixed,-32768,32767,out=mixed)
-        elif start == target == 1:
-            np.multiply(mixed,gains[:,None],out=mixed)
-        else:
-            blend = start + np.clip(target-start, -step*self._positions, step*self._positions)
-            hard = np.clip(mixed, -32768, 32767)
-            soft = mixed * gains[:, None]
-            mixed = hard*(1-blend[:,None]) + soft*blend[:,None]
+        hard_only = start == target == 0
+        unity = hard_only and self.gain == 1. and np.max(mixed) <= 32767 and np.min(mixed) >= -32768
+        if not unity:
+            # Linked stereo peak gain: immediate attack, linear recovery to unity
+            # (at most 50 ms). No lookahead, no added audio buffering.
+            overload=self._overload[:n]
+            required=self._required[:n]
+            np.max(mixed,axis=1,out=overload)
+            np.divide(overload,32767,out=overload)
+            np.min(mixed,axis=1,out=required)
+            np.negative(required,out=required)
+            np.divide(required,32768,out=required)
+            np.maximum(overload,required,out=overload)
+            np.maximum(1.,overload,out=required)
+            np.divide(1.,required,out=required)
+            release_step = 1 / max(1, round(rate * .05))
+            steps=self._steps[:n]
+            np.multiply(release_step,self._float_positions,out=steps)
+            # Vector form of gain[i] = min(required[i], gain[i-1] + release_step).
+            gains=self._gains[:n]
+            np.subtract(required,steps,out=gains)
+            if hard_only:
+                # Only the endpoint matters when the output uses hard clipping.
+                self.gain = float(min(np.min(gains), self.gain) + steps[-1])
+            else:
+                np.minimum.accumulate(gains,out=gains)
+                np.minimum(gains,self.gain,out=gains)
+                np.add(gains,steps,out=gains)
+                self.gain = float(gains[-1])
+                if start == target == 1:
+                    np.multiply(mixed,gains[:,None],out=mixed)
+                else:
+                    blend = start + np.clip(target-start, -step*self._positions, step*self._positions)
+                    hard = np.clip(mixed, -32768, 32767)
+                    soft = mixed * gains[:, None]
+                    mixed = hard*(1-blend[:,None]) + soft*blend[:,None]
         self.soft_mix = float(np.clip(start + np.sign(target-start)*min(abs(target-start), step*n), 0, 1))
         result=self._result[:n,:channels]
         np.copyto(result,x)

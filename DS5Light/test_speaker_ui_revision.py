@@ -16,7 +16,7 @@ class RevisionTests(unittest.TestCase):
         with patch('localization.LANGUAGE','ko'):
             self.assertIn('127은 Windows 장치 볼륨 100%',help_text('speaker_volume'))
             self.assertNotIn('추천 시작값',help_text('speaker_volume'))
-            self.assertIn('효과적',help_text('speaker_gain'))
+            self.assertIn('스피커로 재생되는 소리를 증폭',help_text('speaker_gain'))
             self.assertNotIn('게임의 음량',help_text('speaker_volume'))
             self.assertIn('스피커 음량을 기준',help_text('headset_volume'))
             self.assertNotIn('기본값 기준',help_text('headset_volume'))

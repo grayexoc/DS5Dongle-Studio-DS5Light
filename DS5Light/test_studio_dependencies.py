@@ -63,7 +63,7 @@ class ProtocolTests(unittest.TestCase):
                 values=dict(auto_haptics_enable=mode,haptics_aa=3,mix_native_level=level,mix_native_filter=1,rumble_gain=100,rumble_release=0,rumble_haptic_strength=50)
                 view=SimpleNamespace(doc=SimpleNamespace(values=values),busy=False)
                 view.enabled_for=lambda key:StudioSettings.enabled_for(view,key)
-                self.assertEqual(view.enabled_for('haptics_aa'),mode in (1,2))
+                self.assertTrue(view.enabled_for('haptics_aa'))
                 for key in ('haptics_aa','mix_native_filter','rumble_gain','rumble_release','rumble_haptic_strength'):
                     self.assertEqual(option_help(view,key).startswith('현재 비활성'),not view.enabled_for(key))
 
@@ -215,8 +215,10 @@ class UITests(unittest.TestCase):
         for mode in (0,1,2,0):
             ui.select_value('auto_haptics_enable',mode)
             control=ui.field_views['haptics_aa'][1][0]
-            self.assertEqual(str(control.cget('state')),'readonly' if mode in (1,2) else 'disabled')
+            self.assertEqual(str(control.cget('state')),'readonly')
             self.assertEqual(ui.doc.values['haptics_aa'],3)
             self.assertNotIn('haptics_aa',ui.doc.changes)
+        ui.select_value('haptics_aa',2)
+        self.assertEqual(ui.doc.changes['haptics_aa'],2)
 
 if __name__=='__main__':unittest.main()

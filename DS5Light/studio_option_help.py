@@ -39,7 +39,7 @@ def inactive_reason(editor,key):
         if mode!=(1 if key=='auto_mute_mix' else 2):steps.append(_ui_tr('오디오햅틱 모드를 ')+target+_ui_tr('로 변경하세요.'))
         if values.get('disable_speaker'):steps.append(_ui_tr('듀얼센스 스피커 끄기를 해제하세요. 현재는 전체 음소거가 우선합니다.'))
         return ' '.join(steps)
-    if key=='haptics_aa' or (key in AUDIO_HAPTIC_CHILDREN and not mode):
+    if key in AUDIO_HAPTIC_CHILDREN and not mode:
         return _ui_tr('오디오햅틱 모드를 Mix 또는 Replace로 변경하면 사용할 수 있습니다.')
     if key in ('ah_low_gain','ah_high_gain'):
         return _ui_tr('저음·고음 분리 기준을 0보다 높게 설정하면 사용할 수 있습니다.')
@@ -92,7 +92,7 @@ def option_help(editor,key):
         elif key in ('rumble_haptic_strength','mix_native_level'):reason='Select Mix mode.'
         elif key=='mix_native_filter':reason='Select Mix mode and turn on native haptic mixing.'
         elif key in ('auto_mute_mix','auto_mute_replace'):reason='Select the corresponding audio haptic mode and turn off the speaker-disable option.'
-        elif key=='haptics_aa' or key in AUDIO_HAPTIC_CHILDREN:reason='Select Mix or Replace mode.'
+        elif key in AUDIO_HAPTIC_CHILDREN:reason='Select Mix or Replace mode.'
         elif key in ('ah_low_gain','ah_high_gain'):reason='Set the low/high crossover above zero.'
         elif key=='speaker_volume':reason='Turn off the DualSense speaker-disable option.'
         elif key=='enable_wake':reason='Available in standby with deep sleep off; the PC must support USB wake.'

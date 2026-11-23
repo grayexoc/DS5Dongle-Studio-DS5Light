@@ -5,9 +5,9 @@
 ## Package and firmware
 
 
-Use the complete `DS5Light-win-x64-v1.2.0.zip` package on Windows 10/11 x64. Extract it into a writable folder, keep `_internal` beside `DS5Light.exe`, and run the executable. Python is not required for the packaged app.
+Use the complete `DS5Light-win-x64-v1.2.1.zip` package on Windows 10/11 x64. Extract it into a writable folder, keep `_internal` beside `DS5Light.exe`, and run the executable. Python is not required for the packaged app.
 
-This app build is v1.2.0 and supports Studio firmware v51. Firmware is a separate release attachment: `ds5-studio-light_v51.uf2`. That attachment is for Raspberry Pi Pico 2 W; it is not for RP2040 Pico W or Waveshare boards. The app does not flash firmware automatically.
+This app build is v1.2.1 and supports Studio firmware v52. Firmware is a separate release attachment: `ds5-studio-light_v52.uf2`. That attachment is for Raspberry Pi Pico 2 W; it is not for RP2040 Pico W or Waveshare boards. The app does not flash firmware automatically.
 
 Back up current settings and slots before changing firmware or saving profiles. This fork's additional settings and diagnostics require corresponding firmware support. An existing compatible Studio installation may support basic audio forwarding without all of these additions. A flash_nuke reset is not part of the routine setup.
 
@@ -22,8 +22,8 @@ Back up current settings and slots before changing firmware or saving profiles. 
 
 | File | App preset | Purpose |
 | --- | --- | --- |
-| `Audio_Haptic_01.json` | Stable audio haptics | Greater suppression of background responses; a starting point for audio haptics. |
-| `Audio_Haptic_02.json` | Responsive audio haptics | Retains more response, including more background activity. |
+| `Audio_Haptic_01.json` | Audio haptics Mix | Front audio haptics combined with the game's raw rear native haptics. |
+| `Audio_Haptic_02.json` | Audio haptics Replace | Front audio haptics in place of the game's native haptics. |
 | `DS_Native.json` | Native preset | Disables audio-derived haptics for native haptics and conventional game rumble; game and connection support are required. |
 
 4. Select **Save slot**, then **Save and use**. Review an overwrite prompt before confirming. Keep your own slots intact by choosing an empty slot.

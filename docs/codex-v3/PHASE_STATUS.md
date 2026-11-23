@@ -8,7 +8,7 @@ Baseline inspected: `custom/studio-ds5light` at `052d39611e39f11bc1eb0aa0fc49fe4
 | 0 Repository Audit | Completed; outstanding hardware checks carried into acceptance gates | Sol investigate; Astra review | Read-only audit report, verified paths, test/build status, unknowns |
 | 1 Contracts | [Host-verified contract](PHASE_1_CONTRACTS.md) frozen with user approval | Astra decide; Sol validate | User-approved schemas and ownership |
 | 2 Adaptive I/O + DSP | DSP Only low-band output and impact protection integrated; actual-game comparison deferred | Sol implement; Astra review | DSP Only stable, channel confidence/fallback tested, quality compared with release v48 |
-| 3 Tiny Causal GRU | External handoff ready; model training and runtime integration deferred | Sol train/benchmark; Astra approve | Quality/resource gates pass or DSP Only remains default |
+| 3 AI prototype | Retired by user decision on 2026-11-23 | — | Runtime, model, and experiment artifacts removed |
 | 4 Fusion + Mapper | DSP Only steering and attack shaping verified in replay and mocked Studio live output | Sol implement; Astra review | deterministic replay and event protection pass |
 | 5 Studio Integration | Split PCM and output packet diagnostics verified on the target Pico 2 W | Sol implement after approval; Astra risk review | routing/readback/Native Haptics regressions pass |
 | 6 Optimizer + UI | Rehearsal and simulated-live previews, guarded apply/restore, and PC profile and Studio readback checks integrated | Sol implement; Astra approve policy | safe explainable optimizer and desired/applied UI |
@@ -440,3 +440,55 @@ The user requested a release from the current source. Publish DS5Light v1.1.1 an
 ### 2026-11-22 — v1.2.0 / Studio v51 release
 
 The user authorized release of the current source with app and firmware versions aligned to DS5Light 1.2.0 and Studio 51. Bilingual release materials state that recommended presets in Studio profile-slot settings provide the comparison reference, perceived response depends on Windows and game/application volume, and other settings use defaults unless specified. This release action continues the user's instruction to omit inspection and test execution. Previous validation records retain their original scope.
+
+### 2026-11-23 — Studio speaker accents
+
+Implemented on custom/studio-ds5light at 09f90e8 with local changes. The Studio editor exposes the Front speaker accent switch and volume. Settings use the existing validated apply path. Valid saved tuning is preserved. Speaker route or mute policy changes discard queued speaker audio and clear accent state independently of haptic DSP. Pico 2 W v51 built. The Studio editor suite passed 77 checks, followed by 24 focused preference, discovery and switch checks with persistence enabled. Device flashing, headset transitions and game audio A/B remain unverified on hardware.
+
+### 2026-11-23 — Mix/Front speaker accent follow-up
+
+A temporary speaker-volume-only change in an active Mix/Front session now uses verified HID apply without stopping PC capture. Firmware limits the accent gate to 75 ms, hold to 25 ms, adds a 100 ms rearm interval, and removes accent band make-up gain. Saved values are retained. A host check using the firmware gate logic held a continuous trigger to one 75 ms opening and checked rearm. The Pico 2 W firmware build and 27 focused app checks passed. Hardware audio and actuator output remain unverified because no matching controller was enumerated.
+
+### Studio speaker accents — fixed runtime tuning
+
+When enabled, speaker accents use the firmware recommendation even when the slot still contains older tuning. Only the stored accent volume controls the active path. Slot fields stay compatible with existing backups. The detector uses causal 1 ms magnitude averages, initial baseline settling, and recurrence checks based on detected candidates. The output uses a 3 ms fade-in. The host gate regression and two focused Studio editor tests passed, and the Pico 2 W v51 build succeeded. Acoustic A/B and in-game rapid-impact retention require the updated UF2 on the device.
+
+### Studio speaker accents — preserve effect tails
+
+The onset detector opens speaker output when there is audible body energy. Gate duration follows the band-passed samples against the pre-impact background instead of following the detection-band peak. The gate closes after 30 ms of low body energy, with a 450 ms cap and a smooth 15 ms release. Sparse 3 ms impulses do not keep a tail open. The host regression held a simulated 230 ms decay after the onset band returned to baseline and verified recurring impulses, the sustained-input cap, and release. Pico 2 W v51 and both focused Studio editor tests passed. Physical acoustic verification requires this updated UF2.
+
+### Studio speaker accents — stronger onset evidence and output level
+
+Require two consecutive 1 ms windows with both high-band contrast and body energy above the recent level. The host test rejects isolated 1 ms spikes and treble flutter while retaining a simulated impact and tail. Widen the speaker band to 350–5,500 Hz and apply 1.6x gain before a stereo-linked soft ceiling. Firmware build and host regression passed. The calculated PCM gain is not a physical speaker measurement.
+
+### Mix/Front with the PC filter bypassed
+
+The speaker gate now requires an abrupt rise in the detection band and sufficient high-band excess relative to the audible body's excess. Raw Front synthetic PCM tests at 0.25x, 1x, and 2x reject a 400 Hz step and a 100 ms treble swell while passing one decaying two-tone impact and retaining its tail. The original gate triggered on the 400 Hz step. The host regression passed and the Pico 2 W v51 UF2 built. Game discrimination remains unmeasured.
+
+### Mix/Front high-band emphasis
+
+The speaker gate compares high-band magnitude with the original Front magnitude. A shift toward higher frequencies can trigger even when the total magnitude falls. Host tests passed for a lower-level bright impact, metallic tails across three source levels, an abrupt 400 Hz note, and a gradual high-frequency swell. Pico 2 W v51 built. Physical game verification remains pending.
+
+### Studio speaker accent controls
+
+The Studio editor shows eight tuning fields when speaker accents are on. Existing HID field IDs carry sensitivity, detection and output cutoffs, attack, decay, hold and burst duration. The firmware applies the profile values and interprets a zero burst as the 450 ms cap. The editor rejects reversed output cutoffs. The focused Studio suite passed 78 tests, the host gate regression passed, and Pico 2 W v51 built. Live hardware behavior remains unmeasured.
+
+### Studio speaker accents rolled back
+
+Removed the app controls and experimental speaker detection changes. The rollback firmware reports and applies zero speaker-accent volume for the live configuration and every saved slot. Slot contents and CRCs are left intact. The Pico 2 W v51 build passed. Hardware flashing is pending.
+
+### Rear bass retention and quiet Front impacts
+
+The live Rear sustained-bass path now checks bass against the neighbouring band when treble dominates the mix. With an 80 Hz tone at 0.05 amplitude, adding 4 kHz at 0.10 gave a settled mean Rear control of 0.1072 (previously zero). The 240-frame mapper reuses its ramp curves. In three local microbenchmark rounds the median p99 fell from 29.6 to 17.2 microseconds. The four relevant Python suites passed 62 tests. In the host firmware test a damped 105 Hz input at −12 dB produced one Front texture onset, and −24 dB stayed gated. The host haptic math test and the Pico 2 W Release build passed. Device flashing, tactile comparison and physical latency were not tested.
+
+### Output route audit fixes
+
+Synthetic PCM with a 10,000-count Front peak held at 10,000 with shared gain requested at 3x while unmuted, and reached 30,000 with auto-mute confirmed. The 7.1 hard limiter matched the baseline for 122,880 frames, and the hard/soft transition regression retained exact PCM. Median host time per 240 frames went from 40.43 to 22.83 microseconds with headroom and from 70.29 to 66.00 microseconds with frequent clipping, across eight paired runs per case. Pico 2 W syntax checks and the host haptic math and transition checks passed. Physical speaker output, transition feel and WASAPI timing on a connected device remain pending.
+
+### 2026-11-23 — v1.2.1 / Studio v52 release preparation
+
+The user requested checking all current local changes, consolidating recommended-preset instructions from prior releases, refreshing README, and publishing after release checks. Version identifiers advance to DS5Light 1.2.1 / Studio 52. Include follow-up impacts, rear continuity, shared output gain, startup/reconnect recovery, current AA behavior, and removal of retired experiments. Run application regression, bilingual UI checks, affected firmware host tests, and package/UF2 checks. Keep physical Edge, tactile, real-game and end-to-end latency claims within existing evidence.
+
+### 2026-11-23 — v1.2.1 / Studio v52 release checks
+
+Completed the requested current-source release preparation and bilingual preset/README consolidation. Full app discovery ran 886 tests (878 passed, one obsolete help-text assertion failed, seven English-only checks skipped). After correcting that test assertion, all 19 tests in the four affected modules passed. The isolated UI runner passed 69 Korean and 15 English tests. All four selected firmware host runners and their ARM syntax checks passed. The Pico 2 W v52 UF2 and v1.2.1 app ZIP built; packaged Korean/English smoke checks, ZIP CRC, 82 embedded-source comparisons, 143 native-binary inventory hashes and preset/guide comparisons passed. See docs/release-v1.2.1-validation.md for exact evidence and limits. Physical hardware acceptance remains unchanged; no firmware flashing or game/tactile testing was performed.

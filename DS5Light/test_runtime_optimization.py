@@ -92,6 +92,16 @@ class TransportTests(unittest.TestCase):
                 a=b''.join(large.process(block.tobytes(),controls) for block in np.split(data,10))
                 b=b''.join(small.process(block.tobytes(),controls) for block in np.split(data,20))
                 self.assertEqual(a,b)
+    def test_shared_output_returns_to_unity_when_speaker_is_live(self):
+        import numpy as np
+        from audio import OutputProcessor
+        controls = Controls(bypass=True, gain=3.)
+        data = np.full((4800, 4), 10000, dtype='<i2').tobytes()
+        processor = OutputProcessor()
+        boosted = processor.process(data, controls, allow_gain=True)
+        self.assertEqual(np.frombuffer(boosted, '<i2')[-4:].tolist(), [30000] * 4)
+        self.assertEqual(processor.process(data, controls, allow_gain=False), data)
+
     def test_mode_specific_defaults_preserve_device_loopback(self):
         self.assertEqual(Engine().transport_frames,480)
         self.assertEqual(Engine(process_pid=123).transport_frames,240)

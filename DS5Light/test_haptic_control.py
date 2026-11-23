@@ -38,6 +38,39 @@ class HapticControlTests(unittest.TestCase):
         np.testing.assert_array_equal(down[:, 1], [.75, .5, .25, 0.])
         np.testing.assert_array_equal(HapticMapper().process(1., 4), up)
 
+    def test_mapper_matches_reference_ramps_across_shaped_and_variable_blocks(self):
+        for scalar in (float, np.float32):
+            mapper = HapticMapper()
+            start = (0., 0.)
+            first = None
+            for target, balance, frames, attack in (
+                (.8, .65, BLOCK, 'sharp'),
+                (.75, -.65, BLOCK, 'weight'),
+                (.75, -.65, BLOCK, None),
+                (.5, 0., BLOCK - 17, 'sharp'),
+                (.2, .4, 0, None),
+                (1., -.4, 1, 'weight'),
+                (0., 0., BLOCK, 'weight'),
+            ):
+                with self.subTest(scalar=scalar, frames=frames, attack=attack):
+                    target, balance = scalar(target), scalar(balance)
+                    levels = (target * (1 - max(0, balance)), target * (1 - max(0, -balance)))
+                    expected = np.linspace(start, levels, frames + 1, dtype=np.float32)[1:]
+                    if attack is not None:
+                        begin = np.asarray(start)
+                        delta = np.asarray(levels) - begin
+                        rising = delta > 0
+                        progress = np.linspace(0, 1, frames + 1)[1:, None]
+                        eased = progress ** 2 if attack == 'weight' else 1 - (1 - progress) ** 3
+                        expected[:, rising] = begin[rising] + eased * delta[rising]
+                    actual = mapper.process(target, frames, balance, attack=attack)
+                    np.testing.assert_array_equal(actual.view(np.uint32), expected.view(np.uint32))
+                    if first is None:
+                        first = actual, expected
+                    else:
+                        np.testing.assert_array_equal(*first)
+                    start = levels
+
     def test_stereo_control_follows_clear_hit_and_keeps_balanced_or_bypass_centered(self):
         clock = np.arange(RATE) / RATE
         background = .002 * np.sin(2 * np.pi * 90 * clock)
@@ -122,10 +155,21 @@ class HapticControlTests(unittest.TestCase):
         downmix, _ = process_array(left, stereo_control=False, **options)
         center, _ = process_array(np.column_stack((tone, tone)), stereo_control=True, **options)
         steady = slice(RATE // 2, RATE)
-        self.assertGreater(np.median(directed[steady, 2]), 1.5 * np.median(directed[steady, 3]))
+        np.testing.assert_allclose(directed[steady, 3] / directed[steady, 2], .70, atol=.003)
         np.testing.assert_array_equal(directed[steady, 2], downmix[steady, 2])
         np.testing.assert_array_equal(downmix[:, 2], downmix[:, 3])
         np.testing.assert_array_equal(center[:, 2], center[:, 3])
+
+    def test_live_sustained_direction_does_not_follow_periodic_waveform_peaks(self):
+        t = np.arange(RATE) / RATE
+        tone = .09 * np.sin(2 * np.pi * 80 * t)
+        for right_gain, expected_ratio in ((.49, .816), (0., .70)):
+            with self.subTest(right_gain=right_gain):
+                stereo = np.column_stack((tone, tone * right_gain))
+                pcm, _ = process_array(stereo, studio_pcm16=True, live_pcm_scale=True,
+                                       stereo_control=True, shape_control=True)
+                settled = pcm[-RATE//4:, 2:]
+                np.testing.assert_allclose(settled[:, 1] / settled[:, 0], expected_ratio, atol=.003)
 
     def test_dsp_only_preserves_front_audio_but_rejects_high_only_rear_control(self):
         elapsed = np.arange(RATE) / RATE - .5

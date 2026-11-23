@@ -26,7 +26,7 @@ import numpy as np
 
 import pyaudiowpatch as pa
 
-from core import Controls, Processor, RumbleStateProvider
+from core import Controls, Processor
 
 from process_audio import ProcessCaptureStream
 
@@ -174,7 +174,10 @@ class OutputProcessor:
 
             self._pcm=np.empty((self._capacity,4),dtype="<i2")
 
-    def process(self, data, controls, *, front_only=False, ai=None):
+    def process(self, data, controls, *, front_only=False, allow_gain=True):
+        if not allow_gain and self.level.current != 1.0:
+            self.level = OutputGain()
+        gain = controls.gain if allow_gain else 1.0
 
         if controls.mode=='pure':
 
@@ -194,13 +197,13 @@ class OutputProcessor:
                 pcm=self._pcm[:len(source)]
                 pcm[:,:2]=source[:,:2];pcm[:,2:]=0
                 data=pcm.tobytes()
-            return self.level.process(data,controls.gain)  # Exact original bytes at steady 100%.
+            return self.level.process(data,gain)  # Exact original bytes at steady 100%.
 
         source=np.frombuffer(data,'<i2').reshape(-1,4)
 
         n=len(source)
 
-        if not n:return self.level.process(data,controls.gain)
+        if not n:return self.level.process(data,gain)
 
         if self.processor is None or self.last_policy in ('bypass','pure'):
             self.processor=Processor()
@@ -214,21 +217,14 @@ class OutputProcessor:
 
         for i in range(0,n,240):
 
-            block=x[i:i+240]
-            out[i:i+240]=self.processor.process(block,controls,now=time.perf_counter(),
-                                                band_features=ai.features if ai is not None else None)
-            if ai is not None:
-                try:
-                    ai.observe(len(block))
-                except Exception as exc:
-                    ai.fail(exc)
+            out[i:i+240]=self.processor.process(x[i:i+240],controls)
 
         np.multiply(out,32768,out=out);np.rint(out,out=out);np.clip(out,-32768,32767,out=out)
 
         pcm[:,:2]=out
         pcm[:,2:]=0 if front_only else pcm[:,:2]
 
-        return self.level.process(pcm.tobytes(),controls.gain)
+        return self.level.process(pcm.tobytes(),gain)
 
 
 
@@ -288,11 +284,11 @@ class Engine:
 
         self.controls,self.silent=controls,silent
         self.front_only=False
+        self.allow_shared_gain=False
         self.studio_live=False
         self.studio_adaptive_gain=False
         self._studio_output=None
 
-        self.provider=RumbleStateProvider()
 
         self.stop_event=threading.Event(); self.thread=None
 
@@ -301,7 +297,6 @@ class Engine:
         self.blocks=0; self.errors=0; self.peak=0.; self.latencies={}; self.opens=[]
 
         self.output_processor=OutputProcessor()
-        self.ai_status=''
 
         self.process_pid,self.process_channels=process_pid,process_channels
 
@@ -337,7 +332,7 @@ class Engine:
 
                 bridge_conflict(); self._check()
                 controls=self.controls
-                if controls.mode=='normal' and not controls.bypass:
+                if not self.studio_live and controls.mode=='normal' and not controls.bypass:
                     self.output_processor.processor=Processor()
                 self._check(); self._run()
 
@@ -401,7 +396,7 @@ class Engine:
 
             capture_timing_source=self.capture_timing_source,capture_read_errors=self.capture_read_errors,
 
-            drop_underrun=_ui_tr('원본 방식: 드라이버 손실 횟수 계측 안 함'),pure=self.provider.status,
+            drop_underrun=_ui_tr('원본 방식: 드라이버 손실 횟수 계측 안 함'),pure='미지원: 퓨어 출력 닫힘',
 
             process_pid=self.process_pid,process_channels=self.process_channels if self.process_pid else None,
 
@@ -429,6 +424,7 @@ class Engine:
         record('output_identification_failed', rows, self.binding, self.output_name)
         issue=self.binding.output_issue(rows) if self.binding is not None else 'missing'
         return {'missing':_ui_tr('4채널 오디오 출력 없음 · 듀얼센스 연결과 Windows 출력 장치를 확인하세요'),
+                'stereo':_ui_tr('듀얼센스 출력이 2채널입니다. Windows 소리 설정에서 4채널로 구성하세요.'),
                 'ambiguous':_ui_tr('오디오 출력 이름 중복 · 장치 이름을 구분한 뒤 다시 선택하세요'),
                 'identity':_ui_tr('출력 식별 실패 · 설정·진단에서 Pico 오디오 출력을 직접 선택하고 시작하세요')}[issue]
 
@@ -460,19 +456,11 @@ class Engine:
 
                 self.channel_mixer=ChannelMixer()
                 self.signal_check=None
-                self.mix_ai=None
-                self.ai_init_failed=False
 
                 if kwargs.get('input'):
                     engine.capture_channels=kwargs['channels']
                     engine.capture_format=(kwargs['channels'], kwargs['rate'])
                     engine.capture_signal=None
-
-            def close(self):
-                if self.mix_ai is not None:
-                    self.mix_ai.close()
-                    self.mix_ai=None
-                super().close()
 
             def __getattr__(self,name): return getattr(self.stream,name)
 
@@ -551,30 +539,8 @@ class Engine:
                 else:
                     try:
                         controls=engine.controls
-                        enable_ai=(controls.experimental_ai and not controls.bypass and controls.mode=='normal'
-                                   and not engine.silent and engine.binding is not None)
-                        if enable_ai and self.mix_ai is None and not self.ai_init_failed:
-                            try:
-                                from tiny_gru import MixFrontAI
-                                self.mix_ai=MixFrontAI(engine.binding,engine.stop_event.is_set)
-                            except Exception as exc:
-                                self.ai_init_failed=True
-                                engine.ai_status=f"AI · DSP only ({type(exc).__name__}: {exc})"
-                        elif not enable_ai:
-                            if self.mix_ai is not None:
-                                self.mix_ai.close()
-                                self.mix_ai=None
-                            self.ai_init_failed=False
-                            engine.ai_status=''
-                        if self.mix_ai is None:
-                            out=engine.output_processor.process(data,controls,front_only=engine.front_only)
-                        else:
-                            out=engine.output_processor.process(data,controls,front_only=engine.front_only,ai=self.mix_ai)
-                            if self.mix_ai.error:
-                                engine.ai_status=f"AI · DSP only ({self.mix_ai.error})"
-                            else:
-                                label = "AI MAX" if self.mix_ai.strong_test else "AI"
-                                engine.ai_status=f"{label} · HID {self.mix_ai.sent}"
+                        out=engine.output_processor.process(data,controls,front_only=engine.front_only,
+                                                            allow_gain=engine.allow_shared_gain)
 
                     except Exception as exc:
 
@@ -594,7 +560,8 @@ class Engine:
 
                 if engine.studio_live:
                     # This measures the queue submission call. The renderer runs separately.
-                    self.stream.write(out, engine.controls, stereo_capture=engine.capture_channels == 2)
+                    self.stream.write(out, engine.controls, stereo_capture=engine.capture_channels == 2,
+                                      measure=diagnose)
                 else:
                     engine._check()
                     try: self.stream.write(out,**kwargs)
@@ -945,7 +912,6 @@ class Engine:
 
                 except Exception: pass
 
-            self.provider.close()
 
 
 

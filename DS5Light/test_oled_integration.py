@@ -121,8 +121,8 @@ class EngineReconnectTests(unittest.TestCase):
         renderer.assert_called_once_with(engine.binding, engine.binding.snapshot(), target['endpoint_id'],
                                          engine.stop_event, adaptive_gain=False)
         self.assertEqual(native.write.call_count, 2)
-        native.write.assert_any_call(payload, engine.controls, stereo_capture=True)
-        native.write.assert_called_with(bytes(len(payload)), engine.controls, stereo_capture=True)
+        native.write.assert_any_call(payload, engine.controls, stereo_capture=True, measure=True)
+        native.write.assert_called_with(bytes(len(payload)), engine.controls, stereo_capture=True, measure=False)
         self.assertEqual(engine.blocks, 2)
         self.assertEqual(engine.peak, 0.5)
         for key in ('capture_to_output_call_ms', 'output_write_wait_ms'):

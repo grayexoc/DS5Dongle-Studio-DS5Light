@@ -59,11 +59,11 @@ def validate(value):
     if not isinstance(controls, dict):
         raise ValueError(_ui_tr('오디오 옵션 형식이 올바르지 않습니다.'))
     allowed = set(defaults['controls'])
-    if set(controls)-allowed or allowed-set(controls)-{'gain','impact','experimental_ai'}:
+    if set(controls)-allowed-{'experimental_ai'} or allowed-set(controls)-{'gain','impact'}:
         raise ValueError(_ui_tr('오디오 옵션 항목이 올바르지 않습니다.'))
     controls=dict(controls); controls.setdefault('gain',1.0)
     controls.setdefault('impact',.85)
-    controls['experimental_ai'] = False
+    controls.pop('experimental_ai', None)
     c = Controls(**controls)
     if c.mode not in ('normal', 'pure') or type(c.bypass) is not bool or type(c.background) is not bool or type(c.transient) is not bool:
         raise ValueError(_ui_tr('오디오 옵션 값이 올바르지 않습니다.'))

@@ -19,7 +19,6 @@ PC:
 - game/process audio semantic analysis;
 - background/music estimation and suppression;
 - transient/event classification;
-- optional GRU;
 - event priority and left/right haptic-control generation.
 
 Studio:

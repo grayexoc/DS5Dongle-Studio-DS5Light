@@ -75,7 +75,7 @@ class CompactTests(unittest.TestCase):
             self.assertAlmostEqual(ui.canvas.canvasy(0),0.,delta=1)
             self.assertAlmostEqual(ui.body.winfo_rooty()-ui.canvas.winfo_rooty(),0.,delta=1)
     def test_reference_and_slot_title(self):
-        self.assertEqual(reference_point('haptics_gain'),(1.,'기본값'))
+        self.assertEqual(reference_point('haptics_gain'),(1.,'기본'))
         ui=self.editor();ui.select_category(5)
         def texts(w):
             out=[]

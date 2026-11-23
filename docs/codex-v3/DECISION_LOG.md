@@ -2,10 +2,10 @@
 
 | ID | Decision | Status | Notes |
 |---|---|---|---|
-| D-001 | DSP Only and DSP + Tiny Causal GRU modes | Approved | DSP Only must remain fully functional |
-| D-002 | Tiny Causal GRU is initial AI model | Approved | TCN deferred |
-| D-003 | TCN comparison deferred | Approved | Reconsider only on GRU failure or user request |
-| D-004 | Offline training only; no online learning | Approved | Runtime CPU inference |
+| D-001 | Audio haptics processing | Current | DSP only |
+| D-002 | Tiny Causal GRU prototype | Retired | Removed on 2026-11-23 |
+| D-003 | TCN comparison | Closed | AI experiment retired |
+| D-004 | Offline training and runtime inference | Retired | Removed on 2026-11-23 |
 | D-005 | One shared Unified DSP & Feature Engine | Approved | Avoid duplicate filters/features |
 | D-006 | One Decision Fusion | Approved | DSP and AI do not independently control output |
 | D-007 | One Event-to-Haptic Mapper | Approved | Single event-to-pattern authority |
@@ -21,8 +21,8 @@
 | D-017 | Runtime changes bounded and slower than DSP loop | Approved | Hysteresis, dwell, rate limit, rollback |
 | D-018 | Astra/Sol role split | Approved | Astra design/review; Sol implementation/testing |
 | D-019 | 4-channel target CH0/1 audio, CH2/3 haptic control | Candidate pending validation | Source evidence exists; end-to-end physical semantics unverified |
-| D-020 | 5 ms DSP and 10 ms GRU cadence | Initial targets | Not end-to-end latency guarantees |
-| D-021 | H24 initial GRU candidate, compare H16/H24/H32 | Proposed experiment | Not final until benchmark |
+| D-020 | 5 ms DSP cadence | Initial target | Measure end-to-end latency separately |
+| D-021 | H16/H24/H32 model comparison | Closed | AI experiment retired |
 | D-022 | UI five areas | Proposed design | Must map against actual current UI in Phase 0 |
 
 ## Rejected or deferred
@@ -82,3 +82,25 @@ Publish the current app and firmware together as DS5Light v1.1.1 / Studio v50. K
 ### 2026-11-22 — v1.2.0 / Studio v51 release
 
 The user authorized release of the current source with app and firmware versions aligned to DS5Light 1.2.0 and Studio 51. Bilingual release materials state that recommended presets in Studio profile-slot settings provide the comparison reference, perceived response depends on Windows and game/application volume, and other settings use defaults unless specified. This release action continues the user's instruction to omit inspection and test execution. Previous validation records retain their original scope.
+
+### 2026-11-23 — Studio speaker accents
+
+Expose the existing Front transient path as an opt-in speaker setting. Gate it on mode auto-mute and normal speaker permission, suspend it on the headset route, and flush only speaker state on audio policy changes. Keep valid saved tuning intact and use the shorter gate defaults for uninitialized values.
+
+### 2026-11-23 retirement of experimental haptics
+
+The user retired Pitch Matching, generic metal-impact detection, and the Tiny Causal GRU prototype. Remove their runtime hooks, model assets, offline training tools, and generated experiment files. Retain the released v51 fixed 90/180 Hz Front impact texture, stereo steering, and DSP-only audio paths.
+
+### Shared output gain and DSP state
+
+Shared PCM carries speaker audio and can also feed the Front haptics generator. The app applies boost on shared output only when the active Studio mode reports auto-mute. The existing profile event signals changes to either auto-mute field, and the profile reply carries both values in an optional trailing byte. Older replies leave shared gain at unity. Managed Rear keeps applying gain to Rear PCM.
+
+Native Mix leakage filtering uses a fixed 120 Hz pole. The audio-haptics cutoff applies only to the generated path. Retain the legacy speaker accent fields for slot and HID compatibility while removing the retired rendering branch.
+
+### 2026-11-23 — v1.2.1 / Studio v52 release preparation
+
+The user requested checking all current local changes, consolidating recommended-preset instructions from prior releases, refreshing README, and publishing after release checks. Version identifiers advance to DS5Light 1.2.1 / Studio 52. Include follow-up impacts, rear continuity, shared output gain, startup/reconnect recovery, current AA behavior, and removal of retired experiments. Run application regression, bilingual UI checks, affected firmware host tests, and package/UF2 checks. Keep physical Edge, tactile, real-game and end-to-end latency claims within existing evidence.
+
+### 2026-11-23 — v1.2.1 / Studio v52 release checks
+
+Completed the requested current-source release preparation and bilingual preset/README consolidation. Full app discovery ran 886 tests (878 passed, one obsolete help-text assertion failed, seven English-only checks skipped). After correcting that test assertion, all 19 tests in the four affected modules passed. The isolated UI runner passed 69 Korean and 15 English tests. All four selected firmware host runners and their ARM syntax checks passed. The Pico 2 W v52 UF2 and v1.2.1 app ZIP built; packaged Korean/English smoke checks, ZIP CRC, 82 embedded-source comparisons, 143 native-binary inventory hashes and preset/guide comparisons passed. See docs/release-v1.2.1-validation.md for exact evidence and limits. Physical hardware acceptance remains unchanged; no firmware flashing or game/tactile testing was performed.

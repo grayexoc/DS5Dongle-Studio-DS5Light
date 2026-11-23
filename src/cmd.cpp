@@ -1331,14 +1331,6 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             break;
         }
 
-        case 0x27: {
-            // Transient Mix/Front event, kept entirely outside saved settings and reply queues.
-            if (bufsize >= 5 && memcmp(buffer, "MAI1", 4) == 0 && buffer[4] <= 100)
-                audio_mix_ai_hit(buffer[4], bufsize >= 9 && memcmp(buffer + 5, "TST1", 4) == 0,
-                                 bufsize >= 10 && buffer[9] <= 4 ? buffer[9] : 0,
-                                 bufsize >= 11 && buffer[10] == 1);
-            break;
-        }
         case 0x67: {
             // Read the currently-loaded profile (set by slot_activate /
             // slot_save - so it reflects loads from the portal AND the automation).
@@ -1364,6 +1356,8 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 memcpy(buf + 37, &checksum, sizeof(checksum));
                 memcpy(buf + 41, buffer + 2, 4);
             }
+            // Optional speaker auto-mute flags. Zero in older firmware means unknown.
+            buf[45] = 0xA0 | (cfg.auto_mute_mix ? 1 : 0) | (cfg.auto_mute_replace ? 2 : 0);
             // Keep metadata replies on 0x81; 0x84 carries slot commands.
             pico_portal_reply.assign(buf, buf + sizeof(buf));
             break;

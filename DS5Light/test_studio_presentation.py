@@ -42,14 +42,21 @@ class PresentationTests(unittest.TestCase):
         self.assertEqual(LABELS['gyro_output'],'자이로 작동 기준')
         self.assertEqual(LABELS['haptics_gain'],'네이티브 햅틱 세기')
         self.assertEqual(TITLES['Device & Connection'],'장치')
-    def test_only_question_icons_have_option_tips(self):
+    def test_option_tips_are_on_icons_and_audio_haptic_strength_controls(self):
         e=self.editor()
         for category in range(4):
             e.select_category(category)
             self.assertTrue(e.tips)
             for tip in e.tips:self.assertTrue(getattr(tip.widget,'_studio_help_icon',False))
+            hover_controls=[]
+            if 'auto_haptics_gain' in e.range_controls:
+                _, slider, title=e.range_controls['auto_haptics_gain']
+                label=next(w for w in title.winfo_children() if isinstance(w,tk.Label))
+                hover_controls=[label,slider]
+                self.assertIn('Windows 볼륨 믹서',help_text('auto_haptics_gain'))
             for w in walk(e.body):
-                if isinstance(w,(tk.Label,RangeSlider)):self.assertFalse(w.bind('<Enter>'))
+                if isinstance(w,(tk.Label,RangeSlider)):
+                    self.assertEqual(bool(w.bind('<Enter>')),w in hover_controls)
     def test_compact_values_units_and_right_alignment(self):
         e=self.editor();e.select_category(0)
         self.assertIn('분',self.texts(e))
@@ -85,7 +92,12 @@ class PresentationTests(unittest.TestCase):
                 self.assertEqual(texts,['끔','15 Hz','25 Hz'])
                 continue
             low,high=slider.limits()
-            self.assertIn(f'{low:g}',texts);self.assertIn(f'{high:g}',texts)
+            marker = slider.display(slider.marker) if slider.marker is not None else None
+            for endpoint in (low, high):
+                expected = f'{endpoint:g}'
+                if endpoint == marker:
+                    expected = f'{slider.marker_label}{expected}'
+                self.assertIn(expected,texts)
     def test_search_hint_is_not_query_text(self):
         e=self.editor();self.assertEqual(e.search.get(),'');self.assertEqual(e.search_hint.cget('text'),'설정 검색')
         e.search.set('gyro');self.assertEqual(e.search_hint.winfo_manager(),'')

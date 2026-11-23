@@ -258,9 +258,12 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         return icon
     def option_title(self,parent,key,text=None,foreground=FG,wraplength=270):
         box=tk.Frame(parent,bg=CARD)
-        tk.Label(box,text=label(key) if text is None else text,bg=CARD,fg=foreground,anchor='w',justify='left',wraplength=wraplength).pack(side='left')
+        title=tk.Label(box,text=label(key) if text is None else text,bg=CARD,fg=foreground,anchor='w',justify='left',wraplength=wraplength)
+        title.pack(side='left')
         from studio_option_help import option_help
-        self.help_icon(box,lambda k=key:option_help(self,k)).pack(side='left',padx=(5,0))
+        tip=lambda:option_help(self,key)
+        self.help_icon(box,tip).pack(side='left',padx=(5,0))
+        if key=='auto_haptics_gain':FieldTip(title,tip)
         return box
     def make_card(self,parent,padding=18,*,bottom_chevron=False):
         return RoundedCard(parent,background=BG,surface=CARD,outline=BORDER,
@@ -314,7 +317,6 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         if key=='haptics_gain':return values.get('auto_haptics_enable')==0
         if key == 'ah_highpass' and getattr(getattr(self.app, 'engine', None), 'studio_live', False):
             return False
-        if key=='haptics_aa':return values.get('auto_haptics_enable') in (1,2)
         if key in ('rumble_haptic_strength','mix_native_level'):return values.get('auto_haptics_enable')==1
         if key=='mix_native_filter':return values.get('auto_haptics_enable')==1 and values.get('mix_native_level',0)>0
         if key=='rumble_mode':
@@ -1132,7 +1134,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 self.loaded=False;self.path=None;self.doc.effects={};self.doc.effect_baseline={};self.doc.macros={};self.doc.macro_baseline={};self.app.refresh_devices()
             if self.path and result.get('profile') and not result.get('reloaded') and not result.get('reload_error'):
                 state=dict(result['profile'],auto_haptics_enable=self.doc.baseline.get('auto_haptics_enable'))
-                state.update({key:self.doc.baseline[key] for key in ('mix_native_level','ah_dsp_source') if key in self.doc.baseline})
+                state.update({key:self.doc.baseline[key] for key in ('mix_native_level','ah_dsp_source','auto_mute_mix','auto_mute_replace') if key in self.doc.baseline})
                 self.app.studio._observe_profile(self.path,state)
             if result.get('profile_saved'):
                 self.app.studio.forget_slot_history(result.get('old_path') or result.get('path') or self.path)

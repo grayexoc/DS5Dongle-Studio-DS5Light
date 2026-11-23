@@ -4344,6 +4344,7 @@ EN['장치 연결 필요 · 자이로 출력 모드 무관'] = 'Device connectio
 EN['전송: 마우스 계열 출력 적용 필요. 반영: Flick Stick 또는 자이로 켬 + 마우스 + 자연 감도. 전송 후 3초 안에 게임으로 전환하세요.'] = 'Send: apply a mouse output mode. Use result: Flick Stick or gyro on + mouse + natural sensitivity. Switch to the game within 3 seconds after sending.'
 
 EN['Windows에서 듀얼센스 오디오 출력을 찾지 못했습니다. Pico USB 연결과 Windows 소리 설정을 확인하세요.'] = 'Windows did not list a DualSense audio output. Check the Pico USB connection and Windows sound settings.'
+EN['듀얼센스 출력이 2채널입니다. Windows 소리 설정에서 4채널로 구성하세요.'] = 'The DualSense output is set to stereo. Select four channels in Windows sound settings.'
 
 EN['충전독 정책 응답 오류'] = 'Invalid dock disconnect policy response.'
 EN['충전독 정책 저장 실패'] = 'Failed to save dock disconnect policy.'
@@ -4587,7 +4588,7 @@ FIELD_HELP = {
  'auto_mute_replace':'Mutes speaker audio in Replace mode.', 'auto_mute_mix':'Mutes speaker audio in Mix mode.',
  'rumble_haptic_strength':'Adds converted XInput or DS4 rumble in Mix only. Above 100% can saturate strong effects.',
  'haptics_gain':'Scales haptic waveforms. 1 is unchanged. Higher values can saturate. Unavailable in Mix and Replace.',
- 'haptics_aa':'Smooths generated audio haptics in Mix and Replace, and converted rumble in Mix. Strong smoothing can soften impacts.',
+ 'haptics_aa':'Default: Off. Smooths native PCM with audio haptics off, generated audio haptics in Mix and Replace, and converted rumble in Mix. Strong smoothing can soften impacts.',
  'speaker_volume':'Built-in DualSense speaker volume. Does not change PC speaker volume.',
  'headset_volume':'Volume of a headset connected to the DualSense audio jack.',
  'speaker_gain':'Extra speaker amplification. High values can distort.',
@@ -5008,3 +5009,11 @@ FIELD_LABELS['ah_highpass'] = 'Haptic high-pass'
 FIELD_HELP['ah_highpass'] = 'Reduces very low frequencies in audio-derived haptics. Off by default.'
 EN['복원 대상 펌웨어에서 극저음 차단을 지원하지 않습니다.'] = 'The target firmware does not support haptic high-pass.'
 EN.update({'약하게': 'Light', '표준': 'Standard', '강하게': 'Strong'})
+
+EN.update({
+    '기본 1x. 공유 출력에서는 Studio의 패드 스피커 자동 음소거가 확인될 때 앱 세기를 적용합니다. 음소거가 꺼져 있거나 확인되지 않으면 앱은 1x로 출력합니다. 이때는 Studio 설정에서 오디오햅틱 세기를 조절하세요. 독점 Rear에서는 앱 세기가 Rear 햅틱 신호에만 적용됩니다.':
+        'Default 1x. Shared output applies app gain when Studio confirms controller speaker auto-mute. If auto-mute is off or unconfirmed, the app outputs at 1x. Adjust Audio Haptics Strength in Studio settings in that case. Exclusive Rear applies app gain only to the Rear haptic signal.',
+    'Rear 큐 → 렌더': 'Rear queue → render',
+    'Rear WASAPI 쓰기': 'Rear WASAPI write',
+})
+FIELD_HELP['mix_native_filter'] = 'Uses a fixed 120 Hz low-pass independently of the Audio Haptics cutoff. Select Original to preserve the game’s native haptics.'

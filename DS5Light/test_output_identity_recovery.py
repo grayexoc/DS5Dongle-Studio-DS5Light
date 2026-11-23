@@ -30,6 +30,12 @@ class IdentityTests(unittest.TestCase):
 
  def test_same_endpoint_without_container_recovers(self):
   b=self.binding();r=self.row();self.assertIs(b.output([r],'Old'),r)
+ def test_stereo_controller_with_unrelated_surround_speakers(self):
+  b=self.binding()
+  pad=self.row(name='DualSense Edge',maxOutputChannels=2,container_id='ours')
+  speakers=self.row(name='Speakers',maxOutputChannels=8,container_id='other')
+  self.assertEqual(b.output_issue([pad,speakers]),'stereo')
+  self.assertNotEqual(b.output_issue([dict(pad,container_id='other'),speakers]),'stereo')
  def test_conflicting_container_never_recovers(self):
   self.assertIsNone(self.binding().output([self.row(container_id='other')]))
  def test_unknown_endpoint_without_container_never_recovers(self):

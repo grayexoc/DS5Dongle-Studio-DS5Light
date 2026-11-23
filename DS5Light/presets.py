@@ -42,6 +42,8 @@ def validate(value):
     impact=c.get('impact',.85)
     if type(impact) not in (int,float) or not math.isfinite(impact) or not 0<=impact<=1:
         raise ValueError(_ui_tr('충격 보존 범위 오류'))
+    if 'experimental_ai' in c:
+        return {**value, 'controls': {key: val for key, val in c.items() if key != 'experimental_ai'}}
     return value
 
 
@@ -62,10 +64,7 @@ class PresetStore:
                 doc = json.loads(self.path.read_text(encoding='utf-8'))
                 if doc.get('version') not in (1,2,3,4,5,6) or not isinstance(doc.get('slots'), list) or len(doc['slots']) != SLOT_COUNT:
                     raise ValueError(_ui_tr('지원하지 않는 프리셋 파일 형식'))
-                for item in doc['slots']:
-                    if item is not None:
-                        validate(item)
-                self.slots = doc['slots']
+                self.slots = [validate(item) if item is not None else None for item in doc['slots']]
                 bindings=doc.get('bindings',{})
                 if not isinstance(bindings,dict) or any(not isinstance(name,str) or not name or len(name)>512
                     or type(index) is not int or not 0<=index<SLOT_COUNT or self.slots[index] is None
@@ -83,7 +82,7 @@ class PresetStore:
             raise ValueError(_ui_tr('기존 파일을 읽지 못해 덮어쓰기를 막았습니다: ')+self.error)
         if not 0 <= index < SLOT_COUNT:
             raise ValueError(_ui_tr('슬롯 번호 오류'))
-        validate(value)
+        value = validate(value)
         slots = list(self.slots)
         slots[index] = json.loads(json.dumps(value, allow_nan=False))
         bindings=dict(self.bindings)

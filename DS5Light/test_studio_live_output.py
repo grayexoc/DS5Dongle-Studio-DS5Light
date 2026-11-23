@@ -102,12 +102,15 @@ class StudioLiveOutputTests(unittest.TestCase):
                 np.testing.assert_array_equal(pcm[0], [4915, -4915, 0, 0])
                 self.assertEqual(output.stats()['queued_frames'], BLOCK * 2)
                 self.assertFalse(output.stats()['adaptive_gain'])
+                self.assertIsNone(output.stats()['queue_to_render_ms'])
+                self.assertIsNone(output.stats()['write_ms'])
                 prepare.assert_called_once_with('studio', live=True, cancel=output._stop.is_set)
                 renderer.write.side_effect = OSError('stopped')
-                output.write(data.tobytes(), Controls())
+                output.write(data.tobytes(), Controls(), measure=True)
                 output._thread.join(1)
                 self.assertEqual(output.stats()['submitted_frames'], BLOCK * 2)
                 self.assertEqual(output.stats()['queued_frames'], BLOCK * 4)
+                self.assertGreaterEqual(output.stats()['queue_to_render_ms'][0], 0.)
                 with self.assertRaisesRegex(RuntimeError, 'stopped'):
                     output.check()
             finally:
@@ -129,7 +132,7 @@ class StudioLiveOutputTests(unittest.TestCase):
             try:
                 output.wait_ready()
                 data = np.tile(np.array([32767, -32768, 0, 0], dtype='<i2'), (BLOCK, 1))
-                output.write(data.tobytes(), Controls(gain=1.5))
+                output.write(data.tobytes(), Controls(gain=1.5), measure=True)
                 self.assertTrue(sent.wait(1))
                 pcm = np.frombuffer(renderer.write.call_args.args[0], '<i2').reshape(-1, 4)
                 np.testing.assert_array_equal(pcm[0, :2], [4915, -4915])
@@ -137,6 +140,9 @@ class StudioLiveOutputTests(unittest.TestCase):
                 self.assertEqual(output.stats()['adaptive_gain_target_percent'], 150)
             finally:
                 output.close()
+            stats = output.stats()
+            self.assertGreaterEqual(stats['queue_to_render_ms'][0], 0.)
+            self.assertGreaterEqual(stats['write_ms'][0], 0.)
 
     def test_live_worker_shapes_impacts_and_steers_only_for_stereo_capture(self):
         batch_frames = 1920

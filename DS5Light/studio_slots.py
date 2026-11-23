@@ -97,6 +97,8 @@ class StudioClient:
                     profile.update(mix_native_level=mix_level, ah_dsp_source=dsp_source)
                 elif mode == 2:
                     profile['ah_dsp_source'] = dsp_source
+        if include_state and len(raw) >= 47 and raw[46] & 0xFC == 0xA0:
+            profile.update(auto_mute_mix=bool(raw[46] & 1), auto_mute_replace=bool(raw[46] & 2))
         if include_revision and len(raw)>=46 and raw[30:34]==b'REV1':
             profile['config_token']=raw[34:42].hex()
         return profile

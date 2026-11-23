@@ -61,7 +61,7 @@ class RecentUITests(unittest.TestCase):
                 hint.hide();self.assertIsNone(hint.popup)
             start.assert_not_called();edit.assert_not_called()
         self.assertEqual(self.ui.controls,before)
-        gain=next(w for w in icons if '기본 1x' in w._filter_help_hint.text)
+        gain=next(w for w in icons if '1x' in w._filter_help_hint.text and '공유 출력' in w._filter_help_hint.text)
         frame_style = gain.master.cget('style') or gain.master.winfo_class()
         self.assertEqual(gain.cget('bg'), ttk.Style(gain.master).lookup(frame_style, 'background'))
         self.ui.filter_on.set(False);self.ui.update_controls()

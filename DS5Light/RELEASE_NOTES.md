@@ -1,6 +1,51 @@
+# v1.2.1
+
+The Windows x64 package `DS5Light-win-x64-v1.2.1.zip` pairs with Studio v52 for Raspberry Pi Pico 2 W. Use the app and firmware from this release together.
+
+- **Follow-up impacts.** Improved quieter-impact detection after a stronger hit in Mix/Front and Replace/Front, while suppressing repeated texture triggers from sustained bass.
+- **Rear haptics.** Preserved sustained bass when treble is present, stabilized left/right balance during continuous effects, and retained weaker samples through rounded output conversion.
+- **App strength and speaker audio.** Shared output applies app gain only when Studio confirms controller-speaker auto-mute. Otherwise it stays at 1x. Exclusive Rear applies app gain only to the rear haptic signal.
+- **Native Mix and smoothing.** Native leakage filtering uses a fixed 120 Hz low-pass independently of the generated-haptics cutoff. Native-mode AA is selectable, with new defaults set to Off; existing saved profiles keep their selected values.
+- **Startup and reconnection.** Whole-device automatic capture no longer depends on the process list. After USB reconnection, the app waits up to eight seconds for the same Pico's four-channel output and follows the latest start request. Two-channel recognition now has a specific setup message.
+- **Transitions and efficiency.** Reset affected DSP state when changing modes or input routes, reduced duplicate processing, and reused rear-control ramp data.
+- **UI and diagnostics.** Clarified Korean and English guidance and gain tooltips, aligned default/recommended slider markers, and separated rear-queue and WASAPI-write timing displays.
+- **Experimental cleanup.** Removed the AI prototype, pitch-matching and generic metal-detection paths. Retired speaker-accent controls and rendering are disabled, including profiles that previously enabled them.
+
+**Recommended preset setup**
+
+After updating, we recommend reviewing and applying a supplied Mix or Replace preset under **Studio settings → Profile slots → Recommended presets**, then adjusting it to the game and your preference. Start with the app filter enabled, background reduction at 55%, and app strength at **1x (100%)**. Both presets use Front input; Mix also combines the game's raw rear native haptics.
+
+Existing saved slots retain their settings. Stop dongle audio and back up the destination slot before **Save and use**. This writes the current configuration with the preset's audio-haptics settings to that slot, replacing its previous contents.
+
+Use these recommended presets as the reference when comparing audio-haptics changes. Perceived response varies with Windows and game/application volume. Unless otherwise specified, other settings assume their defaults. If controller-speaker auto-mute is off or unconfirmed on shared output, the app stays at 1x; adjust **Audio Haptics Strength in Studio settings** instead.
+
+## 한국어
+
+Windows x64용 `DS5Light-win-x64-v1.2.1.zip`은 Raspberry Pi Pico 2 W용 Studio v52와 함께 사용합니다. 이번 릴리즈의 앱과 펌웨어를 함께 사용하세요.
+
+- **후속 타격 보완.** Mix/Front·대체/Front에서 강한 타격 뒤의 작은 타격 검출을 개선하고, 지속 저음에서 타격 질감이 반복 발동하는 것을 억제했습니다.
+- **Rear 햅틱 개선.** 고음이 함께 재생돼도 지속 저역을 유지하고, 연속 효과의 좌우 출력 비율을 안정화했습니다. 최종 출력 반올림으로 약한 신호의 손실도 줄였습니다.
+- **앱 세기와 스피커 출력 처리.** 공유 출력은 Studio의 패드 스피커 자동 음소거가 확인될 때 앱 배율을 적용합니다. 그 외에는 1x로 출력합니다. 독점 Rear에서는 앱 세기가 후방 햅틱 신호에만 적용됩니다.
+- **네이티브 Mix·질감 조절.** 네이티브 누설 억제를 고정 120 Hz 저역통과 필터로 분리했습니다. 네이티브 모드에서도 AA를 선택할 수 있으며 새 기본값은 끔입니다. 기존 저장 프로필은 저장된 값을 사용합니다.
+- **시작·재연결 보완.** 전역 캡처 자동 시작이 게임 목록 조회에 영향을 받지 않도록 수정했습니다. USB 재연결 후 같은 Pico의 4채널 출력이 나타날 때까지 최대 8초간 확인하며 최신 시작 요청을 따릅니다. 2채널로 인식된 경우에는 별도 설정 안내를 표시합니다.
+- **전환·연산 개선.** 모드·입력 경로 전환 시 관련 DSP 상태를 초기화하고, 중복 연산과 Rear 램프 생성 작업을 줄였습니다.
+- **UI·진단 보완.** 한·영 안내와 세기 툴팁을 다듬고 기본·추천 슬라이더 표시를 정리했습니다. Rear 큐 대기와 WASAPI 쓰기 시간을 구분해 표시합니다.
+- **실험 기능 정리.** AI 시제품, 피치 매칭과 일반 금속음 판정 경로를 제거했습니다. 스피커 순간음 실험의 조작부와 출력을 정리했으며 이전에 켠 프로필에서도 끔으로 처리합니다.
+
+**추천 프리셋 적용 안내**
+
+업데이트 후 **Studio 설정 → 프로필 슬롯 → 추천 프리셋**에서 동봉 Mix·Replace 프리셋을 확인하고 적용해 보는 것을 권장합니다. **앱 필터 켬·배경 억제량 55%·앱 세기 1x(100%)**를 시작점으로 삼아 게임과 취향에 맞게 조절하세요. 두 프리셋 모두 Front 입력을 사용하며 Mix는 게임의 Rear 네이티브 햅틱 원본도 혼합합니다.
+
+기존 저장 슬롯은 자동으로 바뀌지 않습니다. 동글 오디오 전송을 멈추고 대상 슬롯을 백업한 뒤 **저장 후 사용**을 선택하세요. 현재 구성에 프리셋의 오디오 햅틱 설정을 반영한 결과로 대상 슬롯을 덮어씁니다.
+
+오디오 햅틱의 개선 사항은 이 추천 프리셋을 기준으로 확인해 주세요. 체감은 Windows 음량과 게임·앱 음량에 영향을 받으며, 별도 안내가 없는 기타 설정은 기본값을 기준으로 합니다. 공유 출력에서 패드 스피커 자동 음소거가 꺼져 있거나 확인되지 않으면 앱 출력은 1x로 유지되므로 **Studio 설정의 오디오햅틱 세기**를 조절하세요.
+
+
+---
+
 # v1.2.0
 
-DS5Light v1.2.0 for Windows x64 pairs with Studio v51 for Raspberry Pi Pico 2 W. Use the app and firmware from this release together.
+The Windows x64 package `DS5Light-win-x64-v1.2.0.zip` pairs with Studio v51 for Raspberry Pi Pico 2 W. Use the app and firmware from this release together.
 
 - **Impact texture.** Added brief harmonic shaping to audio-generated haptics. Low-dominant hits adjust the blend and decay, while sustained bass is guarded against repeated artificial attacks.
 - **Left/right impact response.** Adjusted the initial impact blend using the relative rise of each channel.

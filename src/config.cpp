@@ -195,7 +195,8 @@ static void config_body_valid(Config_body &value) {
     if (body->bt_flush_timeout > 0x07FF) body->bt_flush_timeout = 0; // 0=off, max per BT spec
     if (body->bt_qos_latency_us > 50000) body->bt_qos_latency_us = 0; // 0=off
     if (body->rumble_haptic_strength > 200) body->rumble_haptic_strength = 100; // >100 = deliberate overdrive
-    if (body->effect_leak_volume > 100) body->effect_leak_volume = 0; // 0=off
+    // Roll back the speaker accent feature for live settings and activated slots.
+    body->effect_leak_volume = 0;
     if (body->effect_leak_hp_hz < 100 || body->effect_leak_hp_hz > 5000) body->effect_leak_hp_hz = 800;
     if (body->effect_leak_sensitivity > 100) body->effect_leak_sensitivity = 50;
     if (body->effect_leak_decay > 100) body->effect_leak_decay = 40;
@@ -1025,7 +1026,9 @@ uint8_t slot_activate(uint8_t idx, bool &needs_reenum, uint8_t &fail_stage) {
 bool slot_load_body(uint8_t idx, Config_body &out) {
     if (idx >= SLOT_COUNT) return false;
     uint8_t nm[SLOT_NAME_LEN]{};
-    return slot_read(idx, nm, out);
+    if (!slot_read(idx, nm, out)) return false;
+    out.effect_leak_volume = 0;
+    return true;
 }
 
 bool slot_info(uint8_t idx, uint8_t name_out[SLOT_NAME_LEN], uint8_t &valid, uint8_t &cfg_version) {

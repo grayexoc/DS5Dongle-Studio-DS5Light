@@ -1,5 +1,6 @@
 """Failure injection only; no real devices or user settings are accessed."""
 import gc
+import json
 import queue
 import tempfile
 import threading
@@ -15,6 +16,19 @@ from studio_power import StudioPower
 
 
 class BackupRecoveryTests(unittest.TestCase):
+    def test_retired_ai_setting_does_not_reset_other_preferences(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'ui.json'
+            legacy = default_preferences()
+            legacy['controls'].update(gain=2.0, experimental_ai=True)
+            path.write_text(json.dumps({'version': 1, 'preferences': legacy}), encoding='utf-8')
+            store = PreferenceStore(path)
+            loaded = store.load()
+            self.assertIsNone(store.error)
+            self.assertEqual(loaded['controls']['gain'], 2.0)
+            store.save(loaded)
+            self.assertNotIn('experimental_ai', path.read_text(encoding='utf-8'))
+
     def test_backup_failure_never_overwrites_original(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'ui.json'

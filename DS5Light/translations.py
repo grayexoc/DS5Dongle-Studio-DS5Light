@@ -176,3 +176,17 @@ EN.update({'오디오햅틱 세기':'Audio haptic strength'})
 
 from studio_english_strings import EN as STUDIO_EN
 EN.update(STUDIO_EN)
+EN.update({
+    '출력 시험은 최대 2초입니다.\n오디오햅틱을 끄고 앱 캡처를 정지하세요.':
+        'Output tests last up to 2 seconds.\nTurn off audio haptics and stop capture.',
+    'DSP 최적화 미리보기': 'Preview DSP optimization',
+})
+
+EN.update({
+    '오디오햅틱은 게임·재생 앱과 Windows 볼륨의 영향을 받을 수 있습니다. '
+    '햅틱이 약하면 스피커나 앰프 자체 볼륨을 먼저 낮춘 뒤, 게임·재생 앱 볼륨을 조금씩 높이세요. '
+    '필요하면 Windows 볼륨 믹서에서 해당 앱의 볼륨도 확인하세요.':
+    'Game, media app, and Windows volume can affect audio haptics. If haptics feel weak, '
+    'first lower the volume on your speakers or amplifier, then gradually raise the in-game or '
+    'media app volume. If needed, check the app volume in Windows Volume Mixer.',
+})

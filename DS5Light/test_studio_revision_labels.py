@@ -17,11 +17,34 @@ class LabelRevisionTests(unittest.TestCase):
     tearDown=base.NativeUITests.tearDown
     editor=base.NativeUITests.editor
     def macro(self,data):return flow.MacroFlowUITests.macro(self,data)
+    def test_reference_caption_shares_tick_row_without_overlap(self):
+        self.root._ui_scale = 1.25
+        for marker, label, texts in (
+            (2, 'Recommended', {'0', 'Recommended2', '100'}),
+            (98, '추천', {'0', '추천98', '100'}),
+            (100, '기본', {'0', '기본100'}),
+        ):
+            with self.subTest(marker=marker):
+                variable = tk.StringVar(self.root, '50')
+                slider = RangeSlider(self.root, variable, 0, 100, marker=marker, marker_label=label)
+                slider.place(x=0, y=0)
+                self.root.update_idletasks()
+                slider.draw()
+                items = [item for item in slider.find_all() if slider.type(item) == 'text']
+                self.assertEqual({slider.itemcget(item, 'text') for item in items}, texts)
+                self.assertEqual(len({slider.coords(item)[1] for item in items}), 1)
+                bounds = sorted(slider.bbox(item) for item in items)
+                self.assertTrue(all(a[2] < b[0] for a, b in zip(bounds, bounds[1:])))
+                dot, = slider.find_withtag('reference_dot')
+                self.assertEqual(slider.type(dot), 'oval')
+                self.assertLessEqual(slider.bbox(dot)[3], min(bound[1] for bound in bounds))
+                slider.destroy()
+
     def test_effective_stick_default_is_48_but_stored_default_stays_zero(self):
         ui,m=self.macro(flow.record(gesture=160,keys=[26,7,22,4],flags=2,stick_thresh=0))
         self.assertEqual(m.threshold.get(),'48');self.assertEqual(m.state()['threshold'],0)
         slider=next(w for w in walk(m.threshold_row) if isinstance(w,RangeSlider))
-        self.assertEqual(slider.limits(),(10,120));self.assertEqual((slider.marker,slider.marker_label),(48,'기본값'))
+        self.assertEqual(slider.limits(),(10,120));self.assertEqual((slider.marker,slider.marker_label),(48,'기본'))
         self.assertEqual(m.draft.build(m.state())[18],0)
         m.threshold.set('60');self.assertEqual(m.draft.build(m.state())[18],60)
         m.threshold.set('48');self.assertEqual(m.draft.build(m.state())[18],0);m.close()

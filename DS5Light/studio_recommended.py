@@ -8,6 +8,7 @@ from studio_fields import FIELDS
 from studio_scope import EDITABLE,SUPPORTED_CONFIGS
 from studio_settings_protocol import needs_reconnect,validate_changes
 from studio_document import SettingsDocument
+from localization import LANGUAGE
 
 # Exactly the editable fields shown in Studio's "오디오햅틱" section.
 # Device/audio-buffer settings, native gain/filtering and macro definitions or
@@ -27,7 +28,18 @@ PRESETS=(
     ('Audio_Haptic_02.json',_ui_tr('오디오햅틱 대체'),
      _ui_tr('앞 채널(Front)에서 만든 오디오햅틱만 사용합니다. 앱 필터 켬, 배경 억제량 55%, 앱의 오디오햅틱 세기 1x 기준입니다.')),
 )
-COMMON_HELP=_ui_tr('\n\n현재 Pico 설정에서 Studio의 오디오햅틱 항목만 추천값으로 바꿔 선택한 슬롯에 저장합니다. 장치·자이로·트리거 등 다른 설정과 매크로는 유지합니다.')
+if LANGUAGE=='ko':
+    descriptions=(
+        '오디오햅틱을 끄고 게임이 보내는 네이티브 햅틱과 일반 진동을 사용합니다. 게임과 연결 방식이 이를 지원해야 합니다.',
+        'Front 오디오로 만든 햅틱과 게임이 Rear로 보내는 네이티브 햅틱을 섞습니다. 앱 필터를 켜고 세기를 1x부터 조절하세요.',
+        'Front 오디오로 만든 햅틱만 출력합니다. 앱에서 필터 켜기, 배경 억제량 55%, 세기 1x로 시작하세요.',
+    )
+    PRESETS=tuple((filename,title,description) for (filename,title,_),description in zip(PRESETS,descriptions))
+
+COMMON_HELP=(
+    '\n\n현재 Studio 설정에 추천값을 반영해 선택한 슬롯에 덮어씁니다. 앱 필터와 세기는 오디오햅틱 탭에서 조절하세요.'
+    if LANGUAGE=='ko' else _ui_tr('\n\n현재 Pico 설정에서 Studio의 오디오햅틱 항목만 추천값으로 바꿔 선택한 슬롯에 저장합니다. 장치·자이로·트리거 등 다른 설정과 매크로는 유지합니다.')
+)
 
 
 def load_preset(filename):

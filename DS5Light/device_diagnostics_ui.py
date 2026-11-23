@@ -116,8 +116,8 @@ class DeviceDiagnosticsDialog:
                 self.rumble_choice.current(0)
                 self.rumble_choice.pack(fill='x', pady=(0, 4))
         self.output_buttons=list(self.buttons)
-        tk.Label(left, text=tr('각 시험 최대 2초 · 오디오햅틱 끔 프로필 필요'),
-                 bg='#151515', fg='#aaa393', anchor='w').pack(fill='x', pady=(6, 0))
+        tk.Label(left, text=tr('출력 시험은 최대 2초입니다.\n오디오햅틱을 끄고 앱 캡처를 정지하세요.'),
+                 bg='#151515', fg='#aaa393', anchor='w', justify='left').pack(fill='x', pady=(6, 0))
         self.signal_button = ttk.Button(left, text=tr('WAV DSP 신호 비교'),
             command=self.signal_preview, style='Diagnostic.TButton')
         self.signal_button.pack(fill='x', pady=(6, 0))
@@ -133,7 +133,7 @@ class DeviceDiagnosticsDialog:
             command=self.exclusive_replay, style='Diagnostic.TButton')
         self.exclusive_button.pack(fill='x', pady=(6, 0))
         self.buttons.append(self.exclusive_button)
-        self.preview_button = ttk.Button(self.studio_tools, text=tr('DSP Only 최적화 미리보기'),
+        self.preview_button = ttk.Button(self.studio_tools, text=tr('DSP 최적화 미리보기'),
             command=self.optimizer_preview, style='Diagnostic.TButton')
         self.preview_button.pack(fill='x', pady=(6, 0))
         self.buttons.append(self.preview_button)

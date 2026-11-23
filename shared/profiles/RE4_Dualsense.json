@@ -19,7 +19,7 @@
     "auto_mute_mix": 1,
     "lightbar_off": 0,
     "rumble_haptic_strength": 100,
-    "effect_leak_volume": 15,
+    "effect_leak_volume": 0,
     "effect_leak_sensitivity": 40,
     "effect_leak_decay": 30,
     "effect_leak_attack": 100,

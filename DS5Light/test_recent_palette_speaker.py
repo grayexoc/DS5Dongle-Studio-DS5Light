@@ -4,7 +4,7 @@ from tkinter import ttk
 from unittest.mock import patch,Mock
 import test_studio_settings as fixture
 from studio_lightbar import rgb_palette
-from studio_help import help_text
+from studio_help import help_text,label
 
 def walk(parent):
     for child in parent.winfo_children():
@@ -80,10 +80,10 @@ class RecentUITests(unittest.TestCase):
         self.assertEqual(rows['mix_native_level'].grid_info()['pady'],rows['auto_mute_mix'].grid_info()['pady'])
         self.assertFalse(rows['auto_mute_replace'].winfo_manager())
         ui.select_value('auto_haptics_enable',2)
-        for key,title in (('auto_mute_mix','Mix 모드 스피커 음소거'),('auto_mute_replace','Replace 모드 스피커 음소거')):
+        for key,title in ((key,label(key)) for key in ('auto_mute_mix','auto_mute_replace')):
             self.assertFalse(ui.field_views[key][1][0].enabled)
             self.assertEqual(sum(isinstance(w,tk.Label) and w.cget('text')==title for w in walk(ui.body)),1)
-        self.assertIn('단자',help_text('disable_speaker'))
+        self.assertIn('본체에 연결한 헤드셋',help_text('disable_speaker'))
         self.assertIn('헤드셋',help_text('disable_speaker'))
     def test_mode_transitions_manual_override_and_child_values_preserved(self):
         ui=self.editor();saved={k:ui.doc.values[k] for k in ('auto_mute_mix','auto_mute_replace')}

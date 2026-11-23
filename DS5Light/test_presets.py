@@ -1,4 +1,5 @@
 import copy
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,6 +28,16 @@ class PresetTests(unittest.TestCase):
         self.assertEqual(loaded.slots[11], other)
         self.assertIsNone(loaded.slots[1])
         self.assertNotIn('pid', self.path.read_text(encoding='utf-8').lower())
+
+    def test_retired_ai_setting_does_not_invalidate_legacy_slot(self):
+        legacy = copy.deepcopy(self.value)
+        legacy['controls']['experimental_ai'] = True
+        self.path.write_text(json.dumps({'version': 6, 'slots': [legacy] + [None] * 11}), encoding='utf-8')
+        store = PresetStore(self.path)
+        self.assertIsNone(store.error)
+        self.assertEqual(store.slots[0], self.value)
+        store.save(0, store.slots[0])
+        self.assertNotIn('experimental_ai', self.path.read_text(encoding='utf-8'))
 
     def test_corrupt_file_preserved(self):
         self.path.write_text('{broken', encoding='utf-8')

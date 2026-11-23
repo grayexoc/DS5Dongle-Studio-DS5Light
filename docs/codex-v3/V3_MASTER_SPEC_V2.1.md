@@ -20,12 +20,10 @@ The goal is perceptual quality, not maximum vibration amplitude.
 
 ## 2. Approved decisions
 
-1. Provide DSP Only and DSP + Tiny Causal GRU modes.
-2. Tiny Causal GRU is the only planned AI model for initial V3.
-3. TCN comparison and implementation are deferred. Reconsider only if GRU fails quality, latency, CPU, or stability acceptance gates, or the user explicitly requests it.
-4. Training is offline only. No online learning, cloud inference, GPU inference at runtime, or background model training.
-5. DSP and GRU share one Unified DSP & Feature Engine. Do not compute the same filter bank, energy, or spectral features twice.
-6. One Decision Fusion module combines deterministic DSP evidence and optional GRU probabilities.
+1. Use DSP for audio haptics. Pitch Matching, generic metal detection, and the Tiny Causal GRU prototype were retired.
+2–4. Retired AI decisions.
+5. Reuse the Unified DSP & Feature Engine. Do not compute the same filter bank, energy, or spectral features twice.
+6. One Decision Fusion module combines deterministic DSP evidence.
 7. One Event-to-Haptic Mapper creates event patterns and output frames.
 8. Adaptive I/O Supervisor is a formal V3 component for input/output observation, confidence evaluation, safe reconfiguration, and recovery.
 9. Automatic channel recognition is the default, but metadata and runtime signal validation are required. Manual override is supported.
@@ -48,7 +46,6 @@ Game/process audio capture
 -> Input format and channel validation
 -> Unified DSP & Feature Engine
 -> DSP Fast Path
--> optional sequential Tiny Causal GRU worker
 -> Decision Fusion
 -> Event-to-Haptic Mapper
 -> output layout/router
@@ -61,8 +58,7 @@ Adaptive I/O Supervisor observes the path and requests controlled reconfiguratio
 ### 3.2 Component ownership
 - Audio Capture: Windows capture and frame timing.
 - Channel Resolver: input layout negotiation, validation, confidence, manual override.
-- Unified DSP & Feature Engine: causal filter bank, envelopes, energy, event evidence, shared AI features.
-- GRU Runtime: sequential inference on feature frames, optional only.
+- Unified DSP & Feature Engine: causal filter bank, envelopes, energy, event evidence, and shared replay features.
 - Decision Fusion: final event scores/protection decisions.
 - Event-to-Haptic Mapper: event pattern and left/right output frame generation.
 - Adaptive I/O Supervisor: device/stream/firmware state monitoring and reconfiguration orchestration.
@@ -74,7 +70,7 @@ Adaptive I/O Supervisor observes the path and requests controlled reconfiguratio
 ### 3.3 Avoid over-fragmentation
 These are logical responsibilities, not a requirement to create one source file per name. Reuse current modules and only split code where a stable interface or independent test boundary is needed.
 
-## 4. PC DSP and AI
+## 4. PC DSP
 
 ### DSP
 - Preserve the existing causal real-time path where possible.
@@ -83,18 +79,6 @@ These are logical responsibilities, not a requirement to create one source file 
 - Low-frequency subdivision (e.g. 0–60, 60–120 Hz) is a candidate experiment, not a predetermined final filter design.
 - No lookahead. No blocking calls on the audio thread.
 - Shared features should reuse DSP state. FFT/spectral analysis is computed only when needed and at a justified cadence.
-
-### Tiny Causal GRU
-- Unidirectional, causal, one-layer candidate.
-- Compare hidden sizes 16 / 24 / 32; H24 is an initial candidate, not a fixed decision.
-- 16 input features are a starting schema proposal, not immutable.
-- Candidate feature families: band log-energy, fast/slow ratios, transient/crest measures, spectral novelty/centroid/high-frequency content/flatness when justified, stereo balance/correlation, sustainedness.
-- Multi-label outputs may include impact, metallic, sustained, periodic/background, projectile/transient and direction confidence. Final labels require dataset and observability review.
-- FP32 first. INT8 only if the actual target CPU/runtime shows a benefit without unacceptable quality loss.
-- ONNX Runtime is a candidate runtime, not mandatory if integration/latency measurements favor another minimal solution.
-- AI worker processes ordered feature frames. Queue is bounded. On overflow/discontinuity, reset GRU state and temporarily use DSP Only until the sequence is stable.
-- Stale AI results are discarded. DSP fast path never waits for GRU.
-- 10 ms inference cadence and 2/5 ms p95/p99 targets are experimental targets, not guarantees.
 
 ## 5. Adaptive I/O and automatic optimization
 
@@ -123,7 +107,7 @@ The optimizer uses verified audio statistics, firmware capabilities and ranges, 
 Studio settings candidates include low-pass cutoff, crossover, low/high gain, filter slope, smoothing/envelope, gate, carrier, global haptic gain, and Native Haptics mix/levels where the firmware exposes them. Exact field names, ranges, persistence behavior, and ownership must be confirmed from source and firmware before implementation.
 
 ### Safe adaptation policy
-- Separate fast DSP loop (target 5 ms), AI feature/inference loop (initial target 10 ms), medium statistical loop, and slow device/profile reconfiguration loop.
+- Separate fast DSP loop (target 5 ms), medium statistical loop, and slow device/profile reconfiguration loop.
 - No structural channel remapping during transient gameplay changes.
 - Use confidence thresholds, hysteresis, minimum dwell time, parameter rate limits, and stable-state checks.
 - Apply only changed fields.
@@ -157,10 +141,10 @@ PC owns semantic classification and haptic-control signal generation. Studio own
 ## 8. UI information architecture
 
 Five main areas:
-1. Home / Auto Optimize: game, input, Studio connection, optimization status, DSP/GRU mode, overall intensity.
+1. Home / Auto Optimize: game, input, Studio connection, optimization status, overall intensity.
 2. Haptics: impact, background suppression, metallic/sword effects, projectile/pass-by, directionality.
 3. Audio & Devices: input device, channel mode/status, verification, channel test, Studio output route, reconnect.
-4. Advanced: DSP bands, envelope/gate, GRU diagnostics/settings, firmware-exposed advanced parameters.
+4. Advanced: DSP bands, envelope/gate, firmware-exposed advanced parameters.
 5. Diagnostics & Calibration: input meters, event probabilities, output telemetry, latency breakdown, calibration status and guided test.
 
 Default view is simple. Advanced parameters are hidden until requested. Do not expose duplicate PC/Studio controls for the same logical function. Legacy preset recommendations are removed from the default choice UI; any importer must mark imported values unverified.
@@ -169,10 +153,9 @@ Default view is simple. Advanced parameters are hidden until requested. Do not e
 
 - 48 kHz input and 5 ms DSP block are starting assumptions to verify.
 - No added lookahead; no audio-thread waiting.
-- Measure full path latency separately: capture, DSP, feature extraction, GRU, fusion, output write/queue, USB/firmware processing, and physical onset where instrumentation exists.
+- Measure full path latency separately: capture, DSP, feature extraction, fusion, output write/queue, USB/firmware processing, and physical onset where instrumentation exists.
 - Measure p50/p95/p99, CPU, memory, queue depth, drops, underruns, and audio glitches.
-- Compare existing baseline, V3 DSP Only, and V3 DSP+GRU on identical WAVs and real-game captures.
-- GRU is accepted only if it improves event recall at comparable false-positive rate, or reduces false positives at comparable recall, without violating latency/resource/stability gates.
+- Compare the existing baseline and V3 DSP on identical WAVs and real-game captures.
 - Initial candidate quality targets (e.g. +5 percentage points recall or 20% fewer false positives at similar recall) are goals to validate, not guaranteed results.
 - Subjective blind A/B testing and physical measurement are required before claiming perceptual improvement.
 
@@ -193,11 +176,7 @@ Astra: review channel confidence policy, DSP ownership, filter design, latency b
 Sol: extend existing capture/channel modules and DSP; add feature extraction, deterministic tests, WAV analysis and benchmarks.
 Acceptance: DSP Only works, no duplicate analysis, low-confidence changes are blocked, baseline path remains stable.
 
-### Phase 3 — Tiny Causal GRU
-Astra: approve labels, model size, feature schema, evaluation design and runtime constraints.
-Sol: dataset tooling, offline training, H16/H24/H32 experiments, export, runtime prototype and benchmarks.
-No TCN. No online learning.
-Acceptance: quality improvement and resource/latency gates pass; otherwise remain DSP Only and revisit model design with user.
+### Phase 3 — Retired AI prototype
 
 ### Phase 4 — Decision Fusion + Event-to-Haptic
 Astra: approve event priority, protection invariants, direction confidence and overlap/limiter policy.
@@ -222,7 +201,7 @@ Acceptance: physical and subjective tests support quality claims; DSP Only fallb
 
 ## 11. Model allocation
 
-- Astra 6.2: high-complexity architecture, DSP/GRU/fusion decisions, protocol and firmware risk, safety, acceptance criteria, final review.
+- Astra 6.2: high-complexity architecture, DSP/fusion decisions, protocol and firmware risk, safety, acceptance criteria, final review.
 - Sol 6.2: implementation, tests, builds, training pipeline, ONNX/runtime experiments, diagnostics, UI, docs, routine iteration.
 - Default loop: Sol investigates/implements -> Astra reviews/decides -> Sol revises.
 - 15–20% Astra and 80–85% Sol is a workload heuristic.

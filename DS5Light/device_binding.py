@@ -189,6 +189,16 @@ class DeviceBinding:
             return True
     def output_issue(self,rows):
         candidates=[r for r in rows if r.get('maxOutputChannels',0)>=4 and not r.get('isLoopbackDevice')]
+        identity=self.snapshot()
+        def controller(row):
+            if row.get('isLoopbackDevice'):return False
+            if identity.usb_parent_id and row.get('usb_parent_id'):
+                return identity.usb_parent_id==row['usb_parent_id']
+            if identity.container_id and row.get('container_id'):
+                return identity.container_id==row['container_id']
+            return any(label in row.get('name','').lower() for label in ('dualsense','studio xinput experiment'))
+        if not any(controller(r) for r in candidates) and any(
+                r.get('maxOutputChannels')==2 and controller(r) for r in rows):return 'stereo'
         if not candidates:return 'missing'
         if len(candidates)>1 and len({r.get('name') for r in candidates})<len(candidates):return 'ambiguous'
         return 'identity'

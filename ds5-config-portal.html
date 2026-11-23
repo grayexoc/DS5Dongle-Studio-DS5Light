@@ -354,7 +354,7 @@ const DESCRIPTIONS = {
   auto_haptics_smooth: "How gradually the derived haptics rise and fall - higher is smoother, lower is punchier.",
   auto_haptics_gate: "The level below which derived haptics stay silent, so quiet audio doesn't buzz.",
   mix_native_level: "How much of a game's own native haptics reaches the actuators in Mix mode.",
-  mix_native_filter: "Whether the native feed is low-passed before mixing, or passed through untouched.",
+  mix_native_filter: "Filtered applies a fixed 120 Hz low-pass to the native feed before mixing. The Audio Haptics cutoff is separate. Raw preserves the native feed.",
   ah_dsp_source: "Which audio channels the derived haptics are generated from.",
   auto_haptics_lowpass_hz: "The frequency above which audio is ignored when looking for bass to drive haptics.",
   ah_xover_hz: "Splits the haptic band so each grip is driven by a different part of the spectrum.",
@@ -409,7 +409,7 @@ const DESCRIPTIONS = {
   disable_pico_led: "Turns off the Pico board's on-board LED.",
   enable_wake: "Lets a PS-button press wake the PC from sleep (set per profile).",
   // Haptic Waveform Texture
-  haptics_aa: "Smooths generated audio haptics in Mix and Replace, and converted rumble in Mix. The saved value is kept when audio haptics are off.",
+  haptics_aa: "Default: Off. Smooths native PCM with audio haptics off, generated audio haptics in Mix and Replace, and converted rumble in Mix.",
   // Rumble to Trigger
   r2t_mode: "Turns a game's rumble into trigger vibration, and on which trigger(s).",
   r2t_on_press: "Only vibrate the trigger while it is actually being pressed.",
@@ -5650,8 +5650,7 @@ function fieldRowHTML(f){
     // attribute and silently break EVERY select in the portal. Decide the
     // re-render here and emit only a bare call.
     const reRender = ['ce_r2_yield','ce_l2_yield','at_mode','at_l2_mode','ce_r2_enable','ce_l2_enable','t2_button','t2_l2_button','gyro_mode','auto_haptics_enable'].includes(key);
-    const disabled = key==='haptics_aa' && ![1,2].includes(+config.auto_haptics_enable);
-    html += `<select${disabled?' disabled':''} onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRender?';render()':''}">`;
+    html += `<select onchange="config['${key}']=+this.value;(window._dirty=window._dirty||{})['${key}']=1${reRender?';render()':''}">`;
     { const pairs = Array.isArray(opts) ? opts : Object.entries(opts); for(const [v,lbl] of pairs) html += `<option value="${v}" ${config[key]==v?'selected':''}>${lbl}</option>`; }
     html += `</select>`;
   } else {

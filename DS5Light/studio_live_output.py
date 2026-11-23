@@ -1,4 +1,5 @@
 """Explicit managed Studio output for the app's live capture loop."""
+from collections import deque
 from contextlib import contextmanager
 from queue import Empty, Full, Queue
 from threading import Event, Thread
@@ -7,7 +8,7 @@ import time
 import numpy as np
 
 from audio import StudioInputIdle
-from core import BLOCK, RATE, Processor
+from core import BLOCK, Processor
 from adaptive_gain import AdaptiveRearLevel
 from device_diagnostics import with_selected_device
 from haptic_control import HapticControlDsp, encode_studio_pcm
@@ -20,15 +21,12 @@ from studio_settings_protocol import PartialApplyError, SettingsClient
 from thread_start import start_thread
 
 
-def live_rear_blocks(data, dsp, controls, sample_index, *, stereo_capture, feature_buffer=None):
+def live_rear_blocks(data, dsp, controls, *, stereo_capture):
     stereo = np.frombuffer(data, '<i2').reshape(-1, 4)[:, :2].astype(np.float32) / 32768
     for start in range(0, len(stereo), BLOCK):
         block = stereo[start:start + BLOCK]
-        _, rear = dsp.process(block, controls, now=sample_index / RATE,
-                              allow_direction=stereo_capture, rear_only=True,
-                              band_features=feature_buffer)
-        sample_index += len(block)
-        yield sample_index, encode_studio_pcm(block * LIVE_PCM_SCALE, rear * LIVE_PCM_SCALE)
+        _, rear = dsp.process(block, controls, allow_direction=stereo_capture, rear_only=True)
+        yield encode_studio_pcm(block * LIVE_PCM_SCALE, rear * LIVE_PCM_SCALE)
 
 
 class StudioLiveOutput:
@@ -38,6 +36,8 @@ class StudioLiveOutput:
         self._ready = Event()
         self._queue = Queue(maxsize=12)
         self._error = None
+        self._queue_timing = deque(maxlen=512)
+        self._write_timing = deque(maxlen=512)
         self.route_status = ''
         self.restore_status = ''
         self.restore_detail = ''
@@ -70,10 +70,10 @@ class StudioLiveOutput:
         if self._error or self._stop.is_set() or not self._thread.is_alive():
             raise RuntimeError(f'Studio exclusive output ended: {self._error or "closed"}')
 
-    def write(self, data, controls, *, stereo_capture=False):
+    def write(self, data, controls, *, stereo_capture=False, measure=False):
         self.check()
         try:
-            self._queue.put_nowait((data, controls, stereo_capture))
+            self._queue.put_nowait((data, controls, stereo_capture, time.perf_counter() if measure else None))
             self.queued_frames += len(data) // 8
         except Full as exc:
             self._stop.set()
@@ -81,7 +81,11 @@ class StudioLiveOutput:
 
     def stats(self):
         policy = self.adaptive.policy if self.adaptive is not None else None
-        return dict(queued_frames=self.queued_frames, submitted_frames=self.submitted_frames,
+        queue_samples = self._queue_timing.copy()
+        write_samples = self._write_timing.copy()
+        return dict(queue_to_render_ms=np.percentile(queue_samples, (50, 95, 100)).tolist() if queue_samples else None,
+                    write_ms=np.percentile(write_samples, (50, 95, 100)).tolist() if write_samples else None,
+                    queued_frames=self.queued_frames, submitted_frames=self.submitted_frames,
                     renewals=self.renewals, adaptive_gain=self.adaptive is not None,
                     route_status=self.route_status, restore_status=self.restore_status,
                     restore_detail=self.restore_detail,
@@ -163,7 +167,6 @@ class StudioLiveOutput:
 
     def _render(self, client, endpoint):
         dsp = HapticControlDsp(Processor(), stereo=True, shape=True)
-        sample_index = 0
         renewal = None
         try:
             with prepare_exclusive_renderer(endpoint, live=True, cancel=self._stop.is_set) as open_exclusive:
@@ -191,19 +194,21 @@ class StudioLiveOutput:
                     try:
                         while not self._stop.is_set():
                             pcm = bytearray()
-                            # Wait for up to 20 ms of input. Drain queued input up to the
+                            queued_at = []
+                            # Wait for up to 10 ms of input. Drain queued input up to the
                             # original batch limit to catch up after a slow renderer write.
-                            collect_until = time.monotonic() + .020
+                            collect_until = time.monotonic() + .010
                             while len(pcm) < 1920 * 8 and not self._stop.is_set():
                                 try:
-                                    data, controls, stereo_capture = self._queue.get(
-                                        timeout=0 if len(pcm) >= 960 * 8 else
+                                    data, controls, stereo_capture, enqueued = self._queue.get(
+                                        timeout=0 if len(pcm) >= 480 * 8 else
                                         max(0, collect_until - time.monotonic()))
                                 except Empty:
                                     break
                                 last_input = time.monotonic()
-                                for sample_index, pcm16 in live_rear_blocks(
-                                        data, dsp, controls, sample_index, stereo_capture=stereo_capture):
+                                if enqueued is not None:
+                                    queued_at.append(enqueued)
+                                for pcm16 in live_rear_blocks(data, dsp, controls, stereo_capture=stereo_capture):
                                     encoded = pcm16.tobytes()
                                     if self.adaptive is not None:
                                         encoded = self.adaptive.process(encoded, controls, self.level, REHEARSAL_PEAK)
@@ -218,7 +223,13 @@ class StudioLiveOutput:
                             if now - last_input >= 1:
                                 raise StudioInputIdle()
                             if pcm:
-                                renderer.write(pcm)
+                                if queued_at:
+                                    render_started = time.perf_counter()
+                                    self._queue_timing.extend((render_started - start) * 1000 for start in queued_at)
+                                    renderer.write(pcm)
+                                    self._write_timing.append((time.perf_counter() - render_started) * 1000)
+                                else:
+                                    renderer.write(pcm)
                                 self.submitted_frames += len(pcm) // 8
                             elif self.adaptive is not None:
                                 self.adaptive.interrupt()

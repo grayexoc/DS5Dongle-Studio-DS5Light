@@ -148,7 +148,7 @@ DESCRIPTIONS={
 
  'ah_high_gain':_ui_tr('저음·고음 분리 기준보다 높은 햅틱 대역의 세기입니다. 분리 기준이 0이면 적용되지 않습니다.'),
 
- 'haptics_aa':_ui_tr('Mix·Replace에서 생성된 오디오햅틱과 Mix의 변환 진동 파형을 다듬습니다.'),
+ 'haptics_aa':_ui_tr('오디오햅틱이 꺼져 있으면 네이티브 햅틱 파형을, Mix·Replace에서는 생성된 오디오햅틱과 Mix의 변환 진동을 부드럽게 합니다. 기본값은 끔입니다.'),
 
  'audio_buffer_length':_ui_tr('동글 안에서 오디오를 쌓는 양입니다. 앱의 PC 전송 블록과는 다릅니다.'),
 
@@ -350,9 +350,9 @@ for _k in LABELS:LABELS[_k]=LABELS[_k].replace(_ui_tr('동글'),'Pico').replace(
 def reference_point(key):
     if key=='headset_volume':return None,''
 
-    if key=='rumble_gain':return (100,_ui_tr('기본값'))
+    if key=='rumble_gain':return (100,_ui_tr('기본'))
 
-    if key=='haptics_gain':return (1.0,_ui_tr('기본값'))
+    if key=='haptics_gain':return (1.0,_ui_tr('기본'))
 
     if key in REFERENCE:return REFERENCE[key],_ui_tr('추천')
 
@@ -380,31 +380,16 @@ LABELS.update({'haptics_gain':_ui_tr('네이티브 햅틱 세기'),'gyro_output'
 
 DESCRIPTIONS.update(TRANSLATED_HELP)
 
+AUDIO_HAPTIC_VOLUME_HINT = (
+    '오디오햅틱은 게임·재생 앱과 Windows 볼륨의 영향을 받을 수 있습니다. '
+    '햅틱이 약하면 스피커나 앰프 자체 볼륨을 먼저 낮춘 뒤, 게임·재생 앱 볼륨을 조금씩 높이세요. '
+    '필요하면 Windows 볼륨 믹서에서 해당 앱의 볼륨도 확인하세요.'
+)
+
 def compact_ko_help(text):
-    """One instruction per line. Keep the effect, conditions and essential cautions."""
+    """Keep each instruction on its own line without rewriting its ending."""
     import re
-    endings = (
-        ('할 수 없습니다', ' 불가'), ('할 수 있습니다', ' 가능'),
-        ('하지 않습니다', '하지 않음'), ('입니다', ''),
-        ('합니다', ''), ('됩니다', '됨'), ('수 있습니다', '수 있음'), ('있습니다', '있음'),
-        ('없습니다', '없음'), ('선택하세요', '선택'),
-        ('높이세요', '높이기'), ('낮추세요', '낮추기'), ('확인하세요', '확인'),
-        ('하세요', ''), ('지 않습니다', '지 않음'),
-        ('줄어듭니다', '감소'), ('늘어납니다', '증가'),
-        ('따릅니다', '따름'), ('바뀝니다', '변경'), ('끕니다', '끔'),
-        ('둡니다', '둠'), ('고릅니다', '선택'), ('얻습니다', '얻음'),
-        ('만듭니다', '만듦'), ('쉽습니다', '쉬움'),
-    )
-    lines = re.split(r'(?<=\.)[ \t]+|\n', text.strip())
-    result = []
-    for line in lines:
-        line = line.rstrip('.')
-        for suffix, replacement in endings:
-            if line.endswith(suffix):
-                line = line[:-len(suffix)].rstrip() + replacement
-                break
-        result.append(line)
-    return '\n'.join(result)
+    return re.sub(r'(?<=\.)[ \t]+', '\n', text.strip())
 
 
 def help_text(key,*,default=None,description=None):
@@ -425,7 +410,7 @@ def help_text(key,*,default=None,description=None):
 
             'haptics_gain':'Amplifies native haptic waveforms and generated audio haptics. In Mix or Replace, DS5Light stages the default value 1 until applied.',
 
-            'haptics_aa':'Smooths generated audio haptics in Mix and Replace, and converted rumble in Mix.',
+            'haptics_aa':'Default: Off. Smooths native PCM with audio haptics off, generated audio haptics in Mix and Replace, and converted rumble in Mix.',
 
             'lightbar_fixed':'Keeps the selected lightbar color. The lightbar-off setting takes precedence.',
 
@@ -433,6 +418,7 @@ def help_text(key,*,default=None,description=None):
 
         from studio_english_strings import FIELD_HELP
         desc=description if description is not None else FIELD_HELP.get(key, DESCRIPTIONS.get(key) or extra.get(key,WEB_HELP.get(key,'')))
+        if key=='auto_haptics_gain':desc+='\n\n'+_ui_tr(AUDIO_HAPTIC_VOLUME_HINT)
         if default is not None:desc+='\n\nDefault: '+format_value(key,default)
         elif key in REFERENCE and key!='audio_buffer_length': desc+='\n\nRecommended: '+format_value(key,REFERENCE[key])
         elif key=='speaker_volume':desc+='\n\nDefault: '+format_value(key,DEFAULTS[key])
@@ -446,6 +432,7 @@ def help_text(key,*,default=None,description=None):
     desc=(description if description is not None else DESCRIPTIONS.get(key,'')).replace(_ui_tr('동글'),'Pico').replace(_ui_tr('오토햅틱'),_ui_tr('오디오햅틱')).replace(_ui_tr('오토 햅틱'),_ui_tr('오디오햅틱'))
 
     text=title+('\n\n'+compact_ko_help(desc) if desc else '')
+    if key=='auto_haptics_gain':text+='\n\n'+_ui_tr(AUDIO_HAPTIC_VOLUME_HINT)
 
     if default is not None:text+=_ui_tr('\n\n기본값 기준: ')+format_value(key,default)
     elif key in REFERENCE:text+=_ui_tr('\n\n추천 시작값: ')+format_value(key,REFERENCE[key])
@@ -486,7 +473,7 @@ DESCRIPTIONS.update({
 
  'rumble_gain':_ui_tr('XInput·DS4 호환 방식으로 전달되는 일반 진동을 강화합니다. 1은 원래 세기이며, 이미 최대인 진동은 더 강해지지 않습니다. 오디오햅틱 끔에서만 작동하며 네이티브 햅틱에는 영향을 주지 않습니다.'),
 
- 'rumble_mode':_ui_tr('장치 진단에서 두 모드를 시험할 수 있습니다. 클래식(V1)은 로터리 모터의 강한 질감, 개선형(V2)은 햅틱에 가까운 부드러운 질감입니다.'),
+ 'rumble_mode':_ui_tr('일반 진동의 질감을 선택합니다. 클래식(V1)은 강한 진동, 개선형(V2)은 부드러운 진동을 냅니다. 지원 장치에서는 장치 진단에서 두 모드를 비교할 수 있습니다.'),
  'rumble_release':_ui_tr('진동이 약해지거나 끝날 때 짧은 여운을 남깁니다. 짧게는 20ms, 보통은 40ms입니다. 연속 타격이 뭉개지면 끔이나 짧게를 선택하세요.'),
 
 })
@@ -520,18 +507,17 @@ DESCRIPTIONS['usb_gamepad_mode'] = ('On presents an XInput gamepad. Off uses Dua
 if _USB_MODE_LANGUAGE != 'en':
     DESCRIPTIONS.update({
         'auto_haptics_enable': '끔 · 게임의 일반 진동과 네이티브 햅틱 사용\nMix · 오디오햅틱과 게임 진동 혼합\nReplace · 오디오햅틱만 사용',
-        'auto_haptics_gain': '오디오햅틱 전체 세기\n앱 상단의 오디오햅틱 세기와 함께 높이면 포화 가능',
-        'auto_haptics_smooth': '오디오햅틱 세기 변화의 부드러움\n낮을수록 짧은 충격이 선명',
-        'auto_haptics_gate': '오디오햅틱을 만드는 최소 소리 크기\n너무 높으면 작은 발소리나 효과음도 제외',
-        'mix_native_level': 'Mix에서 섞는 네이티브 햅틱의 양\n0% · 혼합 안 함',
-        'mix_native_filter': '복제 오디오에 섞인 대사·고음 억제\n원본 · 게임의 네이티브 햅틱 유지',
-        'ah_dsp_source': '오디오햅틱 분석에 사용할 USB 오디오 채널\n0/1 · 앞 채널(Front) · 스피커\n2/3 · 뒤 채널(Rear)',
-        'auto_haptics_lowpass_hz': '지정 주파수보다 높은 소리를 억제\n낮을수록 저음 위주로 반응',
-        'ah_xover_hz': '저음·고음 세기를 따로 조절할 분리 주파수\n0 · 대역 분리 끔\n저역 통과 기준보다 낮게 설정',
-        'auto_haptics_slope': '저역 통과 기준보다 높은 소리의 감쇠 기울기\n높을수록 고음 억제 증가',
+        'auto_haptics_gain': 'Studio에서 생성한 오디오햅틱의 세기를 조절합니다. 앱의 오디오햅틱 세기와 함께 높이면 강한 진동이 포화될 수 있습니다.',
+        'auto_haptics_smooth': '높일수록 진동이 부드럽게 이어집니다. 낮추면 짧은 타격이 또렷해집니다.',
+        'auto_haptics_gate': '설정값보다 작은 소리의 진동을 억제합니다. 너무 높이면 작은 발소리나 효과음도 줄어듭니다.',
+        'mix_native_filter': '복제 오디오의 대사·고음이 햅틱에 섞이는 것을 줄입니다. 게임의 네이티브 파형을 유지하려면 원본을 선택하세요.',
+        'ah_dsp_source': 'Studio가 오디오햅틱을 만들 때 사용할 USB 채널입니다. Front는 0·1번, Rear는 2·3번입니다.',
+        'auto_haptics_lowpass_hz': '설정 주파수보다 높은 소리를 줄입니다. 낮출수록 저음 위주로 반응합니다.',
+        'ah_xover_hz': '저음과 고음의 세기를 따로 조절할 기준 주파수입니다. 0은 대역 분리를 끕니다.',
+        'auto_haptics_slope': '값이 클수록 저역 통과 기준보다 높은 소리를 더 많이 줄입니다.',
         'disable_mic': '듀얼센스 마이크 입력 차단\nUSB 장치 구성이 바뀌면 재연결 필요',
         'lock_volume': '게임이 보낸 볼륨 설정을 무시하고 지정한 듀얼센스 스피커·헤드셋 음량을 유지합니다.',
-        'disable_speaker': '듀얼센스 스피커와 본체 단자에 연결한 헤드셋 끄기\nMix·Replace 선택 시 자동 켜짐, 끔 선택 시 자동 해제\n수동 변경 가능 · 켜진 동안 모드별 음소거 미적용',
+        'disable_speaker': '듀얼센스 스피커와 본체에 연결한 헤드셋을 끕니다. 앱에서 Mix·Replace로 바꾸면 이 옵션도 켜도록 설정합니다. 수동으로 바꿀 수 있으며, 켜져 있으면 모드별 음소거보다 우선합니다.',
         'controller_mode': 'PC에 표시할 듀얼센스 유형\n자동 · 듀얼센스 또는 Edge 감지\nXBOX 모드에서도 USB 오디오 구성에 적용',
         'polling_rate_mode': 'PC에 입력을 보고하는 빈도\n높을수록 보고 간격 감소, USB·무선 처리량 증가',
         'inactive_time': '입력 없이 유지된 뒤 듀얼센스 연결을 끊기까지의 시간(분)',
@@ -550,19 +536,19 @@ if _USB_MODE_LANGUAGE != 'en':
         'audio_buffer_length': '오디오 버퍼 크기. 소리가 끊기면 64로 조정',
         'lightbar_fixed': '선택한 라이트바 색상 유지. 켤 때 라이트바 끄기 해제',
         'lightbar_rgb': '고정 색상 지정. 라이트바 끄기가 색상 고정보다 우선',
-        'rumble_gain': 'XInput·DS4 호환 일반 진동 세기 조정. 오디오햅틱 끔에서만 작동. 1은 원래 세기',
-        'rumble_release': '일반 진동이 줄거나 끝날 때 여운 추가. 짧게 20ms · 보통 40ms',
-        'rumble_haptic_strength': 'Mix에서 오디오햅틱과 함께 재생하는 일반 진동 세기',
-        'haptics_gain': '네이티브 햅틱 세기. 오디오햅틱 끔에서만 조절. Mix·Replace로 바꾸면 기본값 1을 적용 대기',
+        'rumble_gain': 'XInput·DS4 호환 일반 진동의 세기입니다. 오디오햅틱이 꺼져 있을 때 적용하며, 1은 원래 세기입니다.',
+        'rumble_release': '일반 진동이 줄거나 끝날 때 여운을 더합니다. 짧게는 20ms, 보통은 40ms입니다.',
+        'rumble_haptic_strength': 'Mix에서 오디오햅틱과 함께 재생하는 게임 일반 진동의 세기입니다.',
+        'haptics_gain': '오디오햅틱을 껐을 때 네이티브 햅틱 세기를 조절할 수 있습니다. 앱에서 Mix·Replace로 바꾸면 1x가 적용 대기 상태로 표시됩니다.',
         'usb_gamepad_mode': '켜면 XInput · 끄면 DualSense 또는 Edge. 모드 적용 시 USB 재연결',
     })
 
 LABELS['speaker_gain']=_ui_tr('듀얼센스 스피커 증폭')
 TITLES['Native Haptics Filter']=_ui_tr('햅틱 질감')
-DESCRIPTIONS['speaker_gain']=_ui_tr('스피커 소리가 작을 때 이 옵션으로 조절하면 효과적')
+DESCRIPTIONS['speaker_gain']=_ui_tr('듀얼센스 스피커로 재생되는 소리를 증폭합니다.')
 
 LABELS['disable_inactive_disconnect']=_ui_tr('자동 연결 해제 안함')
-DESCRIPTIONS['mix_native_level']=_ui_tr('게임이 보낸 네이티브 햅틱을 함께 출력\n적용하면 DS5Light의 오디오를 앞 채널(Front)로 전송')
+DESCRIPTIONS['mix_native_level']=_ui_tr('Mix에서 게임의 네이티브 햅틱을 섞는 양입니다. 0%에서는 섞지 않습니다. 앱에서 혼합을 켜면 햅틱 입력을 Front로 설정합니다.')
 
 DESCRIPTIONS['ps_shortcut_enabled']=_ui_tr('PS 기본 단축키: 짧게 Win+G, 길게 Win+Tab. 켜져 있으면 PS를 포함한 Pico 매핑·시프트 조합은 비활성화됩니다. 해당 매핑을 사용하려면 기본 단축키를 끄세요.')
 
@@ -575,7 +561,7 @@ DESCRIPTIONS['headset_volume']=_ui_tr('듀얼센스 단자에 연결한 헤드�
 DESCRIPTIONS['lock_volume']=_ui_tr('Windows·게임의 듀얼센스 음량 변경 명령 차단\n게임 자체의 소리 크기 설정은 별도')
 LABELS['ah_highpass'] = _ui_tr('극저음 차단')
 DEFAULTS['ah_highpass'] = 0
-DESCRIPTIONS['ah_highpass'] = _ui_tr('원본 오디오에서 햅틱을 만들 때 극저음을 줄입니다. 기본값은 끔입니다.')
+DESCRIPTIONS['ah_highpass'] = _ui_tr('원본 오디오의 극저음을 줄여 강한 저주파 진동을 완화합니다. 끔, 15 Hz, 25 Hz 중에서 선택하세요.')
 LABELS['at_pushback_src']=_ui_tr('트리거 반동 소스')
 DESCRIPTIONS['at_pushback_src']=_ui_tr('트리거 반동을 만드는 일반 진동·오디오햅틱 신호 선택\n커스텀 트리거 효과 설정 중 반동 세기 조절 가능')
 DESCRIPTIONS['disable_usb_sn']=_ui_tr('켜면 일부 게임·모드와의 호환성 개선\nDualSense Edge는 특히 햅틱·스피커 호환성을 위해 켜기 권장\n변경 시 장치가 재연결되며 윈도 소리 제어판의 기본 장치를 다시 선택해야 할 수 있음')

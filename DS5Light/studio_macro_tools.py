@@ -253,6 +253,10 @@ class MacroTools:
         self.range_controls[key]=(entry,slider,title)
         self.field_views[key]=(title,[entry,slider],[])
         slider.grid(row=1,column=0,columnspan=2,sticky='ew',pady=(4,0))
+        if key=='auto_haptics_gain':
+            from studio_option_help import option_help
+            slider_tip=FieldTip(slider,lambda:option_help(self,key))
+            slider.bind('<ButtonPress>',slider_tip.hide,add='+')
         if key=='speaker_volume':
             from studio_volume import estimated_windows_percent
             estimate=tk.Label(title,bg=BG,fg=MUTED,anchor='w',font=(_ui_tr('맑은 고딕'),8))

@@ -7,7 +7,6 @@ Game/process audio
 -> Input Format + Channel Resolver
 -> Unified DSP & Feature Engine
 -> DSP Fast Path
--> optional ordered Tiny Causal GRU
 -> Decision Fusion
 -> Event-to-Haptic Mapper
 -> Output Router
@@ -23,8 +22,7 @@ Adaptive I/O Supervisor observes device, stream, firmware and output state. Auto
 |---|---|---|
 | Audio Capture | Windows/process capture, timestamps, format | Event semantics |
 | Channel Resolver | input format/layout validation, confidence, manual override | Studio output layout |
-| Unified DSP & Feature Engine | causal filter bank, envelopes, energy, spectral features when needed | AI inference |
-| GRU Runtime | sequential inference over Feature Frames | audio capture, direct output mutation |
+| Unified DSP & Feature Engine | causal filter bank, envelopes, energy, spectral features when needed | Physical output routing |
 | Decision Fusion | final scores/protection decision | filter implementation or pattern synthesis |
 | Event-to-Haptic Mapper | event pattern, left/right output frames | device discovery |
 | Adaptive I/O Supervisor | state observation, reconfiguration orchestration | direct DSP parameter math |
@@ -55,11 +53,7 @@ Source inspection found a 4-channel descriptor mask value 0x0033 and a selectabl
 
 ## Data flow and timing
 - DSP target block: 5 ms, subject to actual capture cadence.
-- AI feature/inference starting cadence: 10 ms.
-- AI worker consumes ordered frames; queue bounded.
-- Never skip an arbitrary sequence frame and continue hidden state as if continuous.
-- On queue overflow/discontinuity: invalidate/reset GRU state, use DSP Only until stable.
-- Audio thread never blocks for AI or configuration.
+- Audio thread never blocks for configuration.
 - Structural reconfiguration occurs only on stable device/format events.
 
 ## Offline Fusion and Mapper

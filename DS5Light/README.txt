@@ -1,5 +1,5 @@
-DS5Light v1.0.6 — Modified
-Combined release v1.0.6 / DS5Light v1.0.6 / Studio firmware v34.
+DS5Light v1.2.1 — Studio
+Combined release v1.2.1 / DS5Light v1.2.1 / Studio firmware v52 (Pico 2 W).
 SETUP.md · RELEASE_NOTES.md
 
 Run
@@ -10,10 +10,10 @@ Audio haptics
 Without saved preferences, the first-run defaults are whole-device capture, PC filter on, and sorting by audio output activity.
 The application processes a copy of whole-device or selected-game audio and sends it to the dongle. It does not alter the original game sound played by your speakers/headphones.
 For process capture, run the game, refresh the process list, and select its actual executable.
-The list is queried only on refresh. Sort by recent start, CPU usage, or audio output activity.
+The list refreshes on request and once when selected-process capture becomes active in an audio-haptics profile. Sort by recent start, CPU usage, or audio output activity. Whole-device automatic capture does not depend on this list.
 Channels can be automatic, stereo, 5.1 or 7.1. Automatic follows the capture format; it does not inspect game audio content.
 The PC filter helps reduce sustained background responses while preserving impacts. It does not fully separate music or dialogue.
-Channel mixing and haptic gain still apply with the filter off. Gain ranges from 0 to 150%, with 100% as the reference.
+Channel mixing still applies with the filter off. Stored app gain ranges from 0.5x to 3x, with 1x (100%) as the starting point and output-mode limits. Shared output applies gain only when Studio confirms controller-speaker auto-mute; otherwise it remains at 1x. Exclusive Rear applies gain only to rear haptic PCM.
 The bridge stops automatically when the selected process exits.
 
 Settings and profiles
@@ -22,9 +22,10 @@ preferences.json is created after running the app. Older AppData preferences are
 Game presets use LocalAppData/DS5Light/presets.json. UI language uses LocalAppData/DS5Light/ui.json.
 The Studio slot list reads profiles stored on the dongle. Loading a slot may also change triggers, gyro and other settings in that profile.
 Without a saved profile selected, the Load button queries the available profiles again.
-In Studio settings → Recommended presets, choose a preset and a save slot, then Save and use.
+In Studio settings → Profile slots → Recommended presets, review Mix or Replace, choose a save slot, then Save and use. Stop dongle audio and back up the destination slot first. Existing slots are not upgraded automatically.
 Studio Presert contains DS_Native.json, Audio_Haptic_01.json and Audio_Haptic_02.json.
 Only audio-haptics fields in the current configuration change; current triggers, gyro and macros remain. The resulting current configuration replaces the chosen slot, including its other settings.
+Use these presets as the comparison reference, with the app filter on, background reduction 55% and app strength 1x (100%). Both use Front input; Mix also combines raw rear native haptics. Perceived response depends on Windows and game/application volume; other settings assume defaults unless specified.
 
 Microphone button keyboard mapping
 Enable the feature under Devices & launch and select Set keys. The default is disabled / F8.

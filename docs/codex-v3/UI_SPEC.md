@@ -10,7 +10,6 @@ Show:
 - selected game/process and capture source;
 - input device and channel validation state;
 - Studio connection and firmware capability state;
-- DSP Only / DSP + GRU mode;
 - optimization state: Not analyzed / Analyzing / Ready / Applied / Partial / Failed;
 - overall haptic intensity;
 - last profile revision and whether desired/applied states match.
@@ -43,7 +42,6 @@ Clearly distinguish detected metadata from verified runtime mapping. Never call 
 ### 4. Advanced
 Grouped sections:
 - PC DSP: crossover/bands, envelope, background estimator, transient protection.
-- AI: enable GRU, model/schema version, worker status, inference latency, stale/discontinuity counters. Hide model internals by default.
 - Studio hardware: only settings exposed by firmware capability discovery, including LP/crossover/gain/slope/smoothing/gate/carrier/native mix when supported.
 - Routing: read-only by default; edits require confirmation and validation.
 - Profile: desired vs applied values and revision history.
@@ -52,7 +50,7 @@ Grouped sections:
 - capture format and process identity
 - per-channel meters
 - DSP block duration and processing percentiles
-- Feature/GRU timing and queue health
+- DSP timing and queue health
 - event probabilities and Fusion decision
 - USB/firmware received/processed/readback counters
 - output limiter and underrun telemetry

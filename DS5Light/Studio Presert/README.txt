@@ -1,8 +1,8 @@
 Recommended presets for the integrated DS5Light app
 
 Files: DS_Native.json, Audio_Haptic_01.json, Audio_Haptic_02.json.
-In Studio settings → Recommended presets, choose a preset, select a save slot and use Save and use. Stop dongle audio before saving.
+In Studio settings → Profile slots → Recommended presets, choose a preset, select a save slot and use Save and use. Stop dongle audio before saving.
 
 Only allowed audio-haptics fields of the current configuration are changed. Other current settings and macros are retained, then the resulting configuration is saved to the chosen slot. Overwriting a slot replaces that slot's other settings with the current configuration; it does not preserve the previous contents of the destination slot.
 
-DS Native disables audio-derived haptics; stop PC audio processing when switching to native haptics. Audio Haptics Mix combines Front audio haptics and raw Rear native haptics. Audio Haptics Replace generates haptics from Front audio. Both presets are tuned for the app filter on and app strength at 100%.
+DS Native disables audio-derived haptics; stop PC audio processing when switching to native haptics. Audio Haptics Mix combines Front audio haptics and raw Rear native haptics. Audio Haptics Replace generates haptics from Front audio. Both presets are tuned for the app filter on and background reduction at 55% and app strength at 1x (100%).

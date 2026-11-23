@@ -41,7 +41,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Process capture helper build failed' }
 # duplicate SVG provenance/notices (preserved by package_notices.py).
 $ds5DataFiles = @(
     'assets/dslight.ico;assets',
-    'assets/tiny-gru-h16-smoke.npz;assets',
     'assets/diagnostic-bg-120.png;assets',
     'assets/diagnostic-bg-160.png;assets',
     'assets/diagnostic-bg-240.png;assets',

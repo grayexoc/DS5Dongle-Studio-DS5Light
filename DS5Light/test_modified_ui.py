@@ -393,12 +393,14 @@ class ModifiedUITests(unittest.TestCase):
     def test_filter_has_no_processing_mode_selector(self):
         self.assertFalse(hasattr(self.ui, 'processing_mode'))
         self.assertFalse(hasattr(self.ui, 'ai_switch'))
-        self.ui.filter_on.set(True)
-        self.assertFalse(self.ui._read_controls().experimental_ai)
 
     def test_gain_slider_and_filter_are_independent(self):
         self.assertEqual(self.ui.gain.get(),100)
         slider=self.ui.gain_slider
+        self.assertFalse(slider.enabled)
+        profile = dict(index=0, name='Mix', edited=True, auto_haptics_enable=1, auto_mute_mix=True)
+        self.ui._external_profile(dict(path=b'pico', profile=profile))
+        self.assertTrue(slider.enabled)
         self.assertEqual((slider.minimum,slider.maximum,slider.reference),(100,300,100))
         labels=[slider.itemcget(item,'text') for item in slider.find_all() if slider.type(item)=='text']
         self.assertEqual(labels,['1x','2x','3x'])
@@ -413,6 +415,10 @@ class ModifiedUITests(unittest.TestCase):
         self.ui.gain.set(125); self.ui.filter_on.set(False); self.ui.update_controls()
         self.assertEqual(self.ui.controls.gain,1.25)
         self.assertTrue(self.ui.controls.bypass); self.assertTrue(self.ui.gain_slider.enabled)
+        self.ui._external_profile(dict(path=b'pico', profile=dict(profile, auto_mute_mix=False)))
+        self.assertFalse(slider.enabled)
+        self.assertEqual(self.ui.gain_value.cget('text'), '1x')
+        self.assertEqual(self.ui.controls.gain, 1.25)
 
     def test_unchanged_channel_does_not_keep_scheduling_saves(self):
         self.ui.engine=self.engine(); self.ui.engine.capture_channels=6

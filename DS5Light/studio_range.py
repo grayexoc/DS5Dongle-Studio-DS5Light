@@ -6,7 +6,7 @@ from ui_dpi import px,watch_scale
 
 class RangeSlider(tk.Canvas):
     def __init__(self,parent,variable,low,high,enabled=True,marker=None,marker_label='',trigger=False,allowed=None,display_scale=1,reset_to_marker=False,tick_labels=None,**kw):
-        super().__init__(parent,height=px(parent,64),width=px(parent,220),bg='#151515',highlightthickness=0,bd=0,takefocus=enabled,**kw)
+        super().__init__(parent,height=px(parent,48),width=px(parent,220),bg='#151515',highlightthickness=0,bd=0,takefocus=enabled,**kw)
         self.variable=variable;self.low=low;self.high=high;self.enabled=enabled
         self.marker=marker;self.marker_label=marker_label;self.trigger=trigger;self.allowed=allowed;self.display_scale=display_scale
         self.reset_to_marker=reset_to_marker
@@ -18,7 +18,7 @@ class RangeSlider(tk.Canvas):
         self.bind('<Destroy>',self.cleanup)
         watch_scale(self,self._scale_slider)
     def _scale_slider(self):
-        self.configure(height=px(self,64),width=px(self,220));self.draw()
+        self.configure(height=px(self,48),width=px(self,220));self.draw()
     def cleanup(self,event):
         if event.widget is self:
             try:self.variable.trace_remove('write',self.trace)
@@ -35,18 +35,42 @@ class RangeSlider(tk.Canvas):
         except (ValueError,tk.TclError):value=lo
         x=left+max(0,min(1,(value-lo)/(hi-lo)))*(right-left)
         self.create_line(left,px(self,16),x,px(self,16),fill=color,width=px(self,5))
-        if self.marker is not None:
-            m=self.display(self.marker);mx=left+max(0,min(1,(m-lo)/(hi-lo)))*(right-left)
-            self.create_line(mx,px(self,24),mx,px(self,27),fill='#aaa393',width=px(self,2))
-            anchor='w' if mx<left+px(self,40) else 'e' if mx>right-px(self,40) else 'center'
-            self.create_text(mx,px(self,55),text=f'{self.marker_label} {m:g}',fill=color if self.reset_to_marker else '#aaa393',
-                             font=(_ui_tr('맑은 고딕'),8),anchor=anchor,tags='default_marker')
+        marker = self.display(self.marker) if self.marker is not None else None
+        label_y = px(self,37)
+        label_font = (_ui_tr('맑은 고딕'),8)
         labels = self.tick_labels or (f'{lo:g}', f'{hi:g}')
+        ticks = []
         for index, label in enumerate(labels):
             fraction = index / (len(labels) - 1)
             anchor = 'w' if fraction == 0 else 'e' if fraction == 1 else 'center'
-            self.create_text(left + fraction * (right - left), px(self,34), text=label,
-                             anchor=anchor, fill='#aaa393', font=(_ui_tr('맑은 고딕'),8))
+            endpoint_marker = marker is not None and not self.tick_labels and (
+                (fraction == 0 and marker == lo) or (fraction == 1 and marker == hi))
+            item = self.create_text(left + fraction * (right - left), label_y,
+                                    text=f'{self.marker_label}{label}' if endpoint_marker else label,
+                                    anchor=anchor, fill=color if endpoint_marker and self.reset_to_marker else '#aaa393',
+                                    font=label_font, tags='default_marker' if endpoint_marker else ())
+            ticks.append(item)
+        if marker is not None:
+            mx = left + max(0,min(1,(marker-lo)/(hi-lo))) * (right-left)
+            radius = px(self,1)
+            dot_y = px(self,25)
+            self.create_oval(mx-radius,dot_y-radius,mx+radius,dot_y+radius,
+                             fill='#aaa393',outline='',tags='reference_dot')
+            if not self.find_withtag('default_marker'):
+                item = self.create_text(mx,label_y,text=f'{self.marker_label}{marker:g}',
+                                        fill=color if self.reset_to_marker else '#aaa393',
+                                        font=label_font,tags='default_marker')
+                start, _, end, _ = self.bbox(item)
+                gap = px(self,4)
+                # Move the caption away from nearby tick labels while keeping the mark on the track.
+                shifts = []
+                for first, second in zip(ticks, ticks[1:]):
+                    minimum = self.bbox(first)[2] + gap - start
+                    maximum = self.bbox(second)[0] - gap - end
+                    if minimum <= maximum:
+                        shifts.append(min(max(0,minimum),maximum))
+                if shifts:
+                    self.coords(item,mx + min(shifts,key=abs),label_y)
         self.create_oval(x-px(self,6),px(self,10),x+px(self,6),px(self,22),fill='#151515',outline=color,width=px(self,2))
     def move(self,event):
         if not self.enabled:return

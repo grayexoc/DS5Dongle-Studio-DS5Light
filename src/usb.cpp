@@ -293,7 +293,7 @@ void tud_suspend_cb(bool remote_wakeup_en) {
 namespace {
 bool profile_event_subscribed = false;
 uint8_t profile_event_data[15] = {'S','L','P','1',1};
-uint8_t profile_event_state[6] = {255,255,255,255,255,255};
+uint8_t profile_event_state[8] = {255,255,255,255,255,255,255,255};
 uint32_t profile_event_seq = 0, profile_event_next = 0, profile_event_lease = 0;
 bool profile_event_pending = false, profile_event_slot_dirty = false;
 }
@@ -315,13 +315,13 @@ void usb_profile_event_task() {
         uint8_t slot; bool edited;
         active_profile_get(slot, edited, nullptr);
         const auto &cfg = get_config();
-        const uint8_t state[6] = {slot, uint8_t(edited), cfg.auto_haptics_enable,
+        const uint8_t state[8] = {slot, uint8_t(edited), cfg.auto_haptics_enable,
 #ifdef ENABLE_WAKE_HID
             uint8_t(macro_uses_mute_button()),
 #else
             0,
 #endif
-            cfg.mix_native_level, cfg.ah_dsp_source
+            cfg.mix_native_level, cfg.ah_dsp_source, uint8_t(cfg.auto_mute_mix), uint8_t(cfg.auto_mute_replace)
         };
         if (profile_event_slot_dirty || memcmp(state, profile_event_state, sizeof(state))) {
             profile_event_slot_dirty = false;

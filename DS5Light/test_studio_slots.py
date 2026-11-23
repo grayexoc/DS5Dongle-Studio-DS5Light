@@ -106,6 +106,14 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(len(device.sent),1)
         self.assertEqual(c.profile(),dict(index=3,edited=True,name='Audio Haptics'))
 
+    def test_speaker_automute_extension_preserves_profile_framing(self):
+        packet = self.reply()[:22]+b'\x02SLP2'+bytes((1,75,0))+bytes(16)+bytes((0xA1,))+bytes(17)
+        device = Fake([packet])
+        state = StudioClient(device, sleep=lambda _:None).profile_state()
+        self.assertIs(state['auto_mute_mix'], True)
+        self.assertIs(state['auto_mute_replace'], False)
+        self.assertEqual(len(device.sent), 1)
+
     def test_revision_extension_accepts_only_the_matching_tag_and_keeps_legacy_reply(self):
         from unittest.mock import patch
         packet=self.reply()[:30]+b'REV1'+bytes.fromhex('01000000aabbccdd')

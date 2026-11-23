@@ -22,17 +22,47 @@ class AuditRegressionTests(unittest.TestCase):
         self.assertEqual(rows[0]['fields']['auto_haptics_gain'], 100)
         self.assertNotIn('ce_r2_enable', rows[0]['fields'])
 
-    def test_output_worker_always_reports_backend_failure(self):
+    def run_output_lookup(self, devices, binding):
         results = queue.SimpleQueue()
-        scope = dict(results=results, devices=Mock(side_effect=ValueError('backend')),
-                     time=SimpleNamespace(sleep=lambda _: None))
+        now=0.
+        def sleep(delay):
+            nonlocal now
+            now+=delay
+        clock=SimpleNamespace(monotonic=lambda: now,sleep=sleep)
+        app=SimpleNamespace(_closing=False,_close_requested=False,run_intent=SimpleNamespace(requested=True,generation=1))
+        scope = dict(results=results, devices=devices, selected_output=binding.output,
+                     time=clock,self=app,generation=1,lookup_deadline=10.)
         node = app_function('collect_pair')
         with patch('studio_slots.devices', return_value=[]):
             exec(compile(ast.fix_missing_locations(ast.Module(body=[node], type_ignores=[])),
                          'app.py', 'exec'), scope)
             scope['collect_pair']()
-        rows, refreshed, error = results.get_nowait()
-        self.assertEqual((rows, refreshed, error), ([], None, 'backend'))
+        return results.get_nowait()
+
+    def test_output_worker_always_reports_backend_failure(self):
+        self.assertEqual(self.run_output_lookup(Mock(side_effect=ValueError('backend')), Mock()), ([], None, 'backend'))
+
+    def test_delayed_same_controller_output(self):
+        from device_binding import DeviceBinding,DeviceIdentity
+        binding=DeviceBinding()
+        binding._identity=DeviceIdentity(container_id='ours')
+        other=dict(name='DualSense Edge',container_id='other',maxOutputChannels=4)
+        ours=dict(other,container_id='ours')
+        devices=Mock(side_effect=[[other]]*4+[[other,ours]])
+        self.assertEqual(self.run_output_lookup(devices,binding),([], [other,ours],None))
+
+    def test_global_auto_start_skips_process_scan(self):
+        from app import App
+        app=Mock(_closing=False,_close_requested=False,_auto_start_attempted=False)
+        app.studio.auto_haptics_mode=1
+        app.studio.haptics_blocked=False
+        app.scope.get.return_value='device'
+        app.auto_start.get.return_value=True
+        app.controls.mode='normal'
+        App._initial_process_refresh(app)
+        App._initial_process_refresh(app)
+        app.start.assert_called_once()
+        app.refresh_games.assert_not_called()
 
     def test_start_callback_cannot_overlap_settings_transaction(self):
         app = SimpleNamespace(engine=None, _closing=False, _close_requested=False,
@@ -46,7 +76,7 @@ class AuditRegressionTests(unittest.TestCase):
     def test_output_lookup_timeout_clears_pending_state(self):
         intent = SimpleNamespace(generation=1, stop=Mock())
         app = SimpleNamespace(_closing=False, _close_requested=False,
-            _pair_lookup_pending=True, run_intent=intent,
+            _pair_lookup_pending=True, _pair_lookup_generation=1, run_intent=intent,
             status=SimpleNamespace(set=Mock()), render=Mock())
         scope = dict(self=app, results=queue.SimpleQueue(), queue=queue,
             time=SimpleNamespace(monotonic=lambda: 11), lookup_deadline=10,

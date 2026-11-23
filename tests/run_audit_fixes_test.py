@@ -165,24 +165,45 @@ int main(){
 """)
 
 s=(root/'src/audio.cpp').read_text(encoding='utf-8')
-start=s.index('            memmove(pkt + 11');end=s.index('\n        }',start)
+start=s.index('        const unsigned state_size = auto_mode == 0 ? 0 : 65;')
+end=s.index('\n        bt_write(pkt, sizeof(pkt));',start)
 run('packet',r"""
 #include <cassert>
 #include <cstring>
 #include <cstdint>
 #include <cstdio>
+#include <atomic>
+#include <initializer_list>
+#define DISABLE_SPEAKER_PROC 0
+constexpr unsigned SAMPLE_SIZE=64, speaker_payload_size=200;
+uint8_t haptic_buf[SAMPLE_SIZE], opus_silence_buf[2][speaker_payload_size];
+std::atomic<unsigned> opus_silence_mask{3};
+bool have_frame=true;
+void state_set(uint8_t *p,unsigned n){memset(p,0x55,n);}
+bool take_speaker_frame(uint8_t *p){if(have_frame)memset(p,0x77,speaker_payload_size);return have_frame;}
 int main(){
- uint8_t pkt[398]{};pkt[0]=0x36;pkt[12]=63;pkt[76]=0x92;pkt[77]=64;
- for(int i=0;i<64;i++)pkt[78+i]=i;
- pkt[142]=0x93;pkt[143]=200;
- for(int i=0;i<200;i++)pkt[144+i]=i;
+ memset(haptic_buf,0x33,sizeof(haptic_buf));
+ memset(opus_silence_buf[0],0x11,speaker_payload_size);
+ memset(opus_silence_buf[1],0x22,speaker_payload_size);
+ for(int auto_mode=0;auto_mode<3;++auto_mode)
+ for(bool speaker_enabled:{false,true})
+ for(bool plug_headset:{false,true})
+ for(bool buffered:{false,true}){
+ uint8_t pkt[398]{};have_frame=buffered;
 """+s[start:end]+r"""
- assert(pkt[11]==0x92&&pkt[12]==64);
- for(int i=0;i<64;i++)assert(pkt[13+i]==i);
- assert(pkt[77]==0x93&&pkt[78]==200);
- for(int i=0;i<200;i++)assert(pkt[79+i]==i);
- for(int i=329;i<394;i++)assert(pkt[i]==0);
- puts("PASS: actual native packet rearrangement, both payloads and tail");
+ const unsigned tag=auto_mode==0?11:76;
+ if(auto_mode){assert(pkt[11]==0x90&&pkt[12]==63);for(unsigned i=13;i<76;++i)assert(pkt[i]==0x55);}
+ assert(pkt[tag]==0x92&&pkt[tag+1]==SAMPLE_SIZE);
+ for(unsigned i=0;i<SAMPLE_SIZE;++i)assert(pkt[tag+2+i]==0x33);
+ unsigned last=tag+2+SAMPLE_SIZE;
+ if(speaker_enabled){
+   assert(pkt[last]==(plug_headset?0x96:0x93)&&pkt[last+1]==speaker_payload_size);
+   for(unsigned i=0;i<speaker_payload_size;++i)assert(pkt[last+2+i]==(buffered?0x77:plug_headset?0x22:0x11));
+   last+=2+speaker_payload_size;
+ }
+ for(unsigned i=last;i<sizeof(pkt);++i)assert(pkt[i]==0);
+ }
+ puts("PASS: production packet layout for Native/Mix/Replace, speaker/headset and silent frames");
 }
 """)
 
@@ -600,10 +621,21 @@ int main(){
  puts("PASS: actual partial buffers reset; USB session end drops old audio and preserves the new alt setting and PCM");
 }
 """)
-a=s.index('    if (speaker_filters_reset) {');b=s.index('    const bool dsp_rear',a)
-block=s[a:b]
+a=s.index('    if (reset_haptic_filters) {');b=s.index('    } else if (split_on',a)
+block=s[a:b]+'    }\n'
 variables=sorted(set(re.findall(r'\b([a-z][a-z0-9_]*)\s*=',block))-{'speaker_filters_reset'})
-run('dsp-reset','#include <cassert>\n#include <cstdio>\nint main(){\nbool speaker_filters_reset=true;\n'+''.join('float '+x+'=1;\n' for x in variables)+block+''.join('assert('+x+'==0);\n' for x in variables)+'assert(!speaker_filters_reset);puts("PASS: actual DSP reset clears all envelope, carrier and native filter memories");}\n')
+prologue=s[s.index('    const bool dsp_rear ='):a]
+run('dsp-reset','#include <cassert>\n#include <cstdio>\n#include <cstdint>\n'
+    'struct { int ah_dsp_source=0; } cfg; int actual_ch=4,auto_mode=0; bool speaker_filters_reset=false;\n'
+    +''.join('float '+x+'=0;\n' for x in variables)
+    +'void tick(){\n'+prologue+block+'}\n'
+    +'void seed(){'+''.join(x+'=1;' for x in variables)+'}\n'
+    +'void cleared(){'+''.join('assert('+x+'==0);' for x in variables)+'assert(!speaker_filters_reset);}\n'
+    +'int main(){seed();speaker_filters_reset=true;tick();cleared();'
+    +'seed();tick();'+''.join('assert('+x+'==1);' for x in variables)
+    +'auto_mode=1;tick();cleared();seed();auto_mode=2;tick();cleared();'
+    +'seed();cfg.ah_dsp_source=1;tick();cleared();seed();actual_ch=2;tick();cleared();'
+    +'puts("PASS: production mode/input transitions and stream reset clear LP, envelope and carrier memories; unchanged mode preserves them");}\n')
 
 s=(root/'src/state_mgr.cpp').read_text(encoding='utf-8')
 a=s.index('    // Cached trigger commands');b=s.index('    // XInput rumble',a)
@@ -929,9 +961,10 @@ int main(){
 }
 """)
 
-# Inactive native mode must not update auto-haptic/leak coefficient caches.
+# Inactive native mode must not update generated-haptics coefficient caches.
+# Speaker-accent/leak synthesis was retired; its removed caches are not exercised.
 s=(root/'src/audio.cpp').read_text(encoding='utf-8')
-conditions=['auto_mode > 0 && cached_intensity != intensity','auto_mode > 0 && lp_fc != lp_fc_cached','auto_mode > 0 && cached_ENV_REL != smooth_cfg','leak_active && ohp_fc != ohp_fc_cached','leak_active && olp_fc != olp_fc_cached','leak_active && mk_now != mk_key','leak_active && hp_fc != hp_fc_cached','leak_active && cached_TRANS_RATIO != sens_cfg','leak_active && cached_GATE_OPEN != atk_cfg','leak_active && cached_GATE_CLOSE != decay_cfg']
+conditions=['auto_mode > 0 && cached_intensity != intensity','auto_mode > 0 && lp_fc != lp_fc_cached','auto_mode > 0 && cached_ENV_REL != smooth_cfg']
 blocks=[]
 for condition in conditions:
  a=s.index('    if ('+condition+')');b=s.index('\n    }',a)+6;blocks.append(s[a:b])
@@ -942,26 +975,17 @@ run('inactive-dsp',r"""
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
-int auto_mode=0;bool leak_active=false;
+int auto_mode=0;
 int cached_intensity=-1,intensity=80,lp_fc=100,lp_fc_cached=0,cached_ENV_REL=-1,smooth_cfg=50;
 float intensity_curved=0,lp_a=0,ENV_REL=0;
-float ohp_fc=400,ohp_fc_cached=-1,ohp_a=0,olp_fc=3500,olp_fc_cached=-1,olp_a=0;
-unsigned mk_now=1,mk_key=0;float leak_makeup=1;
-float hp_fc=300,hp_fc_cached=-1,hp_a=0;
-int cached_TRANS_RATIO=-1,sens_cfg=50,cached_GATE_OPEN=-1,atk_cfg=50,cached_GATE_CLOSE=-1,decay_cfg=50;
-float TRANS_RATIO=0,GATE_OPEN=0,GATE_CLOSE=0;
 void update(){
 """+'\n'.join(blocks)+r"""
 }
 int main(){
  update();assert(cached_intensity==-1&&lp_fc_cached==0&&cached_ENV_REL==-1);
- assert(ohp_fc_cached==-1&&olp_fc_cached==-1&&mk_key==0&&hp_fc_cached==-1);
- assert(cached_TRANS_RATIO==-1&&cached_GATE_OPEN==-1&&cached_GATE_CLOSE==-1);
- auto_mode=1;leak_active=true;update();
+ auto_mode=1;update();
  assert(cached_intensity==80&&lp_fc_cached==100&&cached_ENV_REL==50);
- assert(ohp_fc_cached==400&&olp_fc_cached==3500&&mk_key==1&&hp_fc_cached==300);
- assert(cached_TRANS_RATIO==50&&cached_GATE_OPEN==50&&cached_GATE_CLOSE==50);
- assert(lp_a>0&&ohp_a>0&&olp_a>0&&hp_a>0&&std::isfinite(leak_makeup));
+ assert(lp_a>0&&ENV_REL>0&&std::isfinite(intensity_curved));
  puts("PASS: native skips coefficient work; first enabled block refreshes caches");
 }
 """)

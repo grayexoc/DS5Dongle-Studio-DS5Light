@@ -156,36 +156,10 @@ static UsbPlaybackObservation playback_observation;
 static RearRouteLease rear_lease;
 static RearRouteLease::Rear rear_policy = RearRouteLease::Rear::Legacy;
 static uint32_t rear_link_epoch = 0;
-static uint32_t mix_ai_at = 0, mix_ai_revision = 0;
-static uint8_t mix_ai_strength = 0;
-
-static bool mix_ai_strong_test = false;
-static uint8_t mix_ai_shape = 0;
-static bool mix_ai_tail = false;
-static float mix_ai_phase = 0.0f;
-
-void audio_mix_ai_hit(uint8_t strength, bool strong_test, uint8_t shape, bool tail) {
-    const auto &cfg = get_config();
-    if (!strength) {
-        mix_ai_strength = 0;
-    } else if (strength <= 100 && cfg.auto_haptics_enable == 1 && cfg.ah_dsp_source == 0 &&
-               bt_is_ready() && audio_input_seen && !usb_xinput_active() && !wake_host_is_suspended()) {
-        const uint32_t now = to_ms_since_boot(get_absolute_time());
-        if (mix_ai_strength && now - mix_ai_at < 45) return;
-        mix_ai_strong_test = strong_test;
-        mix_ai_shape = shape;
-        mix_ai_tail = tail;
-        mix_ai_phase = 0.0f;
-        mix_ai_strength = strength;
-        mix_ai_revision = config_revision();
-        mix_ai_at = now;
-    }
-}
 
 enum class StreamReset { None, UsbSessionEnded, FlushUsb };
 static StreamReset stream_reset_requested = StreamReset::None;
 void audio_reset_stream() {
-    mix_ai_strength = 0;
     stream_reset_requested = StreamReset::FlushUsb;
     audio_input_seen = false;
 }
@@ -205,7 +179,6 @@ void audio_rear_sync() {
 }
 
 void audio_rear_link_disconnected() {
-    mix_ai_strength = 0;
     ++rear_link_epoch;
     audio_rear_sync();
 }
@@ -379,7 +352,6 @@ void set_mic_active(bool active) {
 }
 
 void audio_usb_session_reset() {
-    mix_ai_strength = 0;
     // Discard the old FIFO now. The next audio loop may already see a new alt setting.
     if (spk_active || audio_input_seen || stream_reset_requested == StreamReset::FlushUsb) {
         tud_audio_clear_ep_out_ff();
@@ -649,15 +621,6 @@ void __not_in_flash_func(audio_loop)() {
         decltype(Config_body::auto_mute_mix) auto_mute_mix;
         decltype(Config_body::auto_mute_replace) auto_mute_replace;
         decltype(Config_body::disable_mic) disable_mic;
-        decltype(Config_body::effect_leak_attack) effect_leak_attack;
-        decltype(Config_body::effect_leak_decay) effect_leak_decay;
-        decltype(Config_body::effect_leak_hold) effect_leak_hold;
-        decltype(Config_body::effect_leak_hp_hz) effect_leak_hp_hz;
-        decltype(Config_body::effect_leak_lp_hz) effect_leak_lp_hz;
-        decltype(Config_body::effect_leak_max_burst) effect_leak_max_burst;
-        decltype(Config_body::effect_leak_output_hp_hz) effect_leak_output_hp_hz;
-        decltype(Config_body::effect_leak_sensitivity) effect_leak_sensitivity;
-        decltype(Config_body::effect_leak_volume) effect_leak_volume;
         decltype(Config_body::haptics_aa) haptics_aa;
         decltype(Config_body::haptics_gain) haptics_gain;
         decltype(Config_body::mix_native_filter) mix_native_filter;
@@ -679,15 +642,6 @@ void __not_in_flash_func(audio_loop)() {
         live_config.auto_mute_mix,
         live_config.auto_mute_replace,
         live_config.disable_mic,
-        live_config.effect_leak_attack,
-        live_config.effect_leak_decay,
-        live_config.effect_leak_hold,
-        live_config.effect_leak_hp_hz,
-        live_config.effect_leak_lp_hz,
-        live_config.effect_leak_max_burst,
-        live_config.effect_leak_output_hp_hz,
-        live_config.effect_leak_sensitivity,
-        live_config.effect_leak_volume,
         live_config.haptics_aa,
         live_config.haptics_gain,
         live_config.mix_native_filter,
@@ -773,137 +727,43 @@ void __not_in_flash_func(audio_loop)() {
     // dB/oct value (6/12/24); map to pole count.
     const uint8_t slope_db = cfg.auto_haptics_slope;
     const int n_poles = (slope_db >= 24) ? 4 : (slope_db >= 12) ? 2 : 1;
-    // Effect leak (transient detection): when auto-mute would fully silence the
-    // speaker, only open it briefly during sharp ONSETS — sudden level jumps like
-    // impacts, shots, clinks — and keep it closed for sustained sound (dialog,
-    // music, ambience). A plain high-pass leaks all sustained high-frequency
-    // content (hiss, music treble); transient detection instead reacts to how
-    // FAST the level rises, so only percussive effects pass. leak_vol 0 = off.
-    const float leak_vol = cfg.effect_leak_volume / 100.0f;
-    const bool leak_active = (mute_for_mode && !mute[0] && leak_vol > 0.0f);
-    // Detection runs on a high-passed copy so low-frequency dialog onsets don't
-    // trigger it. The configured "high-pass" value doubles as the detection band.
-    static float hp_l = 0.0f, hp_r = 0.0f;          // high-pass state (for detection input)
-    // Output BAND-PASS window (v1.2.0): the leak output passes through a 12 dB/oct
-    // high-pass (low wall — speaker pop protection + dialog-fundamental rejection)
-    // followed by a 12 dB/oct low-pass (high wall — kills the treble sizzle/click
-    // that made the leak crackly). Only sound INSIDE the window ever leaks, so the
-    // window placement IS the selectivity: e.g. 400-3500 Hz passes impacts and
-    // effect bodies while rejecting both voice fundamentals and hiss/sparkle.
-    static float ohp1_l = 0.0f, ohp2_l = 0.0f, ohp1_r = 0.0f, ohp2_r = 0.0f; // 2-stage HP
-    static float olp1_l = 0.0f, olp2_l = 0.0f, olp1_r = 0.0f, olp2_r = 0.0f; // 2-stage LP
-    const float ohp_fc = (float)cfg.effect_leak_output_hp_hz;
-    static float ohp_a = 0.0f;
-    static float ohp_fc_cached = -1.0f;
-    if (leak_active && ohp_fc != ohp_fc_cached) {
-        ohp_fc_cached = ohp_fc;
-        ohp_a = 1.0f - expf(-2.0f * (float)M_PI * ohp_fc / 48000.0f);
-    }
-    const float olp_fc = (float)cfg.effect_leak_lp_hz;
-    static float olp_a = 0.0f;
-    static float olp_fc_cached = -1.0f;
-    if (leak_active && olp_fc != olp_fc_cached) {
-        olp_fc_cached = olp_fc;
-        olp_a = 1.0f - expf(-2.0f * (float)M_PI * olp_fc / 48000.0f);
-    }
-    // Window make-up gain (v1.5.2): the band-pass walls overlap, so narrowing the
-    // window used to also make the leak QUIETER (a 400-3500 window lost ~16 dB of
-    // perceived level vs the pre-window firmware because the controller's tiny
-    // speaker is loudest in the 3-8 kHz range the LP removes). Compensate by the
-    // window's response at its geometric-center frequency so the volume slider
-    // owns loudness and the window owns character. Clamped to x4 (+12 dB).
-    static float leak_makeup = 1.0f;
-    static uint32_t mk_key = 0;
-    const uint32_t mk_now = ((uint32_t)ohp_fc << 16) | (uint32_t)olp_fc;
-    if (leak_active && mk_now != mk_key) {
-        mk_key = mk_now;
-        const float fc = sqrtf(ohp_fc * olp_fc);           // window center
-        const float whp = fc / ohp_fc, wlp = fc / olp_fc;  // normalized freqs
-        const float g1 = whp / sqrtf(1.0f + whp * whp);    // one HP pole @ center
-        const float g2 = 1.0f / sqrtf(1.0f + wlp * wlp);   // one LP pole @ center
-        float g = (g1 * g1) * (g2 * g2);                   // two poles each
-        if (g < 0.25f) g = 0.25f;                          // clamp make-up to x4
-        leak_makeup = 1.0f / g;
-    }
-    // Gate hold + hysteresis (v1.2.0): once a transient opens the gate, keep it
-    // open a minimum time (hold) and only close when the level falls clearly below
-    // the OPEN threshold (hysteresis). Without this the transient test flickers
-    // when the envelope hovers at the threshold — the gate chatters open/closed,
-    // which is exactly the "missing and poppy" artifact: hits get chopped short
-    // (missing) and each re-open clicks (poppy).
-    const uint32_t hold_samples = (uint32_t)cfg.effect_leak_hold * 240u; // x5 ms @48kHz
-    // Max burst (v1.12.0): cap one gate opening at N ms. 0 = unlimited (classic).
-    const uint32_t burst_samples = (uint32_t)cfg.effect_leak_max_burst * 240u; // x5 ms @48kHz
-    static bool     gate_open = false;
-    static bool     refractory = false; // closed by the cap; no re-open until the signal truly falls
-    static uint32_t hold_left = 0;
-    static uint32_t burst_left = 0;
-    static float env_fast = 0.0f, env_slow = 0.0f;  // fast/slow level envelopes
-    static float leak_gain = 0.0f;                   // smoothed open/close gain
-    const float hp_fc = (float)cfg.effect_leak_hp_hz;
-    static float hp_a = 0.0f;
-    static float hp_fc_cached = -1.0f;
-    if (leak_active && hp_fc != hp_fc_cached) {
-        hp_fc_cached = hp_fc;
-        hp_a = 1.0f - expf(-2.0f * (float)M_PI * hp_fc / 48000.0f);
-    }
-    // Sensitivity: how much the fast envelope must exceed the slow one to count as
-    // a transient. Higher sensitivity (config 0-100) -> lower ratio -> opens more
-    // easily (more sound leaks). Maps 0->ratio 3.0 (very selective, only big hits)
-    // .. 100->ratio 1.2 (eager, most onsets pass). Default ~50 -> ~2.1.
-    const uint8_t sens_cfg = cfg.effect_leak_sensitivity > 100 ? 50 : cfg.effect_leak_sensitivity;
-    static int cached_TRANS_RATIO = -1;
-    static float TRANS_RATIO = 0.0f;
-    if (leak_active && cached_TRANS_RATIO != sens_cfg) {
-        cached_TRANS_RATIO = sens_cfg;
-        TRANS_RATIO = 3.0f - (sens_cfg / 100.0f) * 1.8f;
-    }
-    const float ENV_FAST_A  = 0.65f;  // fast envelope attack — quicker detection (less delay)
-    const float ENV_SLOW_A  = 0.0020f;// slow envelope (~tracks the ongoing level)
-    // Gate ramps: opening too fast creates a click at the onset (crackle); a few
-    // ms ramp removes the click while staying responsive. Close SLOWLY so the hit
-    // rings out and fades gradually instead of stopping abruptly. The close rate
-    // (decay/fade-out length) is configurable: higher decay -> smaller coefficient
-    // -> longer, more gradual tail. 0 -> ~0.004 (quick), 100 -> ~0.0004 (very long).
-    const uint8_t decay_cfg = cfg.effect_leak_decay > 100 ? 40 : cfg.effect_leak_decay;
-    // Attack (responsiveness): how fast the gate opens once a transient is
-    // detected. Faster = more immediate hit (less perceived delay) but can add a
-    // faint click on the sharpest onsets; slower = smoother but feels delayed.
-    // Configurable 0-100: 0 -> 0.03 (smooth), 100 -> 0.40 (near-instant).
-    const uint8_t atk_cfg = cfg.effect_leak_attack > 100 ? 50 : cfg.effect_leak_attack;
-    static int cached_GATE_OPEN = -1;
-    static float GATE_OPEN = 0.0f;
-    if (leak_active && cached_GATE_OPEN != atk_cfg) {
-        cached_GATE_OPEN = atk_cfg;
-        GATE_OPEN = 0.03f + (atk_cfg / 100.0f) * 0.37f;
-    }
-    static int cached_GATE_CLOSE = -1;
-    static float GATE_CLOSE = 0.0f;
-    if (leak_active && cached_GATE_CLOSE != decay_cfg) {
-        cached_GATE_CLOSE = decay_cfg;
-        GATE_CLOSE = 0.004f - (decay_cfg / 100.0f) * 0.0036f;
-    } // 0.004 .. 0.0004
     static float gsm_l = 0.0f, gsm_r = 0.0f;
     static float carrier_ph = 0.0f;
     static float rc_lo_ph = 0.0f, rc_hi_ph = 0.0f;
     static NativeMixLowpass native_lowpass;
     static float aa1_l = 0.0f, aa1_r = 0.0f, aa2_l = 0.0f, aa2_r = 0.0f;
-    const bool reset_haptic_filters = speaker_filters_reset;
-    if (speaker_filters_reset) {
+    static uint8_t previous_aa_mode = 1;
+    const bool dsp_rear = cfg.ah_dsp_source == 1 && actual_ch == 4;
+    static uint8_t previous_auto_mode = 0;
+    static bool previous_dsp_rear = false;
+    static bool previous_split_on = false;
+    const bool reset_haptic_filters = speaker_filters_reset ||
+        auto_mode != previous_auto_mode || dsp_rear != previous_dsp_rear;
+    previous_auto_mode = auto_mode;
+    previous_dsp_rear = dsp_rear;
+    if (reset_haptic_filters) {
         lp_l = lp_r = lp2_l = lp2_r = lp3_l = lp3_r = lp4_l = lp4_r = 0;
         xo1_l = xo2_l = xo1_r = xo2_r = 0;
         envlo_l = envlo_r = envhi_l = envhi_r = env_l = env_r = 0;
         gsm_l = gsm_r = carrier_ph = rc_lo_ph = rc_hi_ph = 0;
-        aa1_l = aa1_r = aa2_l = aa2_r = 0;
-        hp_l = hp_r = 0.0f;
-        ohp1_l = ohp2_l = ohp1_r = ohp2_r = 0.0f;
-        olp1_l = olp2_l = olp1_r = olp2_r = 0.0f;
-        env_fast = env_slow = leak_gain = 0.0f;
-        gate_open = refractory = false;
-        hold_left = burst_left = 0;
         speaker_filters_reset = false;
+    } else if (split_on != previous_split_on) {
+        if (split_on) {
+            xo1_l = xo2_l = lp_l;
+            xo1_r = xo2_r = lp_r;
+            envlo_l = env_l;
+            envlo_r = env_r;
+            envhi_l = envhi_r = 0;
+        } else {
+            env_l = envlo_l * split_lo_g + envhi_l * split_hi_g;
+            env_r = envlo_r * split_lo_g + envhi_r * split_hi_g;
+        }
     }
-    const bool dsp_rear = cfg.ah_dsp_source == 1 && actual_ch == 4;
+    previous_split_on = split_on;
+    if (reset_haptic_filters || aa_mode != previous_aa_mode) {
+        aa1_l = aa1_r = aa2_l = aa2_r = 0;
+        previous_aa_mode = aa_mode;
+    }
     const bool front_texture = HapticImpactTexture::uses_front(auto_mode, cfg.ah_dsp_source);
     const uint8_t texture_mode = front_texture ? auto_mode : 0;
     static HapticImpactTexture texture_l, texture_r;
@@ -940,21 +800,6 @@ void __not_in_flash_func(audio_loop)() {
     const float GATE_THRESH = (gate_cfg > 100 ? 0 : gate_cfg) * 0.001f * gate_scale;
     const float gate_knee = pc_rear_control ? 0.02f * rear_control_scale : 0.04f;
     float ah_out_pk = 0.0f;   // peak derived-haptic magnitude this block (diag meter)
-    const uint32_t mix_ai_age = mix_ai_strength ? to_ms_since_boot(get_absolute_time()) - mix_ai_at : 0;
-    // Wire shapes: legacy, sharp, weight, burst, uncertain.
-    constexpr float ai_hz[]{180.0f, 220.0f, 115.0f, 165.0f, 180.0f};
-    constexpr float ai_attack[]{4.0f, 1.5f, 4.0f, 2.0f, 3.0f};
-    constexpr uint32_t ai_duration[]{28, 22, 36, 28, 20};
-    const uint8_t ai_shape = mix_ai_shape;
-    const uint32_t mix_ai_duration = (ai_shape == 3 && mix_ai_tail) ||
-        (ai_shape == 0 && mix_ai_strong_test) ? 44 : ai_duration[ai_shape];
-    // Preserve the 45 ms retrigger guard even after the shorter waveform ends.
-    if (mix_ai_strength && mix_ai_age >= 45) mix_ai_strength = 0;
-    const bool mix_ai_active = mix_ai_strength && mix_ai_age < mix_ai_duration && auto_mode == 1 &&
-                               cfg.ah_dsp_source == 0 && mix_ai_revision == config_revision();
-    const float mix_ai_gain = mix_ai_strength * (mix_ai_strong_test ? .0045f : .001f)
-                              * (ai_shape == 4 ? .35f : 1.0f);
-    const float ai_phase_step = haptic_math::phase_end * ai_hz[ai_shape] / 48000.0f;
     // Fold the raw-input diagnostics into the existing per-sample DSP pass so
     // reading channel peaks does not require a second full scan of the packet.
     int p01 = 0, rear_left = 0, rear_right = 0;
@@ -971,67 +816,8 @@ void __not_in_flash_func(audio_loop)() {
         }
  #if !DISABLE_SPEAKER_PROC
         if (speaker_enabled) {
-        float spk_l_out, spk_r_out;
-        if (leak_active) {
-            const float in_l = raw[i * actual_ch]     / 32768.0f;
-            const float in_r = raw[i * actual_ch + 1] / 32768.0f;
-            // High-pass (signal - low-pass) — used ONLY for transient DETECTION,
-            // not for output. Outputting the thin treble-only signal is what
-            // caused the crackle; we detect on highs but play the full sound.
-            hp_l += hp_a * (in_l - hp_l);
-            hp_r += hp_a * (in_r - hp_r);
-            const float hpf_l = in_l - hp_l;
-            const float hpf_r = in_r - hp_r;
-            const float mag = 0.5f * ((hpf_l<0?-hpf_l:hpf_l) + (hpf_r<0?-hpf_r:hpf_r));
-            // Fast envelope reacts to onsets; slow envelope tracks the baseline.
-            env_fast += ((mag > env_fast) ? ENV_FAST_A : ENV_FAST_A*0.25f) * (mag - env_fast);
-            env_slow += ENV_SLOW_A * (mag - env_slow);
-            // Gate state machine with hysteresis + minimum hold. OPEN on a clear
-            // transient; once open, stay open at least `hold_samples`, then close
-            // only when the level drops well below the open threshold (0.65x). The
-            // gate makes one clean open/close per hit instead of chattering.
-            if (!gate_open) {
-                if (refractory) {
-                    // Burst-capped close: re-arming waits until the signal has
-                    // GENUINELY fallen (same release test as a normal close) -
-                    // otherwise a sustained sound would re-trigger every N ms and
-                    // machine-gun chirps instead of leaking once.
-                    if (env_fast <= env_slow * (TRANS_RATIO * 0.65f) + 0.0006f)
-                        refractory = false;
-                } else if (env_fast > env_slow * TRANS_RATIO + 0.0008f) {
-                    gate_open = true;
-                    hold_left = hold_samples;
-                    burst_left = burst_samples; // 0 = unlimited
-                }
-            } else {
-                if (burst_samples && burst_left && --burst_left == 0) {
-                    gate_open = false;      // cap reached: force the close
-                    refractory = true;      // one sustained sound = one burst
-                } else {
-                    if (hold_left > 0) hold_left--;
-                    else if (env_fast <= env_slow * (TRANS_RATIO * 0.65f) + 0.0006f)
-                        gate_open = false;
-                }
-            }
-            const float target = gate_open ? 1.0f : 0.0f;
-            leak_gain += ((target > leak_gain) ? GATE_OPEN : GATE_CLOSE) * (target - leak_gain);
-            // Band-pass the output: 12 dB/oct high-pass (two cascaded poles) removes
-            // speaker-popping lows and voice fundamentals; 12 dB/oct low-pass removes
-            // the treble sizzle that reads as crackle. Only the window leaks.
-            ohp1_l += ohp_a * (in_l - ohp1_l);  float bp_l = in_l - ohp1_l;
-            ohp2_l += ohp_a * (bp_l - ohp2_l);  bp_l -= ohp2_l;
-            ohp1_r += ohp_a * (in_r - ohp1_r);  float bp_r = in_r - ohp1_r;
-            ohp2_r += ohp_a * (bp_r - ohp2_r);  bp_r -= ohp2_r;
-            olp1_l += olp_a * (bp_l - olp1_l);
-            olp2_l += olp_a * (olp1_l - olp2_l);
-            olp1_r += olp_a * (bp_r - olp1_r);
-            olp2_r += olp_a * (olp1_r - olp2_r);
-            spk_l_out = olp2_l * leak_gain * leak_vol * leak_makeup;
-            spk_r_out = olp2_r * leak_gain * leak_vol * leak_makeup;
-        } else {
-            spk_l_out = raw[i * actual_ch]     / 32768.0f * spk_gain;
-            spk_r_out = raw[i * actual_ch + 1] / 32768.0f * spk_gain;
-        }
+        float spk_l_out = raw[i * actual_ch] / 32768.0f * spk_gain;
+        float spk_r_out = raw[i * actual_ch + 1] / 32768.0f * spk_gain;
         if (chiming) {
             const float cue = profile_chime.next();
             spk_l_out = std::clamp(spk_l_out + cue, -1.0f, 1.0f);
@@ -1102,11 +888,7 @@ void __not_in_flash_func(audio_loop)() {
                     fl = lp4_l; fr = lp4_r;
                 }
             }
-            const float abs_l = fl < 0.0f ? -fl : fl;
-            const float abs_r = fr < 0.0f ? -fr : fr;
-            env_l = (abs_l > env_l) ? env_l + ENV_ATK*(abs_l-env_l) : env_l + ENV_REL*(abs_l-env_l);
-            env_r = (abs_r > env_r) ? env_r + ENV_ATK*(abs_r-env_r) : env_r + ENV_REL*(abs_r-env_r);
-            float use_env_l = env_l, use_env_r = env_r;
+            float use_env_l, use_env_r;
             if (split_on) {
                 // Keep the 24 dB/oct rejection on both sides of the crossover.
                 // Shallower slopes retain their legacy voicing.
@@ -1127,6 +909,13 @@ void __not_in_flash_func(audio_loop)() {
                 envhi_r = (ahi_r > envhi_r) ? envhi_r + ENV_ATK*(ahi_r-envhi_r) : envhi_r + ENV_REL*(ahi_r-envhi_r);
                 use_env_l = envlo_l * split_lo_g + envhi_l * split_hi_g;
                 use_env_r = envlo_r * split_lo_g + envhi_r * split_hi_g;
+            } else {
+                const float abs_l = fl < 0.0f ? -fl : fl;
+                const float abs_r = fr < 0.0f ? -fr : fr;
+                env_l = (abs_l > env_l) ? env_l + ENV_ATK*(abs_l-env_l) : env_l + ENV_REL*(abs_l-env_l);
+                env_r = (abs_r > env_r) ? env_r + ENV_ATK*(abs_r-env_r) : env_r + ENV_REL*(abs_r-env_r);
+                use_env_l = env_l;
+                use_env_r = env_r;
             }
             // Noise gate with SMOOTHED gain: a hard gate flickers on/off when the
             // bass envelope hovers near the threshold, chopping the output (jagged
@@ -1162,15 +951,6 @@ void __not_in_flash_func(audio_loop)() {
             // rumble emulation. 60 Hz reads as a heavy churn, 160 Hz as a sharp
             // buzz - together they feel like actual dual-motor rumble.
 
-            rc_lo_ph += 2.0f * (float)M_PI * 60.0f  / 48000.0f;
-            rc_hi_ph += 2.0f * (float)M_PI * 160.0f / 48000.0f;
-            if (rc_lo_ph > 2.0f*(float)M_PI) rc_lo_ph -= 2.0f*(float)M_PI;
-            if (rc_hi_ph > 2.0f*(float)M_PI) rc_hi_ph -= 2.0f*(float)M_PI;
-            // Keep phase progression unchanged even while a motor is silent.
-            const uint8_t rumble_l = g_rumble_l, rumble_r = g_rumble_r;
-            const bool rumble_active = auto_mode == 1 && rumble_str > 0.0f;
-            const float rc_lo = rumble_active && rumble_l != 0 ? haptic_math::sine_phase(rc_lo_ph) : 0.0f;
-            const float rc_hi = rumble_active && rumble_r != 0 ? haptic_math::sine_phase(rc_hi_ph) : 0.0f;
             float carrier_l = carrier, carrier_r = carrier;
             if (front_texture) {
                 float blend_l = texture_l.update(env_l, genv_l,
@@ -1192,19 +972,6 @@ void __not_in_flash_func(audio_loop)() {
             // Keep the generator's tanh shaping; Mix limits only combined peaks afterwards.
             al = haptic_math::soft_clip(al);
             ar = haptic_math::soft_clip(ar);
-            if (mix_ai_active) {
-                const float age = mix_ai_age + i / 48.0f;
-                const float attack = ai_attack[ai_shape];
-                const float decay = clamp((mix_ai_duration - age) / (mix_ai_duration - attack), 0.0f, 1.0f);
-                const float envelope = clamp(age / attack, 0.0f, 1.0f) *
-                                       (ai_shape == 1 || (ai_shape == 3 && mix_ai_tail) ? decay * decay : decay);
-                float phase = ai_shape == 0 ? carrier_ph * 2.0f : mix_ai_phase;
-                if (phase >= haptic_math::phase_end) phase -= haptic_math::phase_end;
-                mix_ai_phase = phase + ai_phase_step;
-                const float hit = haptic_math::sine_phase(phase) * envelope * mix_ai_gain;
-                al += hit * (1.0f - fabsf(al));
-                ar += hit * (1.0f - fabsf(ar));
-            }
             // Derived-haptic meter: capture al/ar here, before Mix folds in native
             // passthrough and converted rumble, so the meter shows only what
             // auto-haptics itself produces (al/ar are not reassigned in Mix).
@@ -1216,11 +983,15 @@ void __not_in_flash_func(audio_loop)() {
             } else {
                 // Native fidelity: apply the profile level, without the derived-audio filter.
 
-                if (filter_native) native_lowpass.process(h_l, h_r, lp_a);
-                // Converted rumble: DS4Windows sends motor intensities (0-255) for
-                // Xbox360/DS4 emulation. Turn them into an actuator vibration using
-                // the same 90 Hz carrier and blend in, scaled by a configurable
-                // strength so native rumble doesn't overpower the audio haptics.
+                if (filter_native) native_lowpass.process(h_l, h_r, 0.01558524f); // 120 Hz at 48 kHz
+                // Advance only in Mix, including while its motors are silent.
+                rc_lo_ph += 2.0f * (float)M_PI * 60.0f / 48000.0f;
+                rc_hi_ph += 2.0f * (float)M_PI * 160.0f / 48000.0f;
+                if (rc_lo_ph > 2.0f*(float)M_PI) rc_lo_ph -= 2.0f*(float)M_PI;
+                if (rc_hi_ph > 2.0f*(float)M_PI) rc_hi_ph -= 2.0f*(float)M_PI;
+                const uint8_t rumble_l = g_rumble_l, rumble_r = g_rumble_r;
+                const float rc_lo = rumble_str > 0.0f && rumble_l != 0 ? haptic_math::sine_phase(rc_lo_ph) : 0.0f;
+                const float rc_hi = rumble_str > 0.0f && rumble_r != 0 ? haptic_math::sine_phase(rc_hi_ph) : 0.0f;
                 const float rl = (rumble_l / 255.0f) * rc_lo * rumble_str;
                 const float rr = (rumble_r / 255.0f) * rc_hi * rumble_str;
                 // Keep native amplitude; additional signals use remaining headroom.
@@ -1237,7 +1008,7 @@ void __not_in_flash_func(audio_loop)() {
         //   1 = off    — raw pre-1.0.4 texture (gritty but sharp)
         //   2 = light  — single pole ~2.4 kHz: kills most fold-back, keeps snap
         //   3 = strong — two poles ~1.3 kHz: maximum smoothness (can feel muted)
-        if (auto_mode > 0 && aa_mode >= 2) {
+        if (aa_mode >= 2) {
 
             if (aa_mode == 2) {
                 constexpr float A = 0.27f;   // ~2.4 kHz @ 48 kHz
@@ -1293,8 +1064,8 @@ void __not_in_flash_func(audio_loop)() {
 
 
     // 4. 转换为int8并缓冲，满64字节即组包发送
-    const bool round_output = auto_mode == 0 || (front_texture &&
-        (auto_mode == 2 || (native_lvl == 0.0f && rumble_str == 0.0f)));
+    const bool round_output = auto_mode == 0 || auto_mode == 2 ||
+        (front_texture && native_lvl == 0.0f && rumble_str == 0.0f);
     for (int i = 0; i < out_frames; i++) {
         const float gain = auto_mode == 0 ? haptics_gain : 1.0f;
         const float level_l = out_buf[i * 2] * 127.0f * gain;

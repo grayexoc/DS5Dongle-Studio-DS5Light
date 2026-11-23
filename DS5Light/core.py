@@ -28,28 +28,6 @@ class Controls:
     center: bool = False
     gain: float = 1.0
     impact: float = .85
-    experimental_ai: bool = False
-
-@dataclass(frozen=True)
-class RumbleSample:
-    timestamp: float = -1e9
-    left: float = 0
-    right: float = 0
-    valid: bool = False
-
-class RumbleStateProvider:
-    status = '미지원: 퓨어 출력 닫힘'
-    def sample(self):
-        return RumbleSample()
-    def close(self):
-        pass
-
-class MockRumbleProvider(RumbleStateProvider):
-    """테스트 전용. GUI/실제 제공자에 자동으로 연결하지 않는다."""
-    def __init__(self):
-        self.value = RumbleSample()
-    def sample(self):
-        return self.value
 
 def select_stereo(x):
     x = np.asarray(x, dtype=np.float32)
@@ -71,10 +49,7 @@ class Processor:
         self.dev = np.full(4, .01)
         self.previous = np.zeros(4)
         self.gain = np.ones(4)
-        self.pure_gain = 0.
-        self.until = -1e9
         self.age = 0.
-        self.last_mode = 'normal'
         self.slow_energy = np.full(4, 1e-8)
         self.fast_energy = np.full(4, 1e-8)
         self.hold = np.zeros(4)
@@ -90,6 +65,7 @@ class Processor:
         self._direction_energy = None
         self._sustained_direction_time = 0.0
         self.sustained_balance = 0.0
+        self._rear_evidence_active = False
         self._capacity = BLOCK
         self._bands = np.empty((4, self._capacity, 2), dtype=np.float32)
         self._ramp = np.empty((4, self._capacity), dtype=np.float64)
@@ -130,7 +106,7 @@ class Processor:
         self.gain = ramp[:, -1].copy()
         return ramp
 
-    def process(self, x, controls=Controls(), rumble=RumbleSample(), now=0., *,
+    def process(self, x, controls=Controls(), *,
                 band_features=None, haptic_evidence=None, haptic_direction=None, haptic_bands=None, rear_only=False):
         x = select_stereo(x)
         if not np.isfinite(x).all():
@@ -173,17 +149,18 @@ class Processor:
         self.sustained_balance = 0.0
         if haptic_direction is not None:
             haptic_direction.fill(0)
-            left = bands[:, :, 0]
+            left = bands[:HAPTIC_BAND_COUNT, :, 0]
             left_energy = np.einsum('ij,ij->i', left, left) / n
             # Reuse the shared stereo energy to derive the other channel.
-            side_energy = np.column_stack((left_energy, np.maximum(0, 2 * energy - left_energy)))
+            low_energy = energy[:HAPTIC_BAND_COUNT]
+            side_energy = np.column_stack((left_energy, np.maximum(0, 2 * low_energy - left_energy)))
             if self._direction_energy is None:
                 self._direction_energy = side_energy.copy()
             side_change = side_energy - self._direction_energy
-            self._direction_energy += slow_a[:, None] * side_change
+            self._direction_energy += slow_a[:HAPTIC_BAND_COUNT, None] * side_change
             if rear_only and controls.mode == 'normal' and not controls.bypass:
                 # Require persistent low-band imbalance before steering the background.
-                left, right = self._direction_energy[:HAPTIC_BAND_COUNT].sum(axis=0)
+                left, right = self._direction_energy.sum(axis=0)
                 ratio = (right - left) / max(left + right, 1e-10)
                 if abs(ratio) >= .6:
                     direction = 1 if ratio > 0 else -1
@@ -276,19 +253,25 @@ class Processor:
             haptic_evidence[:] = 0
             if haptic_bands is not None:
                 haptic_bands.fill(0)
-            if (rear_only and controls.mode == 'normal' and not controls.bypass
-                    and energy[low].sum() >= energy.sum() * MIN_HAPTIC_ENERGY_SHARE):
+            sustain_low = False
+            if rear_only and controls.mode == 'normal' and not controls.bypass:
+                # Compare the bass to its neighbouring band. Treble can dominate
+                # the full mix even when a real, sustained bass tone is present.
+                bass_share = self.slow_energy[0] / max(self.slow_energy[low].sum(), 1e-12)
+                broadband_low = energy[low].sum() >= energy.sum() * MIN_HAPTIC_ENERGY_SHARE
+                sustain_low = (broadband_low or
+                               (bass_share > .32 and energy[0] > max(1e-10, .32 * energy[low].sum())))
+            if sustain_low or low_band_hit:
                 amplitude = np.sqrt(energy[low])
+            if sustain_low:
                 attenuation = 10 ** (-14 * self._strength / 20) if controls.background else 1.0
-                sustained = np.max(amplitude)
+                sustained = np.max(amplitude) if broadband_low else amplitude[0]
                 # Restore weight where the lowest band carries substantial energy. The
                 # slower envelope limits the lift during a sudden attack.
-                bass_share = self.slow_energy[0] / max(self.slow_energy.sum(), 1e-12)
                 bass_weight = min(1.0, max(0.0, (bass_share - .32) / .23))
                 settled_bass = np.sqrt(min(energy[0], self.slow_energy[0]))
                 haptic_evidence[0] = max(sustained, 3.0 * bass_weight * settled_bass) * attenuation
             if low_band_hit:
-                amplitude = np.sqrt(energy[low])
                 protected = protection[low] * amplitude * (self.hold[low] > 0)
                 transient_level = np.max(protected)
                 haptic_evidence[0] = max(haptic_evidence[0], transient_level)
@@ -297,12 +280,25 @@ class Processor:
                 haptic_evidence[1] = np.max(onset[low] * amplitude)
                 if haptic_bands is not None:
                     haptic_bands[low] = protected
-                if haptic_direction is not None and haptic_evidence[0] > 0:
+                if haptic_direction is not None and transient_level > 0.0:
                     band = int(np.argmax(protected))
                     if np.max(side_change[band]) > floor[band] * 8:
                         np.maximum(0, side_change[band], out=haptic_direction)
         if rear_only:
+            if haptic_evidence is not None:
+                # A crossover ringing into digital silence may finish a hit,
+                # but must not start one after a rejected high-only sound ends.
+                active = haptic_evidence[0] > 0
+                if active and not self._rear_evidence_active and not np.any(x):
+                    haptic_evidence.fill(0)
+                    active = False
+                self._rear_evidence_active = active
             return x
+        self._rear_evidence_active = False
+        if controls.mode == 'pure':
+            return np.zeros_like(x)
+        if controls.mode != 'normal':
+            raise ValueError('알 수 없는 모드')
         strength = self._strength
         target = 10**((-14*strength*(1-protection))/20)
         if not controls.background or controls.bypass:
@@ -316,34 +312,10 @@ class Processor:
         ramp = self._gain_ramp(target, n, gap)
         y = self._y[:n]
         np.multiply(bands[0], ramp[0, :, None], out=y)
-        band_count = HAPTIC_BAND_COUNT if controls.mode == 'normal' and not controls.bypass else len(bands)
+        band_count = len(bands) if controls.bypass else HAPTIC_BAND_COUNT
         for band in range(1, band_count):
             np.multiply(bands[band], ramp[band, :, None], out=self._weighted[:n])
             np.add(y, self._weighted[:n], out=y)
-        if controls.mode not in ('normal', 'pure'):
-            raise ValueError('알 수 없는 모드')
-        if self.last_mode != controls.mode:
-            self.until = -1e9
-        self.last_mode = controls.mode
-        fresh = rumble.valid and 0 <= now-rumble.timestamp <= .075
-        if fresh and max(rumble.left, rumble.right) >= .015:
-            self.until = now+.025
-        allowed = controls.mode == 'normal' or (fresh and now <= self.until)
-        # Missing/stale information overrides hold; close over <= one 5ms block.
-        gate_end = 1. if allowed else 0.
-        if controls.mode == 'normal':
-            self.pure_gain = gate_end
-            np.clip(y, -1, 1, out=y)
-            return y.astype(np.float32)
-        if self.pure_gain != gate_end:
-            gate = self._ramp[0, :n]
-            np.multiply(self._positions[:n], (gate_end - self.pure_gain) / n, out=gate)
-            gate += self.pure_gain
-            gate[-1] = gate_end
-            np.multiply(y, gate[:, None], out=y)
-            self.pure_gain = gate_end
-        elif not gate_end:
-            y.fill(0.)
         np.clip(y, -1, 1, out=y)
         return y.astype(np.float32)
 

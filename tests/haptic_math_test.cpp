@@ -112,6 +112,61 @@ static float compare_attack_texture(float hz, int rise_samples, bool split) {
     return largest_reduction;
 }
 
+static void check_quiet_attack(float input_db, bool expect_attack) {
+    HapticImpactTexture texture;
+    float lowpass = 0.0f, envelope = 0.0f, gate = 0.0f;
+    const float lowpass_step = 1.0f - std::exp(-haptic_math::phase_end * 120.0f / 48000.0f);
+    const float gain = .16f * std::pow(10.0f, input_db / 20.0f);
+    float gated_peak = 0.0f, output_peak = 0.0f, edge_energy = 0.0f;
+    int onset = -1, attacks = 0;
+    float previous_blend = 0.0f;
+    for (int i = 0; i < 2400; ++i) {
+        const float input = i < 960 ? gain * std::exp(-i / 960.0f)
+            * std::sin(haptic_math::phase_end * 105.0f * i / 48000.0f) : 0.0f;
+        lowpass += lowpass_step * (input - lowpass);
+        const float level = std::fabs(lowpass);
+        envelope += (level > envelope ? .15f : .016f) * (level - envelope);
+        const float target = std::clamp((envelope - .016f) / .04f, 0.0f, 1.0f);
+        gate += (target > gate ? .20f : .02f) * (target - gate);
+        const float gated = envelope * gate;
+        const float blend = texture.update(envelope, gated);
+        if (blend > 0.0f && previous_blend == 0.0f) {
+            if (onset < 0) onset = i;
+            ++attacks;
+        }
+        previous_blend = blend;
+        const float phase = haptic_math::phase_end * 90.0f * i / 48000.0f;
+        const float carrier = std::sin(phase), edge = std::sin(2.0f * phase);
+        const float output = haptic_math::soft_clip(gated * (carrier + blend * (edge - carrier)));
+        const float edge_sample = gated * blend * edge;
+        edge_energy += edge_sample * edge_sample;
+        gated_peak = std::max(gated_peak, gated);
+        output_peak = std::max(output_peak, std::fabs(output));
+    }
+    std::fprintf(stderr, "105 Hz input %+g dB: onset sample %d, attacks %d, gate peak %.6f, output peak %.6f, edge energy %.9g\n",
+                 input_db, onset, attacks, gated_peak, output_peak, edge_energy);
+    assert(attacks == (expect_attack ? 1 : 0));
+    assert(expect_attack ? edge_energy > 0.0f : output_peak == 0.0f);
+}
+
+static int count_attacks_over_bed(float bed, int gap_ms) {
+    HapticImpactTexture texture;
+    float previous = 0.0f;
+    int attacks = 0;
+    for (int sample = 0; sample < 24000; ++sample) {
+        float level = bed;
+        if (gap_ms && sample >= 9600)
+            level += .14f * std::exp(-(sample - 9600) / 576.0f);
+        const int second_hit = 9600 + gap_ms * 48;
+        if (gap_ms && sample >= second_hit)
+            level += .07f * std::exp(-(sample - second_hit) / 576.0f);
+        const float blend = texture.update(level, level);
+        if (sample >= 9600 && blend > 0.0f && previous == 0.0f) ++attacks;
+        previous = blend;
+    }
+    return attacks;
+}
+
 static void check_attack_direction(float left_gain, float right_gain,
                                    bool expect_steering = true, bool quiet = false) {
     const float gain[] = {left_gain, right_gain};
@@ -215,6 +270,18 @@ int main() {
     check_attack_direction(.36f, .10f);
     check_attack_direction(.10f, .36f);
     check_attack_direction(.008f, .002f, false, true);
+    check_quiet_attack(0.0f, true);
+    check_quiet_attack(-6.0f, true);
+    check_quiet_attack(-12.0f, true);
+    check_quiet_attack(-24.0f, false);
+    for (float bed : {.02f, .05f}) {
+        assert(count_attacks_over_bed(bed, 0) == 0);
+        for (int gap_ms : {50, 100}) {
+            const int attacks = count_attacks_over_bed(bed, gap_ms);
+            std::fprintf(stderr, "Bed %.2f, gap %d ms: %d attacks\n", bed, gap_ms, attacks);
+            assert(attacks == 2);
+        }
+    }
     for (int rise : {48, 240}) {
         const float weight = compare_attack_texture(35.0f, rise, true);
         const float sharp = compare_attack_texture(110.0f, rise, true);

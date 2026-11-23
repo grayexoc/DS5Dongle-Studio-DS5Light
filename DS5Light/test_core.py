@@ -8,6 +8,24 @@ from core import *
 from offline import FEATURE_SCHEMA_ID, main as offline_main, process_array, wavfile
 
 class CoreTests(unittest.TestCase):
+    def test_live_rear_preserves_sustained_bass_under_treble(self):
+        t = np.arange(RATE // 2) / RATE
+        def rear(bass, treble, hz=4000, strength=.55):
+            tone = bass * np.sin(2*np.pi*80*t) + treble * np.sin(2*np.pi*hz*t)
+            tone[-10*BLOCK:] = 0
+            pcm, _ = process_array(np.column_stack((tone, tone)), controls=Controls(strength=strength),
+                                   studio_pcm16=True, live_pcm_scale=True)
+            return pcm[:, 2]
+
+        settled = slice(50*BLOCK, 85*BLOCK)
+        reference = rear(.05, 0)[settled].mean()
+        self.assertGreater(reference, 0)
+        for treble in (.06, .10, .20):
+            self.assertAlmostEqual(rear(.05, treble)[settled].mean() / reference, 1, delta=.03)
+        for hz in (700, 750, 1000, 4000):
+            self.assertFalse(rear(0, .20, hz).any(), hz)
+        self.assertLess(rear(.05, .20, strength=.80)[settled].mean(), reference)
+
     def test_offline_band_features_share_dsp_without_changing_output(self):
         t = np.arange(BLOCK * 3) / RATE
         tone = (.1 * np.sin(2 * np.pi * 80 * t)).astype(np.float32)
@@ -58,22 +76,12 @@ class CoreTests(unittest.TestCase):
         np.testing.assert_allclose(a[:,0],b[:,0],atol=1e-7)
         np.testing.assert_allclose(b[:,0],-b[:,1],atol=1e-7)
     def test_pure_fails_closed_even_bypass(self):
-        p=Processor(); c=Controls(mode='pure',bypass=True)
-        x=np.full((BLOCK,2),.2)
-        self.assertEqual(np.max(abs(p.process(x,c,now=1))),0)
-        r=RumbleSample(1,.5,0,True)
-        self.assertGreater(np.max(p.process(x,c,r,now=1)),.19)
-        p.process(x,c,r,now=1.2)
-        self.assertEqual(np.max(abs(p.process(x,c,r,now=1.205))),0)
-        self.assertEqual(np.max(abs(p.process(x,c,RumbleSample(5,.9,0,True),now=1.3))),0)
-    def test_mock_and_mode_transition(self):
-        provider=MockRumbleProvider(); provider.value=RumbleSample(.1,1,0,True)
-        p=Processor(); x=np.ones((BLOCK,2))*.1
-        p.process(x,Controls(bypass=True),now=0)
-        y=p.process(x,Controls(mode='pure',bypass=True),provider.sample(),now=.1)
-        self.assertGreater(y[-1,0],.09)
-        p.process(x,Controls(mode='pure',bypass=True),now=.2)
-        self.assertEqual(p.process(x,Controls(mode='pure',bypass=True),now=.3).max(),0)
+        p = Processor()
+        x = np.full((BLOCK, 2), .2)
+        for bypass in (True, False):
+            with self.subTest(bypass=bypass):
+                self.assertGreater(np.max(p.process(x, Controls(bypass=bypass))), 0)
+                np.testing.assert_array_equal(p.process(x, Controls(mode='pure', bypass=bypass)), 0)
     def test_resampling_chunk_invariance(self):
         for rate in (44100,96000):
             x=np.random.default_rng(5).normal(0,.1,(rate,2))

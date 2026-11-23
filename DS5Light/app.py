@@ -50,6 +50,7 @@ from preferences import PreferenceStore
 from studio_panel import StudioPanel
 
 from studio_settings_ui import FieldTip, StudioSettings, ui_text
+from studio_help import AUDIO_HAPTIC_VOLUME_HINT
 
 from localization import tr, LANGUAGE, save_language, canonical_device, display_device
 
@@ -981,14 +982,22 @@ class App:
         gain_card=self.card(left_cards); gain_card.pack(fill='both',expand=True,pady=(SPACE,0))
         self.gain_frame=gain_card.content
         gain_heading=ttk.Frame(self.gain_frame); gain_heading.pack(fill='x')
-        self.section_title(gain_heading,_ui_tr('오디오햅틱 세기')).pack(side='left')
-        self.filter_help_icon(gain_heading,_ui_tr('앱이 오디오를 전송할 때만 적용되며 프로필은 바꾸지 않습니다. 반응을 먼저 맞춘 뒤 세기를 조절하세요. 기본 1x. Studio 오디오햅틱 세기와 함께 높이면 포화될 수 있습니다.')).pack(side='left',padx=(5,0))
+        gain_title=self.section_title(gain_heading,_ui_tr('오디오햅틱 세기'))
+        gain_title.pack(side='left')
+        volume_hint=_ui_tr(AUDIO_HAPTIC_VOLUME_HINT)
+        HoverHint(gain_title,volume_hint)
+        gain_help=ui_text(
+            '기본값은 1x입니다. 공유 출력에서는 패드 스피커 자동 음소거가 확인될 때만 앱 세기를 적용합니다. '
+            '그 외에는 Studio 설정에서 세기를 조절하세요. 독점 출력에서는 Rear 햅틱에만 적용합니다.',
+            _ui_tr('기본 1x. 공유 출력에서는 Studio의 패드 스피커 자동 음소거가 확인될 때 앱 세기를 적용합니다. 음소거가 꺼져 있거나 확인되지 않으면 앱은 1x로 출력합니다. 이때는 Studio 설정에서 오디오햅틱 세기를 조절하세요. 독점 Rear에서는 앱 세기가 Rear 햅틱 신호에만 적용됩니다.'))
+        self.filter_help_icon(gain_heading,volume_hint+'\n\n'+gain_help).pack(side='left',padx=(5,0))
         self.gain_value=ttk.Label(gain_heading,text='1x',foreground=ACCENT)
         self.gain_value.pack(side='right')
         self.gain_slider=HapticSlider(self.gain_frame,self.gain,lambda: self.update_controls(slider=True),
                                      minimum=100,maximum=round(HAPTIC_GAIN_MAX*100),step=100,
                                      reference=100,background=CARD,width=200)
         self.gain_slider.pack(fill='x',expand=True,pady=(SPACE,0))
+        HoverHint(self.gain_slider,volume_hint)
 
         right_box=self.card(cards); right_box.grid(row=0,column=1,sticky='nsew',padx=(SPACE_LG//2,0)); right=right_box.content
 
@@ -1021,9 +1030,11 @@ class App:
 
             ttk.Label(row,text=label,style='Muted.TLabel').pack(side='left')
 
-            description=(_ui_tr('높일수록 배경음의 지속적인 진동을 줄입니다. 너무 높이면 약한 효과음도 줄어들 수 있습니다.') if key=='strength'
+            description=(ui_text('높일수록 배경음의 진동을 줄입니다. 너무 높이면 약한 효과음도 줄어듭니다.',
+                                 _ui_tr('높일수록 배경음의 지속적인 진동을 줄입니다. 너무 높이면 약한 효과음도 줄어들 수 있습니다.')) if key=='strength'
 
-                         else _ui_tr('높일수록 배경 진동을 줄이는 동안 타격의 순간적인 진동을 더 살립니다.'))
+                         else ui_text('높일수록 필터가 타격의 첫 진동을 더 많이 살립니다.',
+                                      _ui_tr('높일수록 배경 진동을 줄이는 동안 타격의 순간적인 진동을 더 살립니다.')))
 
             self.filter_help_icon(row,description).pack(side='left',padx=(5,0))
 
@@ -1520,7 +1531,7 @@ class App:
         foreground = FG if self.filter_on.get() else DISABLED
         self.value_label.configure(text=f'{self.strength.get():.0f}%', foreground=foreground)
         self.impact_label.configure(text=f'{self.impact.get():.0f}%', foreground=foreground)
-        self.gain_value.configure(text=f'{self.gain.get()/100:g}x')
+        self.gain_value.configure(text=f'{self.gain.get()/100:g}x' if self.gain_slider.enabled else '1x')
 
     def _engine_display_state(self):
         engine = self.engine
@@ -1531,8 +1542,11 @@ class App:
     def render(self):
 
         self._last_engine_display = self._engine_display_state()
-        self._render_slider_values()
         ch=self.capture_channels(); active=bool(self.engine); filtering=self.filter_on.get()
+        gain_allowed = (self.studio.shared_gain_allowed() or
+                        (filtering and self.studio.rear_control_required()))
+        self.gain_slider.set_enabled(gain_allowed)
+        self._render_slider_values()
 
         native=self.studio.haptics_blocked
         process_scope=self.scope.get()=='process'
@@ -1973,6 +1987,15 @@ class App:
             self.root.after(150,self._initial_process_refresh)
             return
         self._initial_process_refresh_done=True
+        if self.scope.get()=='device':
+            if (not self._auto_start_attempted and not self.studio.haptics_blocked
+                    and self.auto_start.get() and '--smoke-test' not in sys.argv):
+                self._auto_start_attempted=True
+                if self.controls.mode=='normal':
+                    self.start()
+                else:
+                    self.status.set(_ui_tr('자동 시작을 건너뛰었습니다 · 퓨어 모드는 현재 지원하지 않습니다.'))
+            return
         self.refresh_games(initial=True)
 
     def refresh_games(self,initial=False):
@@ -2028,7 +2051,7 @@ class App:
 
             if self.auto_start.get() and '--smoke-test' not in sys.argv:
 
-                if error:
+                if error and self.scope.get()=='process':
 
                     self.status.set(_ui_tr('자동 시작을 건너뛰었습니다 · 프로세스 목록을 확인하세요.'))
 
@@ -2180,9 +2203,15 @@ class App:
 
                 _ui_tr('입력 피크: ')+f"{stats.get('peak',0)*100:.1f}% · "+_ui_tr('재연결: ')+str(stats.get('reconnect_count',0)),
 
-                _ui_tr('햅틱 세기: ')+f"{self.gain.get():.0f}% · "+_ui_tr('출력 제한 샘플: ')+str(stats.get('output_limited_samples',0))]
+                _ui_tr('햅틱 세기: ')+f"{self.gain_value.cget('text')} · "+_ui_tr('출력 제한 샘플: ')+str(stats.get('output_limited_samples',0))]
 
             live = stats.get('studio_live')
+            if live:
+                for label, key in ((_ui_tr('Rear 큐 → 렌더'), 'queue_to_render_ms'), (_ui_tr('Rear WASAPI 쓰기'), 'write_ms')):
+                    values = live.get(key)
+                    if values:
+                        p50, p95, maximum = values
+                        lines.append(f'{label} p50/p95/max · {p50:.1f} / {p95:.1f} / {maximum:.1f} ms')
             opened=stats.get('capture_format')
             requested=stats.get('requested_channels',0)
             if opened:
@@ -2319,6 +2348,8 @@ class App:
     @staticmethod
     def _legacy_gain_notice(gain):
         if gain>=HAPTIC_GAIN_MIN:return ''
+        if LANGUAGE=='ko':
+            return f'저장된 오디오햅틱 세기 {gain:g}x를 지원 최솟값 {HAPTIC_GAIN_MIN:g}x로 조정했습니다.'
         return _ui_tr('저장된 오디오햅틱 세기 {0}%를 지원 최솟값 {1}%로 적용했습니다.').format(
             f'{gain*100:g}',f'{HAPTIC_GAIN_MIN*100:g}')
 
@@ -2449,11 +2480,7 @@ class App:
             self.last_render=None;self.render();return
 
         exclusive=self.studio.rear_control_required() and self.filter_on.get()
-        pinned_resume=(self.run_intent.profile_paused and self.run_intent.can_resume(self._run_route())
-
-                       and self.studio.binding.snapshot().endpoint_id is not None)
-
-        if (self.destination.get() not in self.outputs and not pinned_resume) or self.scope.get()=='device' and self.source.get() not in self.inputs:
+        if self.scope.get()=='device' and self.source.get() not in self.inputs:
 
             self.run_intent.stop('invalid_route')
 
@@ -2485,8 +2512,14 @@ class App:
         record('start_output_check', self.ds, self.studio.binding, self.destination.get())
         requested=None if self.destination.get()==AUTO else self.destination.get()
         binding=self.studio.binding
-        if binding.output(self.ds,requested) is None:
-            if requested is None and binding.snapshot().require_output_identity:
+        def selected_output(rows):
+            if (requested is not None and requested!=binding.snapshot().endpoint_name
+                    and not any(r.get('name')==requested and r.get('maxOutputChannels',0)>=4
+                                and not r.get('isLoopbackDevice') for r in rows)):
+                return None
+            return binding.output(rows,requested)
+        if selected_output(self.ds) is None:
+            if hid_rows is not None and requested is None and binding.snapshot().require_output_identity:
                 self.run_intent.stop('invalid_route')
                 self.open_connection()
                 self.status.set(_ui_tr('Edge USB 재연결 후 같은 Pico의 4채널 출력을 선택하세요.'))
@@ -2495,10 +2528,11 @@ class App:
             identity=binding.snapshot()
             eligible=(len(matches)==1 and matches[0].get('endpoint_id') and identity.hid_path)
             if hid_rows is None:
-                if getattr(self,'_pair_lookup_pending',False):return
-                self._pair_lookup_pending=True
-                results=queue.SimpleQueue()
                 generation=self.run_intent.generation
+                if getattr(self,'_pair_lookup_pending',False) and self._pair_lookup_generation==generation:return
+                self._pair_lookup_pending=True
+                self._pair_lookup_generation=generation
+                results=queue.SimpleQueue()
                 lookup_deadline=time.monotonic()+10
                 def collect_pair():
                     from studio_slots import devices as studio_devices
@@ -2507,23 +2541,28 @@ class App:
                     refreshed=None
                     error=None
                     try:
-                        for delay in (0, .3, .6):
+                        retry_until=time.monotonic()+8
+                        delay=0
+                        while True:
                             time.sleep(delay)
+                            if (self._closing or self._close_requested or not self.run_intent.requested
+                                    or self.run_intent.generation!=generation or time.monotonic()>=lookup_deadline):break
                             try:
                                 refreshed=devices()
                                 error=None
                             except (OSError,RuntimeError) as exc:
                                 error=str(exc)
-                                continue
-                            if binding.output(refreshed,requested) is not None or any(
-                                d.get("maxOutputChannels",0)>=4 and not d.get("isLoopbackDevice")
-                                and ("dualsense" in d.get("name","").lower() or d.get("name")==requested)
-                                for d in refreshed):break
+                            else:
+                                if selected_output(refreshed) is not None:break
+                            remaining=retry_until-time.monotonic()
+                            if remaining<=0:break
+                            delay=min(1,delay*2 or .3,remaining)
                     except Exception as exc:
                         error=str(exc)
                     finally:
                         results.put((rows,refreshed,error))
                 def finish_pair():
+                    if self._pair_lookup_generation!=generation:return
                     if self._closing or self._close_requested:
                         self._pair_lookup_pending=False;return
                     try: rows,refreshed,error=results.get_nowait()
@@ -2548,6 +2587,9 @@ class App:
             if not eligible:
                 self.run_intent.stop('invalid_route')
                 self.open_connection()
+                if binding.output_issue(self.ds)=='stereo':
+                    self.status.set(_ui_tr('듀얼센스 출력이 2채널입니다. Windows 소리 설정에서 4채널로 구성하세요.'))
+                    return
                 if exclusive:
                     self.status.set(_ui_tr('Studio 독점 출력 시작 실패 · 같은 Pico의 4채널 출력을 선택하세요.'))
                     return
@@ -2573,6 +2615,7 @@ class App:
 
         candidate=Engine(None if self.source.get()==AUTO else self.source.get(),None if self.destination.get()==AUTO else self.destination.get(),self.controls,process_pid=pid,process_channels=CHANNELS[self.channel.get()],binding=self.studio.binding)
         candidate.front_only=self.studio.legacy_output_front_only()
+        candidate.allow_shared_gain=self.studio.shared_gain_allowed()
         candidate.studio_live=exclusive
         candidate.studio_adaptive_gain=candidate.studio_live and '--studio-adaptive-gain' in sys.argv
 
@@ -2696,6 +2739,7 @@ class App:
         elif profile.get('auto_haptics_enable')==2 and 'ah_dsp_source' in profile:
             current['ah_dsp_source']=profile['ah_dsp_source']
 
+        current.update({key: profile[key] for key in ('auto_mute_mix', 'auto_mute_replace') if key in profile})
         if result.get('row'):
 
             self.studio.binding.bind_hid(result['row'])
@@ -2725,7 +2769,7 @@ class App:
             if (editor_revision_changed or route_changed and (
                     editor.profile_stamp!=stamp or editor.doc.baseline.get('auto_haptics_enable')!=profile.get('auto_haptics_enable')
                     or any(key in current and editor.doc.baseline.get(key)!=current[key]
-                           for key in ('mix_native_level','ah_dsp_source')))):
+                           for key in ('mix_native_level','ah_dsp_source','auto_mute_mix','auto_mute_replace')))):
 
                 editor.write_ready=False;editor.external_stale=True
                 editor.invalidate_slot_cache()
@@ -2924,9 +2968,6 @@ class App:
                 engine_status=_ui_tr('지정 프로세스 · ')+self.active_process_name+(' · '+tail[1] if len(tail)>1 else '')
 
             engine_status=tr(engine_status)
-            ai_status=getattr(self.engine,'ai_status','')
-            if ai_status:
-                engine_status+=f' · {ai_status}'
 
             if self.controller_presence.disconnected:
 
