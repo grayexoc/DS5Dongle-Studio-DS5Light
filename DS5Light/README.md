@@ -42,7 +42,7 @@ Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dong
 
 ### Recommended preset setup
 
-After updating, we strongly recommend applying a supplied Mix or Replace preset under **Studio settings → Profile slots → Recommended presets**, then adjusting it to the game and your preference. Start with the app filter enabled, background reduction / impact preservation at 40% / 90% for Mix or 50% / 95% for Replace, and app strength at **1x (100%)**. Both presets use Front input; Mix also combines the game's raw rear native haptics.
+For audio haptics, start with a supplied Mix or Replace preset under **Studio settings → Profile slots → Recommended presets**. If upgrading from a version earlier than v1.2.2, we strongly recommend reapplying the updated preset. Start with the app filter enabled, background reduction / impact preservation at 40% / 90% for Mix or 50% / 95% for Replace, and app strength at **1x (100%)**. Both presets use Front input; Mix also combines the game's raw rear native haptics.
 
 Existing saved slots retain their settings. Stop dongle audio and back up the destination slot before **Save and use**. This writes the current configuration with the preset's audio-haptics settings to that slot, replacing its previous contents.
 
@@ -90,14 +90,14 @@ The filter uses changes over time and energy levels across frequency bands. It d
 - Pico settings: Configure device-wide sleep, dock-disconnect and USB serial hiding independently of profiles. The serial choice is adopted once from saved settings and retained across profile changes; changing USB identity can require selecting the Windows default audio output again.
 - Dongle settings: Read and edit Studio settings for audio haptics, triggers, gyro, buttons, macros, and LEDs directly in the app.
 - Touchpad mouse: Adjust operation, speed, small-motion rejection, axis inversion, trackball inertia and friction in Studio settings.
-- Profiles and slots: Load profiles stored on the dongle, manage settings and slots, and back up or restore configurations.
+- Profiles and slots: Load profiles stored on the dongle, manage settings and slots, and back up or restore configurations. On Studio v54 or later, slot backup restoration preserves the active profile selection and restores the live settings that were in effect before the operation.
 - **Custom triggers and macros.** Use shortcuts to add trigger effects, edit button actions, and temporarily apply an effect to test it on the controller before saving the profile.
 
 ### Convenience and diagnostics
 
 - High-DPI layout: Per-monitor awareness, logical pixel scaling, DPI-aware shared controls and work-area bounds. Popups share the main window scale, including when the main window moves between monitors.
 
-- **USB reconnection.** After a serial visibility change, the app uses USB port information to verify the same Pico. Check the Windows default output and select the Pico audio output again if needed.
+- **USB reconnection.** After a serial visibility change or a DualSense/Xbox profile switch, the app can reconnect to the same Pico after USB re-enumeration. Automatic audio selection requires a verified device match. If prompted, check the Windows default output and select the Pico output in the app.
 - Input checks: View detected-button history, last-report age, touch-click qualification and the first keyboard key to diagnose mapping inputs.
 - Controller status: View connection and battery information.
 - Device diagnostics and output tests: Read dongle status and output statistics, and run individual tests for conventional rumble, adaptive triggers, and native haptics.
@@ -189,7 +189,7 @@ DS5Light는 DS5Dongle-Studio 펌웨어의 오디오 햅틱 기능을 보완하�
 
 ### 추천 프리셋 적용 안내
 
-업데이트 후 **Studio 설정 → 프로필 슬롯 → 추천 프리셋**에서 동봉 Mix·Replace 프리셋을 기본 설정으로 다시 적용할 것을 강력히 권장합니다. **앱 필터 켬·배경 억제/충격 보존은 믹스 40%/90%, 대체 50%/95%·앱 세기 1x(100%)**를 시작점으로 삼아 게임과 취향에 맞게 조절하세요. 두 프리셋 모두 Front 입력을 사용하며 Mix는 게임의 Rear 네이티브 햅틱 원본도 혼합합니다.
+오디오햅틱은 **Studio 설정 → 프로필 슬롯 → 추천 프리셋**의 동봉 믹스 또는 대체 프리셋을 기준으로 설정하세요. v1.2.2보다 오래된 버전에서 업그레이드한다면 변경된 추천 프리셋을 다시 적용할 것을 강력히 권장합니다. **앱 필터 켬·배경 억제/충격 보존은 믹스 40%/90%, 대체 50%/95%·앱 세기 1x(100%)**를 시작점으로 삼아 게임과 취향에 맞게 조절하세요. 두 프리셋 모두 Front 입력을 사용하며 Mix는 게임의 Rear 네이티브 햅틱 원본도 혼합합니다.
 
 기존 저장 슬롯은 자동으로 바뀌지 않습니다. 동글 오디오 전송을 멈추고 대상 슬롯을 백업한 뒤 **저장 후 사용**을 선택하세요. 현재 구성에 프리셋의 오디오 햅틱 설정을 반영한 결과로 대상 슬롯을 덮어씁니다.
 
@@ -233,7 +233,7 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 
 - 동글 설정 편집: 오디오 햅틱, 트리거, 자이로, 버튼·매크로, LED 등 Studio 설정을 앱에서 조회하고 수정합니다.
 - 터치패드 마우스: Studio 설정에서 사용 여부, 이동 속도, 미세 움직임 차단, 방향 반전, 트랙볼 관성과 감속을 조절합니다.
-- 프로필·슬롯 관리: 동글에 저장된 프로필을 불러오고, 설정과 슬롯을 관리하며 백업·복원 기능을 사용합니다.
+- 프로필·슬롯 관리: 동글에 저장된 프로필을 불러오고, 설정과 슬롯을 관리하며 백업·복원 기능을 사용합니다. Studio v54 이상에서는 슬롯 백업을 복원해도 활성 프로필 선택이 유지되며 작업이 끝나면 복원 전 실시간 설정으로 돌아갑니다.
 - **커스텀 트리거·매크로.** 단축 옵션으로 트리거 효과를 추가하고 버튼 동작을 편집할 수 있습니다. 임시 적용으로 프로필에 저장하기 전에 컨트롤러에서 효과를 시험할 수 있습니다.
 
 ### 사용 편의 및 진단
@@ -241,7 +241,7 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 - 입력 확인: 감지 버튼 이력·마지막 수신 시각·터치 클릭 판정·키보드 첫 키를 표시합니다.
 - 고배율 UI: 모니터별 DPI 인식, 논리 픽셀 변환, 공통 컨트롤 배율과 작업 영역 안의 창 배치를 지원합니다. 팝업은 메인 창 배율을 공유하며 메인 창 이동 시 함께 갱신됩니다.
 
-- **USB 재연결.** 시리얼 표시 설정을 바꾸면 USB 포트 정보로 같은 Pico를 확인합니다. Windows 기본 출력과 앱의 Pico 오디오 출력을 확인하고 필요한 경우 다시 선택하세요.
+- **USB 재연결.** 시리얼 표시 설정을 바꾸거나 프로필이 DualSense·Xbox 모드 사이에서 전환되면 USB 재인식 후 같은 Pico에 다시 연결할 수 있습니다. 같은 장치로 확인된 경우에만 오디오 출력을 자동 선택합니다. 안내가 표시되면 Windows 기본 출력을 확인하고 앱에서 Pico 출력을 선택하세요.
 - 컨트롤러 상태 표시: 연결 상태와 배터리 정보를 확인할 수 있습니다.
 - 장치 진단과 출력 테스트: 동글 상태와 출력 통계를 조회하고 일반 진동·트리거·네이티브 햅틱을 개별 시험할 수 있습니다.
 - 마이크 버튼 단축키: DualSense의 Mute 버튼에 키보드 단축키를 지정할 수 있습니다.

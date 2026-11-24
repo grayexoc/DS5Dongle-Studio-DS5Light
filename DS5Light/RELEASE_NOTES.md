@@ -4,6 +4,8 @@
 
 Use `DS5Light-win-x64-v1.2.3.zip` with `ds5-studio-light_v54.uf2` for Raspberry Pi Pico 2 W.
 
+**Upgrading from a version earlier than v1.2.2?** We strongly recommend reapplying the updated Mix or Replace preset under **Studio settings → Profile slots → Recommended presets** before using audio haptics. Back up the destination slot before saving.
+
 - When a profile switches between DualSense and Xbox mode, the app can recover the same Pico's control connection after USB re-enumeration. Automatic audio selection requires matching device evidence. If the available evidence is incomplete, confirm the output in the app.
 - Restoring a slot backup keeps the active profile selected and restores the live settings after the operation. Studio v54 is required for this restore behavior.
 - Mix and Replace with Front input separate deep bass and short impact textures more clearly. The firmware also reduces speaker encoding work during sustained mute.
@@ -13,6 +15,8 @@ Windows and game volume affect haptic strength. The bundled Mix and Replace pres
 ### 한국어
 
 Windows 앱 `DS5Light-win-x64-v1.2.3.zip`과 Raspberry Pi Pico 2 W용 Studio 펌웨어 `ds5-studio-light_v54.uf2`를 함께 사용하세요.
+
+**v1.2.2보다 오래된 버전에서 업그레이드하는 경우**, 오디오햅틱을 사용하기 전에 **Studio 설정 → 프로필 슬롯 → 추천 프리셋**에서 변경된 믹스 또는 대체 프리셋을 다시 적용할 것을 강력히 권장합니다. 저장하기 전에 대상 슬롯을 백업하세요.
 
 - 프로필이 DualSense와 Xbox 모드 사이에서 전환되면 USB 재인식 후 같은 Pico의 설정 연결을 복구할 수 있습니다. 같은 장치라는 근거가 있을 때 오디오 출력을 자동 선택합니다. 장치 식별 정보가 부족하면 앱에서 출력을 확인하세요.
 - 슬롯 백업을 복원할 때 현재 활성 프로필의 선택을 유지하고, 작업 후 복원 전의 실시간 설정으로 돌아갑니다. 이 복원 기능에는 Studio v54가 필요합니다.
