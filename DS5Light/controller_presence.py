@@ -108,10 +108,11 @@ class IdleControllerPresence:
             self.next_check=now+self.INTERVAL
             return None
         if not self.armed or self.busy or now<self.next_check:return result
-        if binding.snapshot().hid_path is None:return result
+        identity=binding.snapshot()
+        if identity.hid_path is None:return result
         self.busy=True;self.next_check=now+self.INTERVAL;generation=self.generation
         def work():
-            from studio_slots import _DEVICE_LOCK
+            from studio_slots import _DEVICE_LOCK,StudioClient
             # Skip concurrent Studio writes/reads instead of waiting on them.
             if not _DEVICE_LOCK.acquire(blocking=False):
                 self.results.put((generation,None,None));return
@@ -119,6 +120,13 @@ class IdleControllerPresence:
                 # This firmware hides the active controller PID on BT loss,
                 # or switches to its idle PID. Cached battery/RSSI is not proof.
                 row=binding.resolve_hid(devices())
+                if row is not None and row['path']!=identity.hid_path:
+                    import hid
+                    device=hid.device()
+                    try:
+                        device.open_path(row['path'])
+                        StudioClient(device).profile()
+                    finally:device.close()
                 value=(row is not None,row)
             except Exception:value=(None,None)
             finally:_DEVICE_LOCK.release()

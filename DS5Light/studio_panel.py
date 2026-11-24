@@ -465,6 +465,11 @@ class StudioPanel(StartupDiscovery):
 
         self.auto_haptics_mode=profile['auto_haptics_enable'];self.profile_path=path
 
+        if not old or old.get('auto_haptics_enable') != self.auto_haptics_mode:
+            apply_defaults = getattr(self.app, 'apply_studio_filter_defaults', None)
+            if apply_defaults is not None:
+                apply_defaults(self.auto_haptics_mode)
+
         if profile.get('device_serial'):self.device_serials[path]=profile['device_serial']
 
         idle=getattr(self.app,'idle_presence',None)
@@ -503,9 +508,16 @@ class StudioPanel(StartupDiscovery):
         profile=self.observed_profile or {}
         return profile.get('auto_haptics_enable')==1 and (profile.get('mix_native_level') or 0)>0
 
+    def xinput_active(self):
+        path=self.binding.snapshot().hid_path
+        if path is None:return False
+        text=path.decode('ascii',errors='ignore') if isinstance(path,bytes) else str(path)
+        return getattr(self,'xbox_hid_path',None)==path or 'vid_1209&pid_0001' in text.lower()
+
     def rear_control_required(self):
         profile = self.observed_profile or {}
-        return profile.get('auto_haptics_enable') == 2 and profile.get('ah_dsp_source') == 1
+        return (profile.get('auto_haptics_enable') == 2 and profile.get('ah_dsp_source') == 1
+                and not self.xinput_active())
 
     def shared_gain_allowed(self):
         profile = self.observed_profile or {}
@@ -864,7 +876,7 @@ class StudioPanel(StartupDiscovery):
 
                 container=hid_container(path)
 
-            self.binding.expect_reconnect()
+            self.binding.expect_reconnect(usb_mode_change=path==identity.hid_path)
 
             try:result=run_device(path,slot.index)
 

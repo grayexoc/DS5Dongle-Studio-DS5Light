@@ -7,7 +7,7 @@ from device_binding import resolve_hid
 from studio_profile_events import ProfileEvents
 
 
-def read_current(identity,previous=None,full=False):
+def read_current(identity,previous=None,full=False,*,binding=None):
     import hid
     if not _DEVICE_LOCK.acquire(blocking=False):return None
     try:
@@ -17,10 +17,13 @@ def read_current(identity,previous=None,full=False):
         except OSError:
             if device is not None:device.close();device=None
             rows=devices()
-            if identity.container_id and (not identity.serial or not any(row.get('serial_number')==identity.serial for row in rows)):
+            if binding is not None:
+                if binding.snapshot()!=identity:return None
+                target=binding.resolve_hid(rows)
+            elif identity.container_id and (not identity.serial or not any(row.get('serial_number')==identity.serial for row in rows)):
                 from windows_device_identity import hid_container
                 rows=[dict(row,container_id=row.get('container_id') or hid_container(row['path'])) for row in rows]
-            target=resolve_hid(rows,identity.hid_path,identity.serial,identity.container_id)
+            if binding is None:target=resolve_hid(rows,identity.hid_path,identity.serial,identity.container_id)
             if target is None:raise RuntimeError(_ui_tr('선택한 Pico 재연결 대기'))
             device=hid.device()
             try:device.open_path(target['path'])
@@ -44,6 +47,7 @@ def read_current(identity,previous=None,full=False):
                 keys = {1: ('mix_native_level', 'ah_dsp_source'), 2: ('ah_dsp_source',)}.get(mode, ())
                 for key in keys:
                     if key in previous:profile.setdefault(key,previous[key])
+            if binding is not None and binding.snapshot()!=identity:return None
             return dict(path=target['path'] if target else identity.hid_path,row=target,profile=profile,
                         full=checked,extended=extended)
         finally:device.close()
@@ -96,7 +100,7 @@ class ProfileWatch:
         generation=self.generation;previous=dict(self.profile) if self.profile else None;full=now>=self.next_full
         self.busy=True;self.next_check=now+self.INTERVAL
         def work():
-            try:self.results.put((generation,read_current(identity,previous,full),None))
+            try:self.results.put((generation,read_current(identity,previous,full,binding=binding),None))
             except Exception as exc:self.results.put((generation,None,str(exc)))
         try:start_thread(threading.Thread(target=work,name='DS5Light-profile-watch',daemon=True))
         except Exception as exc:self.results.put((generation,None,str(exc)))

@@ -932,7 +932,7 @@ bool active_profile_restore(uint8_t slot, uint32_t fingerprint) {
     return true;
 }
 
-bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len) {
+bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len, bool select_slot) {
     if (idx >= SLOT_COUNT) return false;
     const uint32_t sec_off = slot_sector_offset(idx / SLOTS_PER_SECTOR);
     const uint8_t  local   = idx % SLOTS_PER_SECTOR;
@@ -954,7 +954,7 @@ bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len) {
     }
     uint8_t nm[SLOT_NAME_LEN]; Config_body bd;
     if (!slot_read(idx, nm, bd)) return false;
-    active_profile_set(idx);   // the live config now IS this slot
+    if (select_slot || g_active_slot == idx) active_profile_set(idx);
     usb_profile_event_slot_saved();
     return true;
 }

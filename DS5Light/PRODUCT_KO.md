@@ -40,9 +40,9 @@
 ## 다운로드와 실행
 
 
-**DS5Light v1.2.2 · Studio 펌웨어 v53 호환**
+**DS5Light v1.2.3 · Studio 펌웨어 v54 호환**
 
-[v1.2.2](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.2.2)에서 `DS5Light-win-x64-v1.2.2.zip` 전체를 풀고 `DS5Light.exe`를 실행하세요. `_internal` 폴더를 함께 유지해야 하며 Python 설치는 필요하지 않습니다. Pico 2 W용 펌웨어는 별도 파일 `ds5-studio-light_v53.uf2`입니다.
+[v1.2.3](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.2.3)에서 `DS5Light-win-x64-v1.2.3.zip` 전체를 풀고 `DS5Light.exe`를 실행하세요. `_internal` 폴더를 함께 유지해야 하며 Python 설치는 필요하지 않습니다. Pico 2 W용 펌웨어는 별도 파일 `ds5-studio-light_v54.uf2`입니다.
 
 앱의 **Studio 설정 → 프로필 슬롯 → 추천 프리셋 → 저장 후 사용**을 이용하세요. 파일은 `Studio Presert/DS_Native.json`, `Studio Presert/Audio_Haptic_01.json`, `Studio Presert/Audio_Haptic_02.json`입니다. 현재 오디오햅틱 항목만 바꾸고 다른 현재 설정을 유지한 구성을 선택한 슬롯에 저장합니다. 동글 오디오 전송을 멈추고 대상 슬롯을 백업한 뒤 적용하세요. 기존 슬롯은 자동으로 갱신되지 않습니다.
 

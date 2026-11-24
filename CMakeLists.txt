@@ -138,6 +138,8 @@ target_include_directories(wdl_resampler PUBLIC
 
 # Opus
 #set(OPUS_FIXED_POINT ON)
+# Some bare-metal newlib toolchains ship incomplete fortify headers.
+set(OPUS_FORTIFY_SOURCE OFF CACHE BOOL "Enable Opus libc fortification")
 add_subdirectory(lib/opus)
 
 # Phase A.3: Move the Opus CELT hot path to RAM via .time_critical sections.
@@ -340,9 +342,9 @@ if(WAKE_DEBUG)
     )
 endif()
 
-set(VERSION "53" CACHE STRING "Program version string")
+set(VERSION "54" CACHE STRING "Program version string")
 if(VERSION STREQUAL "dev")
-    set(VERSION "53" CACHE STRING "Program version string" FORCE)
+    set(VERSION "54" CACHE STRING "Program version string" FORCE)
 endif()
 set_target_properties(ds5-bridge PROPERTIES OUTPUT_NAME "ds5-studio-light_v${VERSION}")
 

@@ -218,6 +218,15 @@ class WatchReadTests(unittest.TestCase):
             result=watch.read_current(DeviceIdentity(b'old','ours'),AH)
         new.open_path.assert_called_once_with(b'new');old.close.assert_called_once();new.close.assert_called_once();self.assertEqual(result['path'],b'new')
 
+    def test_open_failure_uses_selected_binding_to_recover_mode_switch(self):
+        old=Mock();old.open_path.side_effect=OSError('gone')
+        new=Mock();client=Mock();client.profile.return_value=dict(AH)
+        b=binding();identity=b.snapshot();row=hidrow(b'new')
+        with patch('hid.device',side_effect=[old,new]),patch.object(watch,'devices',return_value=[row]),patch.object(watch,'StudioClient',return_value=client),patch.object(b,'resolve_hid',return_value=row) as resolve:
+            result=watch.read_current(identity,AH,binding=b)
+        resolve.assert_called_once_with([row])
+        self.assertEqual(result['row'],row)
+
 class WatchScheduleTests(unittest.TestCase):
     def setUp(self):
         self.now=100.;self.b=binding();self.m=watch.ProfileWatch()
@@ -277,6 +286,7 @@ class AppPolicyTests(unittest.TestCase):
         try:
             with patch.object(u,'render'),patch.object(u,'stop') as stop:
                 for mode,level,source,front in ((1,50,0,True),(1,0,0,False),(1,100,0,True),
+                                                (2,0,1,False),(1,100,0,True),
                                                 (2,100,0,False),(2,100,1,False),(2,100,0,False)):
                     # Rear control uses the managed renderer when filtering;
                     # the legacy bypass path must still carry both pairs.

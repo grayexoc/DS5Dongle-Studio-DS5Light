@@ -21,30 +21,45 @@ class ParentBindingTests(unittest.TestCase):
 
     def test_same_physical_device_ignores_interface_container_difference(self):
         b=self.binding();row=self.row()
-        self.assertEqual(b.match_output([row]),row)
+        self.assertEqual(b.output([row]),row)
 
     def test_other_usb_device_rejected_even_when_unique(self):
         b=self.binding();row=self.row(usb_parent_id='usb-other')
-        hids=[dict(path=b'hid',serial_number='pico')]
-        self.assertIsNone(b.match_output([row],hids))
+        self.assertIsNone(b.output([row]))
         self.assertFalse(b.confirm_output(row,allow_container_mismatch=True))
 
     def test_reenumeration_and_manual_name_selection(self):
         b=self.binding();b.bind_output(self.row())
         new=self.row(endpoint_id='new-after-mode-switch',name='DualSense Edge')
-        self.assertEqual(b.match_output([new]),new)
-        self.assertIsNone(b.match_output([new],name='Other manual selection'))
+        self.assertEqual(b.output([new]),new)
+        self.assertIsNone(b.output([new],name='Other manual selection'))
 
     def test_two_matching_endpoints_require_manual_selection(self):
         b=self.binding();a=self.row();c=self.row(endpoint_id='second')
-        self.assertIsNone(b.match_output([a,c]))
+        self.assertIsNone(b.output([a,c]))
 
-    def test_existing_single_pair_fallback_is_shared(self):
+    def test_single_output_requires_identity_evidence(self):
         b=DeviceBinding();b._identity=DeviceIdentity(hid_path=b'hid',serial='pico',container_id='hid')
-        row=self.row();hids=[dict(path=b'hid',serial_number='pico')]
-        self.assertEqual(b.match_output([row],hids),row)
-        b=DeviceBinding();b._identity=DeviceIdentity(hid_path=b'hid',serial='pico',container_id='hid')
-        self.assertIsNone(b.match_output([row],hids*2))
+        row=self.row()
+        self.assertIsNone(b.output([row]))
+        self.assertEqual(b.output([dict(row,container_id='hid')])['endpoint_id'],'audio')
+
+    def test_unannounced_usb_mode_switch_checks_cached_port_and_unique_hid(self):
+        native=dict(path=b'vid_054c',vendor_id=0x054c,product_id=0x0df2,usb_parent_id='native')
+        xbox=dict(path=b'vid_1209',vendor_id=0x1209,product_id=1,usb_parent_id='xbox',serial_number='pico')
+        with patch('windows_device_identity.usb_port_paths',side_effect=lambda p:('port',) if p in ('native','xbox') else ()):
+            b=DeviceBinding()
+            b.bind_hid(native)
+            b.bind_output(self.row())
+            self.assertIsNone(b.resolve_hid([dict(xbox,usb_parent_id='other')]))
+            self.assertIsNone(b.resolve_hid([xbox,dict(xbox,path=b'duplicate')]))
+            self.assertEqual(b.resolve_hid([xbox]),xbox)
+            b.bind_hid(xbox)
+            self.assertIsNone(b.snapshot().endpoint_id)
+            self.assertEqual(b.resolve_hid([native]),native)
+            b.bind_hid(native)
+            self.assertEqual(b.snapshot().serial,'pico')
+            self.assertIsNone(b.resolve_hid([dict(xbox,serial_number='different')]))
 
     def test_stale_manual_confirmation_is_rejected(self):
         b=self.binding();before=b.snapshot()
@@ -55,7 +70,7 @@ class ParentBindingTests(unittest.TestCase):
     def test_native_lookup_when_metadata_is_missing(self):
         b=self.binding();row=self.row();row.pop('usb_parent_id')
         with patch('windows_device_identity.usb_parent_id',return_value='usb-pico') as lookup:
-            self.assertEqual(b.match_output([row])['endpoint_id'],'audio')
+            self.assertEqual(b.output([row])['endpoint_id'],'audio')
             lookup.assert_called_with('audio',endpoint=True)
 
     def test_hid_mode_switch_without_serial_recovers_by_usb_parent(self):

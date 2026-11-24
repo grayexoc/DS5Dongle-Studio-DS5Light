@@ -4,6 +4,58 @@ from studio_document import SettingsDocument
 from studio_entry import EntryQueries
 
 class PolicyTests(unittest.TestCase):
+ def test_xbox_replace_rear_uses_standard_usb_audio(self):
+  from studio_panel import StudioPanel
+  from types import SimpleNamespace
+  panel=StudioPanel.__new__(StudioPanel)
+  panel.binding=MagicMock()
+  panel.observed_profile=dict(auto_haptics_enable=2,ah_dsp_source=1)
+  panel.binding.snapshot.return_value=SimpleNamespace(hid_path=b'hid#vid_1209&pid_0001')
+  self.assertFalse(panel.rear_control_required())
+  panel.binding.snapshot.return_value=SimpleNamespace(hid_path=b'hid#vid_054c&pid_0ce6')
+  self.assertTrue(panel.rear_control_required())
+
+ def test_first_haptics_enable_stages_the_mode_preset_on_both_usb_modes(self):
+  from studio_recommended import FACTORY_AUDIO_HAPTIC_FIELDS,PRESETS,load_preset
+  for usb_mode in (0,1):
+   for mode in (1,2):
+    with self.subTest(usb_mode=usb_mode,mode=mode):
+     d=SettingsDocument()
+     d.load(dict(FACTORY_AUDIO_HAPTIC_FIELDS,auto_haptics_enable=0,usb_gamepad_mode=usb_mode))
+     d.values['auto_haptics_enable']=mode
+     d.companion_edit('auto_haptics_enable',0,mode)
+     self.assertEqual({k:d.values[k] for k in load_preset(PRESETS[mode][0])[1]},load_preset(PRESETS[mode][0])[1])
+     self.assertNotIn('usb_gamepad_mode',d.changes)
+     d.values['auto_haptics_enable']=0
+     d.companion_edit('auto_haptics_enable',mode,0)
+     self.assertFalse(d.changes)
+ def test_first_haptics_enable_keeps_the_customized_profile(self):
+  from studio_recommended import FACTORY_AUDIO_HAPTIC_FIELDS
+  d=SettingsDocument()
+  d.load(dict(FACTORY_AUDIO_HAPTIC_FIELDS,auto_haptics_enable=0,usb_gamepad_mode=1,auto_haptics_gate=27))
+  d.values['auto_haptics_enable']=1
+  d.companion_edit('auto_haptics_enable',0,1)
+  self.assertEqual(d.changes,{'auto_haptics_enable':1})
+ def test_pc_filter_defaults_follow_the_mode_and_preserve_overrides(self):
+  from app import App
+  app=MagicMock()
+  app.follow_studio_filter_defaults=True
+  app.gain.get.return_value=100
+  app.filter_on.get.return_value=True
+  app.strength.get.return_value=40
+  app.impact.get.return_value=90
+  App.apply_studio_filter_defaults(app,2)
+  app.strength.set.assert_called_once_with(50)
+  app.impact.set.assert_called_once_with(95)
+  app.strength.set.reset_mock()
+  app.strength.get.return_value=41
+  App.apply_studio_filter_defaults(app,2)
+  app.strength.set.assert_not_called()
+  app.strength.get.return_value=40
+  app.follow_studio_filter_defaults=False
+  App.apply_studio_filter_defaults(app,2)
+  app.strength.set.assert_not_called()
+
  def doc(self,mode=1,gain=1.7):
   d=SettingsDocument();d.load(dict(auto_haptics_enable=mode,haptics_gain=gain,auto_haptics_gate=16));return d
  def test_read_and_revert_do_not_count_policy_as_edit(self):

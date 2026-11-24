@@ -497,7 +497,7 @@ constexpr uint8_t SLOT_NAME_LEN = 16;
 // need - affordable inside the 16-sector reservation, but a real step.
 constexpr uint32_t SLOT_STRIDE_BYTES = 4096u / SLOTS_PER_SECTOR;          // 512
 constexpr uint32_t SLOT_MAX_BODY_LEN = SLOT_STRIDE_BYTES - (4 + 2 + SLOT_NAME_LEN + 4);
-bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len); // current config.body -> slot
+bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len, bool select_slot = true);
 // slot -> active config + flash. Returns 0 = failed (out param stage: 1 bad
 // idx, 2 slot unreadable, 3 flash persist failed even after retry), 1 = fully
 // activated + persisted, 2 = ACTIVATED (settings live in RAM) but persistence

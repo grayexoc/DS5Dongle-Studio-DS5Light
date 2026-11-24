@@ -16,7 +16,8 @@ def read_route_preview(client, *, live_output, endpoint_verified):
     before = client.profile(include_revision=True)
     status = decode_status(tagged_command(client, 0x1e, 0))
     playback = {}
-    if live_output and endpoint_verified and status.get('usb_playback_diagnostics'):
+    xbox = status.get('usb_mode') == 'XInput'
+    if live_output and not xbox and endpoint_verified and status.get('usb_playback_diagnostics'):
         playback = playback_snapshot(client)
     fields = (*ROUTE_FIELDS, 'mix_native_level')
     values, _ = client.read_fields([FIELDS[key] for key in (*fields, *STUDIO_DSP_FIELDS, 'haptics_gain')])
@@ -48,6 +49,9 @@ def read_route_preview(client, *, live_output, endpoint_verified):
                 else:
                     context['studio_output_gain'] = values['haptics_gain']
     native_mix = values['auto_haptics_enable'] == 1 and values['mix_native_level'] > 0
+    if xbox:
+        return dict(reason='Xbox 모드에서는 Studio Rear 독점 제어와 라우팅·강도 후보 적용을 지원하지 않습니다.',
+                    changes={}, **context)
     reasons = {}
     if live_output:
         if native_mix:

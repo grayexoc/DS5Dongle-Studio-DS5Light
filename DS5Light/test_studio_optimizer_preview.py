@@ -22,6 +22,15 @@ class StudioOptimizerPreviewTests(unittest.TestCase):
     def preview(self, live=True, endpoint=True):
         return read_route_preview(self.client, live_output=live, endpoint_verified=endpoint)
 
+    def test_xbox_cannot_offer_a_live_route_or_a_writable_route_candidate(self):
+        self.status.update(usb_mode='XInput', auto_haptics=1)
+        self.values.update(auto_haptics_enable=1, ah_dsp_source=1, mix_native_level=35)
+        for live in (False,True):
+            result=self.preview(live=live)
+            self.assertEqual(result['changes'],{})
+            self.assertNotIn('live_route_verified',result)
+        self.playback.assert_not_called()
+
     def test_live_candidate_is_a_read_only_diff(self):
         result = self.preview()
         self.assertEqual(result['revision'], '01000000aabbccdd')

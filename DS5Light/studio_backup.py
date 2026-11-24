@@ -115,7 +115,8 @@ def validate_backup(data):
     return rows,macros
 
 def restore_all(client,rows,macros,progress=lambda text:None,*,recovery_path):
-    if rows or macros:client.require_write_tags()
+    if rows:client.require_background_slot_save()
+    elif macros:client.require_write_tags()
     from studio_shift import extended
     if any(extended(row) for row in macros.values()):
         client.require_macro_features(list(macros.values()))
@@ -177,7 +178,7 @@ def restore_all(client,rows,macros,progress=lambda text:None,*,recovery_path):
             for trig,states in row['effects'].items():
                 for index,state in enumerate(states):client.write_effect(int(trig),index,state)
             pending_slot=row['index']
-            client.save_slot(pending_slot,row['name'])
+            client.save_slot(pending_slot,row['name'],preserve_active=True)
             done.append(pending_slot);pending_slot=None
     except Exception as exc:
         errors.append(str(exc))

@@ -14,6 +14,7 @@ from studio_startup import clean_slot_history
 def default_preferences():
     return {
         'remember_last': True,
+        'follow_studio_filter_defaults': True,
         'auto_start': False,
         'scope': 'device',
         'channels': 0,
@@ -39,6 +40,8 @@ def validate(value):
     defaults = default_preferences()
     shortcut = validate_binding(data.get('mute_shortcut', defaults['mute_shortcut']))
     if type(data.get('remember_last', True)) is not bool or type(data.get('auto_start', False)) is not bool:
+        raise ValueError(_ui_tr('설정 스위치 값이 올바르지 않습니다.'))
+    if type(data.get('follow_studio_filter_defaults', False)) is not bool:
         raise ValueError(_ui_tr('설정 스위치 값이 올바르지 않습니다.'))
     if data.get('scope', 'device') not in ('device', 'process'):
         raise ValueError(_ui_tr('캡처 범위가 올바르지 않습니다.'))
@@ -78,6 +81,8 @@ def validate(value):
             raise ValueError(_ui_tr('채널 옵션 값이 올바르지 않습니다.'))
     out = dict(defaults)
     out.update({key: data.get(key, defaults[key]) for key in defaults})
+    # A saved legacy filter may intentionally match a recommended pair.
+    out['follow_studio_filter_defaults'] = data.get('follow_studio_filter_defaults', 'controls' not in data)
     out['controls'] = c.__dict__
     out['mute_shortcut'] = shortcut
     out['studio_slots'] = clean_slot_history(data.get('studio_slots', []))

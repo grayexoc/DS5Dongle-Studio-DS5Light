@@ -1011,10 +1011,10 @@ bool queue_try_add(std::deque<uint8_t>*q,uint8_t*p){unsigned cap=q==&audio_fifo?
 bool queue_is_full(std::deque<uint8_t>*q){return q->size()==2;}
 void release_speaker_block(uint8_t i){assert(queue_try_add(&free_speaker_blocks,&i));}
 """+extract(s,'static void __not_in_flash_func(publish_speaker_block)')+r"""
-int main(){float pcm[1024]{};for(int i=0;i<5;i++)publish_speaker_block(pcm,1,1+i%2);
+int main(){float pcm[1024]{};for(int i=0;i<5;i++)publish_speaker_block(pcm,1,1+i%2,i%2==0);
  assert(g_speaker_stats.pcm_created==5&&g_speaker_stats.pcm_dropped==3);
- uint8_t i;assert(queue_try_remove(&audio_fifo,&i));assert(speaker_blocks[i].sequence==4&&speaker_blocks[i].channels==2);
- release_speaker_block(i);assert(queue_try_remove(&audio_fifo,&i));assert(speaker_blocks[i].sequence==5&&speaker_blocks[i].channels==1);
+ uint8_t i;assert(queue_try_remove(&audio_fifo,&i));assert(speaker_blocks[i].sequence==4&&speaker_blocks[i].channels==2&&!speaker_blocks[i].muted);
+ release_speaker_block(i);assert(queue_try_remove(&audio_fifo,&i));assert(speaker_blocks[i].sequence==5&&speaker_blocks[i].channels==1&&speaker_blocks[i].muted);
  puts("PASS: source identities survive PCM overflow; drops counted before encoder");}
 """)
 
@@ -1203,8 +1203,10 @@ constexpr unsigned SLOT_NAME_LEN=16, SLOT_COUNT=32;
 std::vector<uint8_t> pico_settings_reply;
 bool ok=true, policy=false;
 int writes=0;
-bool slot_save(uint8_t idx,const uint8_t *name,uint8_t len){
+bool selected_slot = false;
+bool slot_save(uint8_t idx,const uint8_t *name,uint8_t len,bool select_slot){
     ++writes;assert(idx==4&&len==16&&!memcmp(name,"0123456789ABCDEF",16));
+    selected_slot = select_slot;
     assert(pico_settings_reply[2]==0xfe);return ok;
 }
 bool macro_commit(){++writes;return ok;}
@@ -1224,12 +1226,14 @@ int main(){
     uint8_t p[61]{}, tag[]{0x89,0x67,0x45,0x23};
     memcpy(p+57,tag,4);
     command(0x22,p,61);
-    assert(pico_settings_reply[2]==0&&pico_settings_reply[3]==1&&writes==0);
+    assert(pico_settings_reply[2]==0&&pico_settings_reply[3]==1&&pico_settings_reply[4]==1&&writes==0);
     assert(!memcmp(pico_settings_reply.data()+59,tag,4));
     p[0]=4;memcpy(p+1,"0123456789ABCDEF",16);
-    command(8,p,61);assert(pico_settings_reply[2]==0&&pico_settings_reply[3]==4);
+    command(8,p,61);assert(pico_settings_reply[2]==0&&pico_settings_reply[3]==4&&selected_slot);
     assert(!memcmp(pico_settings_reply.data()+59,tag,4));
-    command(8,p,17);assert(pico_settings_reply[2]==0&&pico_settings_reply[59]==0);
+    p[17]=1;
+    command(8,p,61);assert(pico_settings_reply[2]==0&&!selected_slot);
+    command(8,p,17);assert(pico_settings_reply[2]==0&&pico_settings_reply[59]==0&&selected_slot);
     ok=false;command(0x19,p,61);assert(pico_settings_reply[2]==1);
     assert(!memcmp(pico_settings_reply.data()+59,tag,4));
     ok=true;command(0x19,nullptr,0);assert(pico_settings_reply[2]==0&&pico_settings_reply[59]==0);
@@ -1243,7 +1247,7 @@ int main(){
         p[0]=0;command(id,p,61);
         assert(pico_settings_reply[2]==0&&pico_settings_reply[4]==1&&pico_settings_reply[59]==0);
     }
-    assert(writes==10);
+    assert(writes==11);
     puts("PASS: actual dispatch cases, tagged outcomes, legacy slot/macro, policy reads and failure");
 }
 """)

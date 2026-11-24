@@ -25,6 +25,15 @@ AUDIO_HAPTIC_FIELDS=frozenset((
 ))
 REQUIRED_HAPTIC_FIELDS=AUDIO_HAPTIC_FIELDS-{'ah_highpass'}
 
+# Values of an untouched disabled profile after firmware validation.
+FACTORY_AUDIO_HAPTIC_FIELDS = {
+    'auto_haptics_gain': 100, 'auto_haptics_smooth': 15, 'auto_haptics_gate': 16,
+    'mix_native_level': 0, 'mix_native_filter': 1, 'ah_dsp_source': 0,
+    'auto_haptics_lowpass_hz': 120, 'ah_xover_hz': 55, 'ah_low_gain': 100,
+    'ah_high_gain': 45, 'auto_haptics_slope': 24, 'auto_mute_replace': 1,
+    'auto_mute_mix': 0, 'rumble_haptic_strength': 100, 'ah_highpass': 0,
+}
+
 PRESETS=(
     ('DS_Native.json',_ui_tr('네이티브 프리셋'),
      _ui_tr('별도 설정을 하지 않았다면 기본값과 같아 적용할 필요가 없습니다. 오디오햅틱을 끄고 게임의 네이티브 햅틱·일반 진동을 사용합니다. 게임·연결 방식이 지원해야 하며 DS5Light 전송은 정지합니다.')),
@@ -71,6 +80,18 @@ def load_preset(filename):
 def equal_value(a,b):
     if isinstance(a,int) and isinstance(b,int):return a==b
     return a is not None and b is not None and math.isclose(a,b,rel_tol=1e-5,abs_tol=1e-5)
+
+
+def initial_haptic_fields(baseline, mode):
+    if (baseline.get('auto_haptics_enable') != 0 or mode not in (1, 2)
+            or not REQUIRED_HAPTIC_FIELDS <= baseline.keys()):
+        return {}
+    presets = [load_preset(PRESETS[index][0])[1] for index in (1, 2)]
+    supported = FACTORY_AUDIO_HAPTIC_FIELDS.keys() & baseline.keys()
+    if not any(all(baseline[key] == known.get(key) for key in supported)
+               for known in (FACTORY_AUDIO_HAPTIC_FIELDS, *presets)):
+        return {}
+    return {key: value for key, value in presets[mode - 1].items() if key in supported}
 
 
 def save_and_activate(client,fields,name,index,expected_slot,stamp,baseline,progress):

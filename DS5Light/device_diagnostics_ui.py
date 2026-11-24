@@ -24,6 +24,7 @@ TEST_NAMES = dict(haptic_left='왼쪽 햅틱', haptic_right='오른쪽 햅틱', 
                   rumble_left='왼쪽 일반 진동', rumble_right='오른쪽 일반 진동',
                   rumble_both='양쪽 일반 진동', trigger_left='L2 저항', trigger_right='R2 저항')
 
+XBOX_UNAVAILABLE_TESTS = frozenset(('timing','exclusive_replay','optimizer_write','intensity_write'))
 
 class DeviceDiagnosticsDialog:
     def __init__(self, app):
@@ -215,6 +216,9 @@ class DeviceDiagnosticsDialog:
                    style='Diagnostic.TButton', width=10).pack(side='right')
         self.update_test_buttons()
         from studio_settings_ui import FieldTip
+        FieldTip(self.exclusive_button,lambda:self.xbox_unavailable_hint('exclusive_replay'))
+        FieldTip(self.route_button,lambda:self.xbox_unavailable_hint('optimizer_write'))
+        FieldTip(self.intensity_button,lambda:self.xbox_unavailable_hint('intensity_write'))
         FieldTip(self.diagram,lambda:tr('XInput 모드에서는 입력 수신 검사를 사용할 수 없습니다.') if (self.report or {}).get('status',{}).get('usb_mode')=='XInput' else tr('버튼·스틱·트리거 입력 시 해당 부분을 강조합니다.'))
         FieldTip(self.speaker_meter_button, lambda:tr('오디오 수신량과 마지막 햅틱 신호, 스피커 처리 카운터를 확인합니다. 신호 크기는 마지막 블록의 값이며 전체 검사 구간의 최대값이 아닙니다.'))
         FieldTip(self.measure_button,lambda:tr('XInput 모드에서는 입력 수신 검사를 사용할 수 없습니다.')
@@ -277,9 +281,24 @@ class DeviceDiagnosticsDialog:
         self.status.set(tr('사용자 확인 · 반응 있음') if felt else tr('사용자 확인 · 반응 없음'))
         for button in self.confirm_buttons:button.configure(state='disabled')
 
+    def xbox_mode(self):
+        status = (self.report or {}).get('status', {})
+        return status.get('usb_mode') == 'XInput' or getattr(self.app.studio,'xinput_active',lambda:False)()
+
+    def xbox_unavailable_hint(self, kind):
+        if kind in XBOX_UNAVAILABLE_TESTS and self.xbox_mode():
+            from localization import LANGUAGE
+            return ('Xbox 모드에서 지원되지 않습니다. DualSense 모드에서 사용할 수 있습니다.'
+                    if LANGUAGE == 'ko' else 'Available in DualSense mode. Xbox mode does not support this operation.')
+        return ''
+
     def available(self, kind):
         a = self.app
         if self.busy or a._closing or a._close_requested:return False
+        reason = self.xbox_unavailable_hint(kind)
+        if reason:
+            self.status.set(reason)
+            return False
         if ((kind in ('test', 'exclusive_replay', 'optimizer_preview', 'optimizer_write',
                      'intensity_write', 'signal_preview') and a.engine) or a._stopping or a.studio.busy or a.studio_settings.busy
                 or getattr(a.studio_settings, 'recording', False) or blocked(a)):
@@ -742,9 +761,8 @@ class DeviceDiagnosticsDialog:
             row = None
             if kind.startswith('haptic_') or kind == 'speaker':
                 from audio import devices
-                from studio_slots import devices as studio_devices
                 binding=self.app.studio.binding
-                row=binding.match_output(devices(),studio_devices())
+                row=binding.output(devices())
                 current=binding.snapshot()
                 if current.hid_path!=identity.hid_path or current.serial!=identity.serial:
                     raise RuntimeError(tr('선택한 Pico가 변경됐습니다. 상태를 다시 조회하세요.'))
@@ -894,23 +912,24 @@ class DeviceDiagnosticsDialog:
         self.exclusive_button.configure(
             state='normal' if has_hid and not self.busy and self.app.engine is None
             and status.get('ready') and status.get('auto_haptics') == 2
-            and status.get('usb_playback_diagnostics') else 'disabled')
+            and status.get('usb_playback_diagnostics') and not self.xbox_mode() else 'disabled')
         self.preview_button.configure(state='normal' if has_hid and not self.busy else 'disabled')
         self.update_route_button()
         self.update_pc_gain_button()
         self.snapshot_button.configure(state='normal' if has_hid and not self.busy else 'disabled')
         self.speaker_meter_button.configure(state='normal' if has_hid and not self.busy
                                             and status.get('ready') and status.get('speaker_diagnostics') else 'disabled')
-        self.measure_button.configure(state='disabled' if self.busy or not has_hid or status.get('usb_mode')=='XInput' else 'normal')
+        self.measure_button.configure(state='disabled' if self.busy or not has_hid or self.xbox_mode() else 'normal')
 
     def update_route_button(self):
         candidate = self.route_receipt or self.optimizer_result or {}
         enabled = (not self.busy and self.app.engine is None and not self.intensity_receipt
+                   and not self.xbox_mode()
                    and (self.route_receipt or candidate.get('apply_supported'))
                    and candidate.get('identity') == self.app.studio.binding.snapshot())
         self.route_button.configure(state='normal' if enabled else 'disabled',
                                     text=tr('이전 라우팅 복구' if self.route_receipt else '후보 적용'))
-        self.intensity_button.configure(state='normal' if self.intensity_action_available() else 'disabled',
+        self.intensity_button.configure(state='normal' if not self.xbox_mode() and self.intensity_action_available() else 'disabled',
             text=tr('이전 Studio 강도 복구' if self.intensity_receipt else 'Studio 강도 후보 적용'))
 
     def show(self, value):

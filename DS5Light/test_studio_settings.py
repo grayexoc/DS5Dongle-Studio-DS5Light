@@ -67,6 +67,7 @@ class SchemaTests(unittest.TestCase):
         class Client:
             cancel=staticmethod(lambda:False)
             def require_write_tags(self):pass
+            def require_background_slot_save(self):pass
             def check_cancel(self):pass
             def __init__(self):self.stored=1;self.saved=[]
             def read_fields(self):return {},[]
@@ -81,7 +82,9 @@ class SchemaTests(unittest.TestCase):
             def write_fields(self,values,baseline,*,profile_snapshot):
                 if not profile_snapshot:raise AssertionError('expected profile snapshot')
                 if 'disable_usb_sn' in values:raise AssertionError('common policy written by profile restore')
-            def save_slot(self,index,name):self.saved.append((index,self.stored))
+            def save_slot(self,index,name,*,preserve_active):
+                if not preserve_active:raise AssertionError('restoring a slot must not select it')
+                self.saved.append((index,self.stored))
         client=Client()
         rows=[dict(index=0,name='Edge',fields={'disable_usb_sn':1},effects={}),
               dict(index=1,name='Legacy',fields={},effects={})]
@@ -178,6 +181,20 @@ class SchemaTests(unittest.TestCase):
         with self.assertRaises(ValueError):validate_backup(portal)
 
 class ProtocolTests(unittest.TestCase):
+    def test_background_slot_save_checks_support_before_sending_save(self):
+        client=SettingsClient(None)
+        with patch.object(client,'command',return_value=bytes((0x66,0x22,0,1,0))) as command:
+            with self.assertRaisesRegex(RuntimeError,'펌웨어'):
+                client.save_slot(4,'Mix',preserve_active=True)
+        self.assertEqual([call.args[0] for call in command.call_args_list],[0x22])
+
+    def test_background_slot_save_sets_flag_after_fixed_width_name(self):
+        client=SettingsClient(None)
+        with patch.object(client,'command',side_effect=[bytes((0x66,0x22,0,1,1)),bytes((0x66,8,0,4))]) as command:
+            client.save_slot(4,'Mix',preserve_active=True)
+        payload=command.call_args.args[1]
+        self.assertEqual(payload[:18],b'\4'+b'Mix'.ljust(16,b'\0')+b'\1')
+
     def test_conditional_route_write_checks_tag_and_never_resends(self):
         device = Device()
         client = SettingsClient(device, sleep=lambda _: None)
@@ -311,6 +328,7 @@ class RestoreSafetyTests(unittest.TestCase):
             self.cancel=lambda:False;self.events=[];self.resume_fails=False;self.commit_fails=False
             self.macros={'0':[0]*35}
         def require_write_tags(self):pass
+        def require_background_slot_save(self):pass
         def check_cancel(self):pass
         def read_fields(self):return dict(self.values),[]
         def read_one(self,field,slot=None):return defaults()[field[1]]
@@ -328,7 +346,8 @@ class RestoreSafetyTests(unittest.TestCase):
             if self.resume_fails:raise OSError('resume disconnected')
             self.suspended=False
         def write_fields(self,values,current,**kwargs):self.values=dict(values)
-        def save_slot(self,index,name):
+        def save_slot(self,index,name,*,preserve_active):
+            assert preserve_active
             if index==1:raise TimeoutError('save ACK lost')
             self.saves.append(index)
 

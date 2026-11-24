@@ -18,6 +18,7 @@
 #include "haptic_mix.h"
 #include "haptic_math.h"
 #include "haptic_impact_texture.h"
+#include "haptic_bass_carrier.h"
 #include "output_diagnostics.h"
 #include "rear_route_lease.h"
 #include "bt.h"
@@ -250,6 +251,7 @@ struct audio_raw_element {
     uint32_t sequence;
     uint32_t generation;
     uint8_t channels;
+    bool muted;
     float data[512 * 2];
 };
 // Three fixed blocks: at most two waiting and one owned by the encoder.
@@ -266,7 +268,8 @@ static void __not_in_flash_func(discard_speaker_queue)() {
     while (queue_try_remove(&audio_fifo, &index)) release_speaker_block(index);
 }
 
-static void __not_in_flash_func(publish_speaker_block)(const float *samples, uint32_t generation, uint8_t channels) {
+static void __not_in_flash_func(publish_speaker_block)(const float *samples, uint32_t generation,
+                                                     uint8_t channels, bool muted) {
     const uint32_t sequence = ++g_speaker_stats.pcm_created;
     uint8_t index;
     bool free = queue_try_remove(&free_speaker_blocks, &index);
@@ -278,6 +281,7 @@ static void __not_in_flash_func(publish_speaker_block)(const float *samples, uin
     speaker_blocks[index].sequence = sequence;
     speaker_blocks[index].generation = generation;
     speaker_blocks[index].channels = channels;
+    speaker_blocks[index].muted = muted;
     memcpy(speaker_blocks[index].data, samples, sizeof(speaker_blocks[index].data));
     if (queue_is_full(&audio_fifo)) {
         uint8_t old;
@@ -660,6 +664,11 @@ void __not_in_flash_func(audio_loop)() {
         (auto_mode == 2 && cfg.auto_mute_replace) ||
         (auto_mode == 1 && cfg.auto_mute_mix);
     const float spk_gain = (mute[0] || mute_for_mode) ? 0.0f : 1.0f;
+#if !DISABLE_SPEAKER_PROC
+    static bool speaker_block_muted = true;
+    if (audio_buf_pos == 0) speaker_block_muted = true;
+    const bool speaker_pcm_muted = spk_gain == 0.0f && !chiming;
+#endif
     // Intensity maps 0-100 to a perceptual gain. The carrier makeup is folded in
     // here (modest, ~2.5x) instead of a fixed 12x that saturated the soft-clip and
     // crushed the whole usable range into the bottom few percent. Now the slider
@@ -727,6 +736,15 @@ void __not_in_flash_func(audio_loop)() {
     // dB/oct value (6/12/24); map to pole count.
     const uint8_t slope_db = cfg.auto_haptics_slope;
     const int n_poles = (slope_db >= 24) ? 4 : (slope_db >= 12) ? 2 : 1;
+    static int previous_poles = 1;
+    // Seed re-enabled stages from the running filter instead of stale samples.
+    if (previous_poles < 2 && n_poles >= 2) {
+        lp2_l = lp_l; lp2_r = lp_r;
+    }
+    if (previous_poles < 4 && n_poles == 4) {
+        lp3_l = lp4_l = lp2_l; lp3_r = lp4_r = lp2_r;
+    }
+    previous_poles = n_poles;
     static float gsm_l = 0.0f, gsm_r = 0.0f;
     static float carrier_ph = 0.0f;
     static float rc_lo_ph = 0.0f, rc_hi_ph = 0.0f;
@@ -767,10 +785,12 @@ void __not_in_flash_func(audio_loop)() {
     const bool front_texture = HapticImpactTexture::uses_front(auto_mode, cfg.ah_dsp_source);
     const uint8_t texture_mode = front_texture ? auto_mode : 0;
     static HapticImpactTexture texture_l, texture_r;
+    static HapticBassCarrier bass_carrier;
     static uint8_t previous_texture_mode = 0;
     if (reset_haptic_filters || texture_mode != previous_texture_mode) {
         texture_l = {};
         texture_r = {};
+        bass_carrier = {};
         previous_texture_mode = texture_mode;
     }
     const bool pc_rear_control = auto_mode == 2 && dsp_rear && rear_policy == RearRouteLease::Rear::Control;
@@ -822,6 +842,7 @@ void __not_in_flash_func(audio_loop)() {
         }
  #if !DISABLE_SPEAKER_PROC
         if (speaker_enabled) {
+        speaker_block_muted &= speaker_pcm_muted;
         float spk_l_out = raw[i * actual_ch] / 32768.0f * spk_gain;
         float spk_r_out = raw[i * actual_ch + 1] / 32768.0f * spk_gain;
         if (chiming) {
@@ -832,8 +853,10 @@ void __not_in_flash_func(audio_loop)() {
         audio_buf[audio_buf_pos++] = spk_l_out;
         audio_buf[audio_buf_pos++] = spk_r_out;
         if (audio_buf_pos == 512 * 2) {
-            publish_speaker_block(audio_buf, speaker_generation, plug_headset ? 2 : 1);
+            publish_speaker_block(audio_buf, speaker_generation, plug_headset ? 2 : 1,
+                                  speaker_block_muted);
             audio_buf_pos = 0;
+            speaker_block_muted = true;
         }
         }
 #endif
@@ -947,7 +970,6 @@ void __not_in_flash_func(audio_loop)() {
 
             carrier_ph += 2.0f * (float)M_PI * 90.0f / 48000.0f;
             if (carrier_ph > 2.0f*(float)M_PI) carrier_ph -= 2.0f*(float)M_PI;
-            const float carrier = haptic_math::sine_phase(carrier_ph);
             // Separate carriers for CONVERTED RUMBLE. The two motor values a game
             // sends are not interchangeable: left is the heavy/low-frequency
             // motor, right the light/high-frequency one. Rendering both on the
@@ -957,21 +979,35 @@ void __not_in_flash_func(audio_loop)() {
             // rumble emulation. 60 Hz reads as a heavy churn, 160 Hz as a sharp
             // buzz - together they feel like actual dual-motor rumble.
 
-            float carrier_l = carrier, carrier_r = carrier;
+            float blend_l = 0.0f, blend_r = 0.0f;
             if (front_texture) {
-                float blend_l = texture_l.update(env_l, genv_l,
-                    split_on ? envlo_l : 0.0f, split_on ? envhi_l : 0.0f);
-                float blend_r = texture_r.update(env_r, genv_r,
-                    split_on ? envlo_r : 0.0f, split_on ? envhi_r : 0.0f);
+                const bool upper_dominates = bass_carrier.upper_dominates();
+                blend_l = texture_l.update(use_env_l, genv_l,
+                    split_on ? envlo_l : 0.0f, split_on ? envhi_l : 0.0f, upper_dominates);
+                blend_r = texture_r.update(use_env_r, genv_r,
+                    split_on ? envlo_r : 0.0f, split_on ? envhi_r : 0.0f, upper_dominates);
                 blend_l = texture_l.steer_onset(blend_l, texture_r);
                 blend_r = texture_r.steer_onset(blend_r, texture_l);
-                if (blend_l > 0.0f || blend_r > 0.0f) {
-                    const float phase = carrier_ph * 2.0f;
-                    const float edge = haptic_math::sine_phase(
-                        phase >= haptic_math::phase_end ? phase - haptic_math::phase_end : phase);
-                    carrier_l += blend_l * (edge - carrier);
-                    carrier_r += blend_r * (edge - carrier);
-                }
+            }
+            const bool attack = blend_l > 0.0f || blend_r > 0.0f;
+            const float base_phase = front_texture
+                ? bass_carrier.phase(carrier_ph, fl, fr, std::max(genv_l, genv_r), attack)
+                : carrier_ph;
+            const float carrier = haptic_math::sine_phase(base_phase);
+            float carrier_l = carrier, carrier_r = carrier;
+            if (attack) {
+                const float phase = carrier_ph * 2.0f;
+                const float edge = haptic_math::sine_phase(
+                    phase >= haptic_math::phase_end ? phase - haptic_math::phase_end : phase);
+                carrier_l += blend_l * (edge - carrier);
+                carrier_r += blend_r * (edge - carrier);
+                // Retain the base carrier during a sharp accent while the
+                // derived waveform has room below the existing soft limiter.
+                const auto body = [](float excess, float drive) {
+                    return excess * std::clamp((.90f - drive) * (1.0f / .15f), 0.0f, 1.0f);
+                };
+                if (blend_l > .40f) carrier_l += body(blend_l - .40f, genv_l * auto_gain) * carrier;
+                if (blend_r > .40f) carrier_r += body(blend_r - .40f, genv_r * auto_gain) * carrier;
             }
             float al = genv_l * carrier_l * auto_gain;
             float ar = genv_r * carrier_r * auto_gain;
@@ -1184,6 +1220,7 @@ static void __not_in_flash_func(encode_speaker_block)(const audio_raw_element &a
     critical_section_exit(&opus_cs);
     if (!current) return;
     static uint32_t worker_generation = 0;
+    static unsigned muted_blocks = 0;
     if (worker_generation != audio_element.generation) {
         resampler_audio.Reset();
         if (opus_encoder_ctl(encoder, OPUS_RESET_STATE) != OPUS_OK ||
@@ -1192,7 +1229,17 @@ static void __not_in_flash_func(encode_speaker_block)(const audio_raw_element &a
             return;
         }
         worker_generation = audio_element.generation;
+        muted_blocks = 0;
     }
+    // Let the codec settle before reusing silence and retain its state for unmute.
+    constexpr unsigned silence_tail_blocks = 32;
+    const unsigned route = audio_element.channels - 1;
+    if (audio_element.muted && muted_blocks == silence_tail_blocks &&
+        (opus_silence_mask.load(std::memory_order_acquire) & (1u << route))) {
+        publish_speaker_frame(opus_silence_buf[route], audio_element.generation, audio_element.sequence);
+        return;
+    }
+    muted_blocks = audio_element.muted ? std::min(muted_blocks + 1, silence_tail_blocks) : 0;
     // 将 512 frames 重采样成 480 frames 以解决噪音问题。感谢 @Junhoo
     WDL_ResampleSample *in_buf;
     int nframes = resampler_audio.ResamplePrepare(512, 2, &in_buf);

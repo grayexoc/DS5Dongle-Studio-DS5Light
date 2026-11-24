@@ -84,7 +84,7 @@ class DocumentTests(unittest.TestCase):
     def test_old_backup_restore_preserves_rgb_and_restores_live_configuration(self):
         class Client:
             cancel=staticmethod(lambda:False)
-            def require_write_tags(self):pass
+            def require_background_slot_save(self):pass
             def check_cancel(self):pass
             def __init__(self):
                 self.values=dict(lightbar_fixed=1,lightbar_rgb=0x123456,lightbar_off=0,auto_haptics_gain=80,audio_buffer_length=48)
@@ -97,7 +97,9 @@ class DocumentTests(unittest.TestCase):
             def start_macro_pause(self):pass
             def end_macro_pause(self):pass
             def write_fields(self,values,current,**kwargs):self.values.update(values)
-            def save_slot(self,index,name):self.saved[index]=dict(self.values)
+            def save_slot(self,index,name,*,preserve_active):
+                assert preserve_active
+                self.saved[index]=dict(self.values)
         c=Client();before=dict(c.values)
         rows,macros=validate_backup(dict(slots=[dict(index=0,valid=True,name='Legacy',fields={'auto_haptics_gain':100})]))
         from pathlib import Path

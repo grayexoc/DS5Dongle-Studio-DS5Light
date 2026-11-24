@@ -31,23 +31,58 @@ def snapshot(preferred,cancel=lambda:False,binding=None,deadline=None):
     identity=binding.snapshot() if binding is not None else None
     known=identity is not None and (identity.hid_path is not None or identity.serial or identity.container_id)
     target=binding.resolve_hid(rows) if known else resolve_hid(rows,path=preferred,allow_unique=preferred is None)
-    if target is None:return dict(rows=rows,choose=True)
+    if target is None and not known and preferred is None and rows:return dict(rows=rows,choose=True)
     wait_deadline=min(time.monotonic()+3,deadline) if deadline is not None else time.monotonic()+3
     while not _DEVICE_LOCK.acquire(timeout=.1):
         if cancel():raise RuntimeError(_ui_tr('Studio 작업 취소됨'))
         if time.monotonic()>=wait_deadline:raise RuntimeError(_ui_tr('Studio 조회 대기 시간 초과 · 다른 작업이 끝난 뒤 새로 고침을 누르세요.'))
     device=None
     try:
-        if deadline is not None and time.monotonic()>=deadline:raise TimeoutError(_ui_tr('Studio 조회 대기 시간 초과'))
-        device=hid.device()
-        device.open_path(target['path']);client=SettingsClient(device,cancel=cancel);client.deadline=min(time.monotonic()+8,deadline) if deadline is not None else time.monotonic()+8
+        open_deadline=min(time.monotonic()+1.5,deadline) if deadline is not None else time.monotonic()+1.5
+        original=target or {}
+        original_path=original.get('path',preferred)
+        serial=original.get('serial_number')
+        container=original.get('container_id')
+        open_error=None
+        for delay in (0,.2,.4,.8):
+            delay_end=min(time.monotonic()+delay,open_deadline)
+            while time.monotonic()<delay_end and not cancel():
+                time.sleep(min(.05,max(0,delay_end-time.monotonic())))
+            if cancel():raise RuntimeError(_ui_tr('Studio 작업 취소됨'))
+            if time.monotonic()>=open_deadline:break
+            if delay:
+                rows=devices()
+                # A mode change can replace the HID path while Windows is still enumerating it.
+                target=(binding.resolve_hid(rows) if known and binding.snapshot()==identity
+                        else resolve_hid(rows,original_path,serial,container,
+                                         allow_unique=not known and original_path is None))
+            if target is None:continue
+            if original_path is None:
+                original_path=target['path']
+                serial=target.get('serial_number')
+                container=target.get('container_id')
+            device=hid.device()
+            try:
+                device.open_path(target['path'])
+            except OSError as exc:
+                open_error=exc
+                device.close()
+                device=None
+            else:
+                break
+        if device is None:
+            if open_error is not None:raise open_error
+            return dict(rows=rows,choose=True)
+        client=SettingsClient(device,cancel=cancel)
+        client.deadline=min(time.monotonic()+8,deadline) if deadline is not None else time.monotonic()+8
         version,cfg=identity_fields(client)
         before=client.profile(include_revision=True)
         values,unsupported=client.read_fields()
         after=client.profile(include_revision=True)
         if before!=after:raise RuntimeError(_ui_tr('조회 중 프로필이 변경되었습니다. 새로 고침을 누르세요.'))
         profile=dict(after,auto_haptics_enable=values.get('auto_haptics_enable'),device_serial=target.get('serial_number'),device_row=target)
-        profile.update({key:values[key] for key in ('mix_native_level','ah_dsp_source') if key in values})
+        profile.update({key:values[key] for key in ('mix_native_level','ah_dsp_source',
+                                                   'auto_mute_mix','auto_mute_replace') if key in values})
         client.check_cancel()
         standby=None
         if client.deadline-time.monotonic()>=1:

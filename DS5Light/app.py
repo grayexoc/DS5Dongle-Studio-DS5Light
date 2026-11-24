@@ -725,6 +725,8 @@ class App:
         # current defaults instead of silently importing an older AppData copy.
 
         prefs=self.preference_store.load()
+        self.follow_studio_filter_defaults=(not prefs['remember_last']
+                                            or prefs['follow_studio_filter_defaults'])
 
         if prefs['remember_last']:
 
@@ -1007,7 +1009,7 @@ class App:
         self.filter_help_icon(gain_heading,volume_hint+'\n\n'+gain_help).pack(side='left',padx=(5,0))
         self.gain_value=ttk.Label(gain_heading,text='1x',foreground=ACCENT)
         self.gain_value.pack(side='right')
-        self.gain_slider=HapticSlider(self.gain_frame,self.gain,lambda: self.update_controls(slider=True),
+        self.gain_slider=HapticSlider(self.gain_frame,self.gain,lambda: self.edit_filter_controls(slider=True),
                                      minimum=100,maximum=round(HAPTIC_GAIN_MAX*100),step=100,
                                      reference=100,background=CARD,width=200)
         self.gain_slider.pack(fill='x',expand=True,pady=(SPACE,0))
@@ -1028,7 +1030,7 @@ class App:
 
         self.section_title(fh,_ui_tr('오디오햅틱 필터')).pack(side='left')
 
-        self.filter_switch=Switch(fh,self.filter_on,self.update_controls); self.filter_switch.pack(side='right')
+        self.filter_switch=Switch(fh,self.filter_on,self.edit_filter_controls); self.filter_switch.pack(side='right')
 
         self.filter_badge=ttk.Label(fh); self.filter_badge.pack(side='right',padx=7)
 
@@ -1059,7 +1061,7 @@ class App:
             replace_value = round(100*REPLACE_FILTER_RECOMMENDED[setting])
             ticks=((mix_value,ui_text('믹스','Mix')),
                    (replace_value,ui_text('대체','Replace')))
-            slider=HapticSlider(group,var,lambda: self.update_controls(slider=True),reference=mix_value,ticks=ticks);slider.pack(fill='x')
+            slider=HapticSlider(group,var,lambda: self.edit_filter_controls(slider=True),reference=mix_value,ticks=ticks);slider.pack(fill='x')
 
             if key=='strength':self.scale=slider;self.value_label=value
 
@@ -1508,6 +1510,27 @@ class App:
             limiter=LIMITERS[self.limiter.get()],
             gain=self.gain.get()/100,impact=self.impact.get()/100)
 
+    def apply_studio_filter_defaults(self, mode):
+        recommended = {1: MIX_FILTER_RECOMMENDED, 2: REPLACE_FILTER_RECOMMENDED}
+        if mode not in recommended or not self.follow_studio_filter_defaults:
+            return
+        current = (self.strength.get() / 100, self.impact.get() / 100)
+        target = recommended[mode]
+        if not self.filter_on.get() or self.gain.get() != 100 or current not in recommended.values() or current == target:
+            return
+        self.strength.set(target[0] * 100)
+        self.impact.set(target[1] * 100)
+        # The profile observer owns route changes. Update control values only.
+        self.controls = self._read_controls()
+        if self.engine is not None:
+            self.engine.controls = self.controls
+        self._render_slider_values()
+
+    def edit_filter_controls(self, *, slider=False):
+        self.follow_studio_filter_defaults=False
+        self.schedule_preferences_save()
+        self.update_controls(slider=slider)
+
     def _read_controls(self):
         controls = self.configured_controls()
         if not controls.bypass:
@@ -1658,7 +1681,8 @@ class App:
 
                 output=canonical_device(self.destination.get()),game_exe=self.game_names.get(self.game.get(),self.desired_game),
 
-                 process_sort=self.process_sort.get(),controls=asdict(self.configured_controls()))
+                 process_sort=self.process_sort.get(),controls=asdict(self.configured_controls()),
+                 follow_studio_filter_defaults=self.follow_studio_filter_defaults)
 
         return data
 
@@ -2395,6 +2419,7 @@ class App:
 
             c=Controls(**item['controls'])
 
+            self.follow_studio_filter_defaults=False
             self.mode.set('normal'); self.filter_on.set(not c.bypass); self.strength.set(c.strength*100)
             self.gain.set(min(HAPTIC_GAIN_MAX,max(c.gain,HAPTIC_GAIN_MIN))*100); self.impact.set(c.impact*100)
 
@@ -2614,21 +2639,17 @@ class App:
                 if not any(d.get('maxOutputChannels',0)>=4 and not d.get('isLoopbackDevice') for d in self.ds):
                     messagebox.showerror(_ui_tr('출력 확인'),_ui_tr('Windows에서 듀얼센스 오디오 출력을 찾지 못했습니다. Pico USB 연결과 Windows 소리 설정을 확인하세요.'),parent=self.root);return
                 messagebox.showerror(_ui_tr('출력 확인'),_ui_tr('선택한 출력을 안전하게 식별할 수 없습니다. 장치 이름을 구분하고 새로 고침하세요.'),parent=self.root);return
-            auto_paired=binding.match_output(self.ds,hid_rows,requested) is not None
-            if auto_paired:
-                record('single_device_auto_pair',self.ds,binding,requested)
-            if not auto_paired:
-                generation=self.run_intent.generation
-                accepted=messagebox.askyesno(_ui_tr('출력 확인'),_ui_tr('선택한 출력이 현재 Pico의 듀얼센스 오디오 장치인지 확인하세요. 이 출력으로 연결할까요?')+'\n'+matches[0]['name'],parent=self.root)
-                if self.run_intent.generation!=generation or self._close_requested:return
-                if route!=self._run_route() or identity!=binding.snapshot():
-                    self.run_intent.stop('route_changed')
-                    self.status.set(_ui_tr('캡처 대상 또는 장치 설정이 변경되었습니다. 다시 시작하세요.'))
-                    return
-                if not accepted:
-                    self.run_intent.stop('output_confirmation_cancelled');return
-                if not binding.confirm_output(matches[0],allow_container_mismatch=True):
-                    self.run_intent.stop('invalid_route');return
+            generation=self.run_intent.generation
+            accepted=messagebox.askyesno(_ui_tr('출력 확인'),_ui_tr('선택한 출력이 현재 Pico의 듀얼센스 오디오 장치인지 확인하세요. 이 출력으로 연결할까요?')+'\n'+matches[0]['name'],parent=self.root)
+            if self.run_intent.generation!=generation or self._close_requested:return
+            if route!=self._run_route() or identity!=binding.snapshot():
+                self.run_intent.stop('route_changed')
+                self.status.set(_ui_tr('캡처 대상 또는 장치 설정이 변경되었습니다. 다시 시작하세요.'))
+                return
+            if not accepted:
+                self.run_intent.stop('output_confirmation_cancelled');return
+            if not binding.confirm_output(matches[0],allow_container_mismatch=True,expected_identity=identity):
+                self.run_intent.stop('invalid_route');return
         self.update_controls()
 
         candidate=Engine(None if self.source.get()==AUTO else self.source.get(),None if self.destination.get()==AUTO else self.destination.get(),self.controls,process_pid=pid,process_channels=CHANNELS[self.channel.get()],binding=self.studio.binding)

@@ -40,6 +40,21 @@ class UITests(unittest.TestCase):
         ui.select_category(0)
         return ui
 
+    def test_xbox_mode_disables_serial_policy_on_staging_and_until_apply(self):
+        ui=self.configured_editor()
+        self.assertFalse(ui.usb_serial_blocked())
+        ui.doc.values['usb_gamepad_mode']=1
+        ui.update_state()
+        self.assertFalse(ui.usb_serial_toggle.enabled)
+        with patch.object(ui,'change_usb_serial_policy') as change:
+            value=Mock()
+            value.get.return_value=True
+            ui.change_standby_policy(value,'usb_serial_policy')
+            change.assert_not_called()
+        ui.doc.baseline['usb_gamepad_mode']=1
+        ui.doc.values['usb_gamepad_mode']=0
+        self.assertTrue(ui.usb_serial_blocked())
+
     def test_common_toggle_is_below_dock_and_outside_profile_fields(self):
         ui=self.configured_editor()
         def descendants(w):

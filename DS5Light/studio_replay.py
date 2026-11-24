@@ -54,6 +54,8 @@ def read_fixture(path, *, stereo_controls=None):
 def verify_route(client, *, idle, shared_rear_control=False):
     before = client.profile(include_revision=True)
     status = decode_status(tagged_command(client, 0x1e, 0))
+    if status.get('usb_mode') == 'XInput':
+        raise RuntimeError('Studio Rear control is unavailable in Xbox mode.')
     values, missing = client.read_fields([FIELDS[key] for key in ROUTE_FIELDS])
     after = client.profile(include_revision=True)
     if before != after or not after.get('config_token'):

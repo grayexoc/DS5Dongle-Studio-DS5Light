@@ -19,14 +19,14 @@ class IdentityTests(unittest.TestCase):
               ('port-1',) if parent in ('parent-old','parent-new') else ('port-2',)):
     b.expect_edge_serial_reconnect(hidden=True)
     b.bind_hid(old)
-    self.assertIsNone(b.match_output([stale],[old]))
+    self.assertIsNone(b.output([stale]))
     self.assertIsNone(b.resolve_edge_reconnect([old,other],False))
     self.assertIs(b.resolve_edge_reconnect([old,other,new],False),new)
     self.assertIsNone(b.resolve_edge_reconnect([new,dict(new,path=b'duplicate')],False))
     b.bind_hid(new)
    self.assertEqual(b.snapshot().serial,'abc')
-   self.assertIsNone(b.match_output([stale],[new]))
-   self.assertEqual(b.match_output([stale,endpoint],[new]),endpoint)
+   self.assertIsNone(b.output([stale]))
+   self.assertEqual(b.output([stale,endpoint]),endpoint)
 
  def test_same_endpoint_without_container_recovers(self):
   b=self.binding();r=self.row();self.assertIs(b.output([r],'Old'),r)
@@ -81,18 +81,11 @@ class AutoPairTests(unittest.TestCase):
   binding=DeviceBinding()
   binding._identity=DeviceIdentity(hid_path=b'hid',serial='pico',container_id='HID')
   output=dict(name='DualSense Edge',maxOutputChannels=4,endpoint_id='audio',container_id='AUDIO')
-  return binding,output,[dict(path=b'hid',serial_number='pico')]
- def test_single_device_auto_pair(self):
-  binding,output,hids=self.setup_pair()
-  self.assertTrue(binding.auto_pair_output([output],hids))
+  return binding,output
+ def test_single_device_does_not_auto_pair_across_containers(self):
+  binding,output=self.setup_pair()
+  self.assertIsNone(binding.output([output]))
+  self.assertTrue(binding.confirm_output(output,allow_container_mismatch=True))
   self.assertIs(binding.output([output]),output)
- def test_multiple_or_other_hid_rejected(self):
-  binding,output,hids=self.setup_pair()
-  self.assertFalse(binding.auto_pair_output([output],hids*2))
-  self.assertFalse(binding.auto_pair_output([output],[dict(path=b'other',serial_number='other')]))
- def test_multiple_outputs_or_other_manual_selection_rejected(self):
-  binding,output,hids=self.setup_pair()
-  self.assertFalse(binding.auto_pair_output([output,dict(output,endpoint_id='second')],hids))
-  self.assertFalse(binding.auto_pair_output([output],hids,'Other output'))
 
 if __name__=='__main__':unittest.main()

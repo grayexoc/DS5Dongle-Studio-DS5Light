@@ -221,11 +221,17 @@ class SettingsClient(StudioClient):
         if self._write_tags_confirmed:return
         tag=(secrets.randbelow(0xffffffff)+1).to_bytes(4,'little')
         try:
-            self.command(0x22,bytes(57)+tag,0x84,echo=tag,echo_offset=59,attempts=3,
-                         accept=lambda r:r[2:4]==b'\x00\x01')
+            reply=self.command(0x22,bytes(57)+tag,0x84,echo=tag,echo_offset=59,attempts=3,
+                               accept=lambda r:r[2:4]==b'\x00\x01')
         except (OSError,TimeoutError) as exc:
             raise RuntimeError(_ui_tr('Pico 저장 확인 기능을 확인하지 못했습니다. 연결을 확인하고 이 앱과 함께 제공되는 펌웨어를 사용하세요.')) from exc
         self._write_tags_confirmed=True
+        self._preserve_active_slot=bool(len(reply)>4 and reply[4]&1)
+
+    def require_background_slot_save(self):
+        self.require_write_tags()
+        if not getattr(self,'_preserve_active_slot',False):
+            raise RuntimeError(_ui_tr('활성 프로필을 유지하며 슬롯을 복원하려면 Pico 펌웨어를 업데이트하세요.'))
 
     def _tagged_write(self,command,payload=b'',*,accept=None):
         self.require_write_tags()
@@ -455,11 +461,13 @@ class SettingsClient(StudioClient):
     def reconnect_usb(self):
         if self.cancel():raise RuntimeError(_ui_tr('Studio 재연결 취소됨'))
         return super().reconnect_usb()
-    def save_slot(self,index,name):
+    def save_slot(self,index,name,*,preserve_active=False):
         if not 0<=index<32:raise ValueError(_ui_tr('슬롯 범위 오류'))
         raw=name.encode('utf-8')
         if len(raw)>16:raise ValueError(_ui_tr('프로필 이름은 UTF-8 16바이트 이내로 입력하세요.'))
-        r=self._tagged_write(8,bytes([index])+raw,accept=lambda r:r[3]==index and r[2] in (0,1))
+        if preserve_active:self.require_background_slot_save()
+        payload=bytes([index])+(raw.ljust(16,b'\0')+b'\1' if preserve_active else raw)
+        r=self._tagged_write(8,payload,accept=lambda r:r[3]==index and r[2] in (0,1))
         if r[2]!=0:raise RuntimeError(_ui_tr('슬롯 저장 실패 · 적용 결과를 조회하세요.'))
     def read_effects(self,slot=None):
         raise RuntimeError(_ui_tr('커스텀 트리거는 공사 중이므로 읽지 않습니다.'))

@@ -313,7 +313,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 and not self.external_stale and getattr(self.app.studio,'controller_connected',None) is not False)
     def enabled_for(self,key):
         values=self.doc.values
-        if key=='disable_usb_sn':return self.edge_serial_visible()
+        if key=='disable_usb_sn':return self.edge_serial_visible() and not self.usb_serial_blocked()
         if key=='haptics_gain':return values.get('auto_haptics_enable')==0
         if key == 'ah_highpass' and getattr(getattr(self.app, 'engine', None), 'studio_live', False):
             return False
@@ -360,6 +360,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self._render_context=context
         for tip in self.tips:tip.hide()
         self.tips=[];self.vars={};self.speaker_recommendations=[];self.range_controls={};self.field_views={}
+        self.usb_serial_toggle=None
         self.search_targets={};self._display_fields={}
         self._option_groups=[]
         self._touch_gyro_notices=[]
@@ -444,8 +445,11 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         return mode
 
     def edge_serial_recommended(self):
-        return self.standby_value('usb_serial_policy')==0 and any(
+        return not self.usb_serial_blocked() and self.standby_value('usb_serial_policy')==0 and any(
             row['path']==self.path and row.get('product_id')==0x0df2 for row in self.device_rows)
+
+    def usb_serial_blocked(self):
+        return any(fields.get('usb_gamepad_mode')==1 for fields in (self.doc.values,self.doc.baseline))
 
     def render_standby_policy(self):
         box=self.card(ui_text('Pico 설정','Pico settings'))
@@ -502,9 +506,13 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         serial_row=tk.Frame(box,bg=CARD);serial_row.grid(row=6,column=0,columnspan=2,sticky='w',pady=(8,0))
         serial_toggle=CircleCheck(serial_row,text=ui_text('USB 시리얼 숨기기','Hide USB serial number'),
             variable=serial_var,command=lambda:self.change_standby_policy(serial_var,'usb_serial_policy'),background=CARD)
-        serial_toggle.pack(side='left');serial_toggle.set_enabled(serial_mode is not None and not self.busy)
+        serial_toggle.pack(side='left')
+        self.usb_serial_toggle=serial_toggle
         from studio_help import help_text
-        self.help_icon(serial_row,help_text('disable_usb_sn')).pack(side='left',padx=(6,0))
+        self.help_icon(serial_row,lambda: ui_text(
+            'Xbox 모드는 USB 시리얼 숨기기를 사용하지 않습니다. DualSense 모드를 적용한 뒤 조절하세요.',
+            'Xbox mode always uses the USB serial number. Apply DualSense mode to change this setting.'
+        ) if self.usb_serial_blocked() else help_text('disable_usb_sn')).pack(side='left',padx=(6,0))
         serial_error=getattr(self,'_policy_save_errors',{}).get('usb_serial_policy')
         if serial_mode is None or serial_error:
             tk.Label(box,text=serial_error or ui_text('USB 시리얼 공통 설정 미지원 또는 조회 실패','USB serial policy unavailable'),
@@ -520,7 +528,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         if mode is None or requested==mode or self.busy or self.app.studio.busy:
             return
         if policy=='usb_serial_policy':
-            self.change_usb_serial_policy(requested)
+            if not self.usb_serial_blocked():self.change_usb_serial_policy(requested)
             return
         method='dock_disconnect' if policy=='dock_policy' else 'standby_mode'
         self.stopped_task(policy,lambda:self.with_client(lambda client:getattr(client,method)(requested)))
@@ -700,6 +708,10 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             language_choice=getattr(self.app,'language_choice',None)
             if language_choice is not None:language_choice.configure(state='disabled' if self.transfer_locked else 'readonly')
         if not self.built or self.closed:return
+        serial_toggle=getattr(self,'usb_serial_toggle',None)
+        if serial_toggle is not None:
+            serial_toggle.set_enabled(self.standby_value('usb_serial_policy') is not None
+                                      and not self.busy and not self.usb_serial_blocked())
         self.refresh_slot_loading()
         recommend=self.doc.values.get('auto_haptics_enable') in (1,2) and self.doc.values.get('disable_speaker')==0
         for note in getattr(self,'speaker_recommendations',()):
@@ -895,7 +907,17 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         edge_serial_changed='disable_usb_sn' in changes
         binding=self.app.studio.binding
         reconnect_path=self.path
-        reconnect_serial=next((d.get("serial_number") for d in self.device_rows if d["path"]==self.path),None) or self.app.studio.device_serials.get(self.path)
+        reconnect_row=next((d for d in self.device_rows if d["path"]==self.path),None)
+        reconnect_serial=(reconnect_row or {}).get("serial_number") or self.app.studio.device_serials.get(self.path)
+        usb_mode=changes.get('usb_gamepad_mode')
+        usb_mode_binding=None
+        if usb_mode is not None:
+            if binding.snapshot().hid_path==reconnect_path:
+                usb_mode_binding=binding
+            elif reconnect_row is not None:
+                from device_binding import DeviceBinding
+                usb_mode_binding=DeviceBinding()
+                usb_mode_binding.bind_hid(reconnect_row)
         reconnect=needs_reconnect(baseline,dict(baseline,**changes),self.doc.macro_baseline)
         def op(client):
             if persist:client.require_write_tags()
@@ -954,6 +976,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             reset_uncertain=False
             if reconnect_needed and not save_uncertain:
                 if edge_serial_changed:binding.expect_edge_serial_reconnect(hidden=bool(changes['disable_usb_sn']))
+                if usb_mode_binding is not None:usb_mode_binding.expect_reconnect(30,usb_mode_change=True)
                 try:client.reconnect_usb()
                 except (OSError,RuntimeError):
                     if self.cancel.is_set():raise
@@ -971,6 +994,9 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                     if result['edge_serial_reconnect']:
                         result['reloaded']=wait_for_macros(reconnect_path,reconnect_serial,self.cancel,
                             edge_binding=binding,serial_hidden=bool(changes['disable_usb_sn']))
+                    elif usb_mode_binding is not None:
+                        result['reloaded']=wait_for_macros(reconnect_path,reconnect_serial,self.cancel,
+                            usb_mode_binding=usb_mode_binding,usb_mode=usb_mode)
                     else:
                         result['reloaded']=wait_for_macros(reconnect_path,reconnect_serial,self.cancel)
                 except Exception as exc:

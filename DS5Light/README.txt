@@ -1,5 +1,5 @@
-DS5Light v1.2.2 — Studio
-Combined release v1.2.2 / DS5Light v1.2.2 / Studio firmware v53 (Pico 2 W).
+DS5Light v1.2.3 — Studio
+Combined release v1.2.3 / DS5Light v1.2.3 / Studio firmware v54 (Pico 2 W).
 SETUP.md · RELEASE_NOTES.md
 
 Run

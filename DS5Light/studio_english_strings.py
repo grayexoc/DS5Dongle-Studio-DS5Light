@@ -2211,6 +2211,8 @@ EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '슬롯 설정이 비어 있습니다.': 'Slot setting is empty.',
  '슬롯 저장 상태를 확인하지 못했습니다. 다시 조회하세요.': 'Failed to check slot save status. Please check again.',
  '슬롯 저장 실패 · 적용 결과를 조회하세요.': 'Slot save failure · Check application results.',
+ '활성 프로필을 유지하며 슬롯을 복원하려면 Pico 펌웨어를 업데이트하세요.':
+  'Update the Pico firmware to restore slots while keeping the active profile.',
  '슬롯 범위 오류': 'slot range error',
  '슬롯 선택': 'Slot selection',
  '실시간': 'Real time',

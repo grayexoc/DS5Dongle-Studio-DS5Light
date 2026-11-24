@@ -802,7 +802,9 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             if (bufsize >= 1 && buffer[0] < SLOT_COUNT) {
                 const uint8_t idx = buffer[0];
                 const uint8_t nlen = (bufsize > 1) ? (uint8_t)std::min<uint16_t>(bufsize - 1, SLOT_NAME_LEN) : 0;
-                if (slot_save(idx, buffer + 1, nlen)) buf[2] = 0x00;
+                // Tagged clients may write a slot without selecting it.
+                const bool preserve_active = bufsize >= 61 && buffer[17] == 1;
+                if (slot_save(idx, buffer + 1, nlen, !preserve_active)) buf[2] = 0x00;
                 buf[3] = idx;
             }
             echo_settings_write_tag(buf, buffer, bufsize);
@@ -1202,7 +1204,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
 
         case 0x22: {
             // Read-only probe for the write-tag layout version.
-            uint8_t reply[63]{0x66, 0x22, 0, 1};
+            uint8_t reply[63]{0x66, 0x22, 0, 1, 1}; // bit 0: preserve active slot on save
             echo_settings_write_tag(reply, buffer, bufsize);
             pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;

@@ -11,7 +11,8 @@ public:
     // 48 kHz. A smoothed onset detector rejects carrier-cycle peaks and
     // rearms after a valley or when the attack has settled into a steady bed.
     float update(float envelope, float gated_envelope,
-                 float lower_band = 0.0f, float upper_band = 0.0f) {
+                 float lower_band = 0.0f, float upper_band = 0.0f,
+                 bool upper_dominates = false) {
         const bool past_crest = envelope <= fast;
         fast += .006f * (envelope - fast);
         if (fast <= .80f * slow) armed = true;
@@ -42,14 +43,35 @@ public:
             ((gated_envelope > .012f && fast > 1.65f * slow + .006f) ||
              // Wait for the crest before accepting a weaker but distinct onset.
              (past_crest && gated_envelope > .003f && fast > 2.20f * slow + .004f));
+        if (remaining == 0) {
+            // The main onset detector may still be waiting for its slow
+            // envelope after a previous hit.
+            if (gated_envelope > .003f && envelope > 3.5f * fast)
+                steep_rise_samples = accent_check_samples;
+            else if (steep_rise_samples > 0)
+                --steep_rise_samples;
+        }
         if (onset || follow_up) {
             remaining = attack_samples;
             armed = false;
             settled_samples = 0;
             blend_reduction = 0.0f;
+            // A level-relative rise distinguishes a hit from a slow fade-in.
+            const bool steep_rise = steep_rise_samples > 0;
+            const float sustained_rise = (fast - 8.0f * slow) / (2.0f * slow + 1e-6f);
+            const float rise_contrast = steep_rise
+                ? 1.0f : std::clamp(sustained_rise, 0.0f, 1.0f);
+            steep_rise_samples = 0;
+            attack_blend = .16f + .24f * rise_contrast;
+            sharp_candidate = steep_rise || fast > 9.0f * slow;
+            sharp_accent = false;
             attack_peak = attack_valley = fast;
             valley_samples = 0;
             follow_up_samples = 5760; // 120 ms after this texture ends
+        }
+        const int attack_age = attack_samples - remaining;
+        if (sharp_candidate && attack_age == accent_check_samples) {
+            sharp_accent = upper_dominates && fast > 6.75f * slow;
         }
         // Give the existing crossover time to settle while the original attack plays.
         if (remaining == band_check_remaining) {
@@ -61,17 +83,29 @@ public:
         }
         slow += .0007f * (fast - slow);
         if (!remaining) return 0.0f;
-        const float rise = (attack_samples - remaining) * (1.0f / ramp_samples);
-        float decay = remaining * (1.0f / (attack_samples - ramp_samples));
-        float peak_blend = .40f;
+        const float rise = attack_age * (1.0f / ramp_samples);
+        const float decay = remaining * (1.0f / (attack_samples - ramp_samples));
+        float blend = attack_blend * std::min(rise, decay);
+        if (sharp_accent) {
+            // Keep the start causal, then bring up the accent over two ms.
+            constexpr float accent_peak = .58f;
+            if (attack_age < accent_peak_samples) {
+                const float start = attack_blend * (attack_samples - accent_check_samples) /
+                    (attack_samples - ramp_samples);
+                blend = start + (accent_peak - start) * (attack_age - accent_check_samples) /
+                    (accent_peak_samples - accent_check_samples);
+            } else {
+                blend = (accent_peak / (attack_samples - accent_peak_samples)) * remaining;
+            }
+        }
         if (blend_reduction > 0.0f) {
             const float progress = std::min((band_check_remaining - remaining) * (1.0f / ramp_samples), 1.0f);
-            peak_blend -= blend_reduction * progress;
+            const float reduction = blend_reduction * progress;
             // Fade the upper harmonic faster on low-dominant hits.
-            decay *= 1.0f - blend_reduction * progress * (1.0f - decay);
+            blend *= (1.0f - 2.5f * reduction) * (1.0f - reduction * (1.0f - decay));
         }
         if (--remaining == 0) attack_valley = fast;
-        return peak_blend * std::min(rise, decay);
+        return blend;
     }
 
     float steer_onset(float blend, const HapticImpactTexture &other) {
@@ -87,16 +121,21 @@ public:
 private:
     static constexpr int attack_samples = 768; // 16 ms
     static constexpr int ramp_samples = 96; // 2 ms
+    static constexpr int accent_check_samples = 192; // 4 ms
+    static constexpr int accent_peak_samples = 288; // 6 ms
     static constexpr int valley_hold_samples = 96; // 2 ms
     static constexpr int band_check_remaining = attack_samples - 480; // 10 ms after onset
     float fast = 0.0f, slow = 0.0f;
     float attack_peak = 0.0f;
     float attack_valley = 0.0f;
     float blend_reduction = 0.0f;
+    float attack_blend = .40f;
     float direction_gain = 1.0f;
     int remaining = 0;
     int settled_samples = 0;
     int follow_up_samples = 0;
+    int steep_rise_samples = 0;
     int valley_samples = 0;
     bool armed = true;
+    bool sharp_candidate = false, sharp_accent = false;
 };

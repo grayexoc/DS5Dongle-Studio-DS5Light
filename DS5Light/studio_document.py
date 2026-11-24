@@ -24,7 +24,16 @@ class SettingsDocument:
         for state in self._companions.values():
             if key==state[0]:state[3]=True
         links=[]
-        if key=='auto_haptics_enable':links.append(('disable_speaker',previous,value,int(value in (1,2)),True))
+        if key=='auto_haptics_enable':
+            links.append(('disable_speaker',previous,value,int(value in (1,2)),True))
+            if previous != value and self.baseline.get('auto_haptics_enable') == 0:
+                from studio_recommended import initial_haptic_fields,FACTORY_AUDIO_HAPTIC_FIELDS
+                defaults = initial_haptic_fields(self.baseline, value)
+                staged = self._companions.keys() & FACTORY_AUDIO_HAPTIC_FIELDS.keys() if value == 0 else defaults.keys()
+                for child in staged:
+                    if child in defaults and child not in self._companions and self.values[child] != self.baseline[child]:
+                        continue
+                    links.append((child,previous,value,defaults.get(child),child in defaults))
         if key=='lightbar_fixed':links.append(('lightbar_off',previous,value,0,value==1))
         if key=='mix_native_level':links.append(('mix_native_filter',bool(previous),bool(value),0,bool(value)))
         if key in ('auto_haptics_enable','mix_native_level'):
