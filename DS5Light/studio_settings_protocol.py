@@ -11,6 +11,32 @@ from studio_scope import EDITABLE,CONSTRUCTION,LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB
 FORMATS={'u8':'B','u16':'H','u32':'I','f32':'f'}
 ENUM_FIELDS={'usb_gamepad_mode','controller_mode','polling_rate_mode','audio_buffer_length','disable_mic','disable_speaker','enable_wake'}
 class PartialApplyError(RuntimeError):pass
+class ProfileSaveConflict(RuntimeError):pass
+
+
+def checked_save_profile(client, profile, expected):
+    """Bind a complete readback to the exact revision the firmware may save."""
+    if getattr(client, 'guarded_profile_save', False) is not True:
+        return None
+    if not profile.get('config_token'):
+        raise RuntimeError(_ui_tr('저장할 프로필의 설정 버전을 확인하지 못했습니다.'))
+    actual, missing = client.read_fields([FIELDS[key] for key in expected])
+    if missing or any(key not in actual or not math.isclose(actual[key], value, rel_tol=1e-5, abs_tol=1e-5)
+                      for key, value in expected.items()) or client.profile(include_revision=True) != profile:
+        raise RuntimeError(_ui_tr('저장 전에 설정이 바뀌었습니다. 다시 읽어 주세요.'))
+    return profile
+
+
+def profile_save_guard(profile):
+    if profile is None:
+        return b''
+    token = bytes.fromhex(profile['config_token'])
+    index = profile.get('index')
+    if index is None:
+        index = 0xff
+    if len(token) != 8 or index not in (*range(32), 0xff):
+        raise ValueError('Invalid Studio profile guard')
+    return b'S1' + bytes([index]) + token
 class USBModeUnsupported(ValueError):pass
 class RumbleModeUnsupported(ValueError):pass
 class EdgeSerialUnsupported(ValueError):pass
@@ -93,6 +119,7 @@ class SettingsClient(StudioClient):
         super().__init__(device,sleep);self.cancel=cancel;self.bulk=None;self.deadline=None
         self.lightbar_supported=None;self._lightbar_values={}
         self._write_tags_confirmed=False
+        self.guarded_profile_save=False
         self._macro_pause_owner=None
         self._macro_pause_refresh_at=0
     def check_cancel(self):
@@ -227,6 +254,20 @@ class SettingsClient(StudioClient):
             raise RuntimeError(_ui_tr('Pico 저장 확인 기능을 확인하지 못했습니다. 연결을 확인하고 이 앱과 함께 제공되는 펌웨어를 사용하세요.')) from exc
         self._write_tags_confirmed=True
         self._preserve_active_slot=bool(len(reply)>4 and reply[4]&1)
+        self.guarded_profile_save=bool(len(reply)>4 and reply[4]&2)
+        self.slot_delete_supported=bool(len(reply)>4 and reply[4]&4)
+
+    def delete_slot(self, slot):
+        self.require_write_tags()
+        if not self.slot_delete_supported:
+            raise RuntimeError(_ui_tr('슬롯을 삭제하려면 Pico 펌웨어를 업데이트하세요.'))
+        revision, rows = self.catalog_page(slot.index)
+        if revision != slot.catalog_revision or rows[0] != slot or slot.state != 'saved':
+            raise RuntimeError(_ui_tr('슬롯이 변경되었습니다. 목록을 새로 고침하세요.'))
+        reply = self._tagged_write(0x28, bytes((slot.index,)) + slot.catalog_revision.to_bytes(4, 'little'),
+                                   accept=lambda r: r[3] == slot.index)
+        if reply[2] != 0 or self.info(slot.index).state != 'empty':
+            raise RuntimeError(_ui_tr('슬롯 삭제를 확인하지 못했습니다. 목록을 새로 고침하세요.'))
 
     def require_background_slot_save(self):
         self.require_write_tags()
@@ -447,27 +488,36 @@ class SettingsClient(StudioClient):
             return checked
         except Exception as exc:
             raise PartialApplyError(str(exc)+_ui_tr(' · 적용 상태를 다시 읽어 확인하세요.')) from exc
-    def save_flash(self):
+    def save_flash(self, *, expected_profile=None):
         if self.cancel():raise RuntimeError(_ui_tr('Studio 저장 취소됨'))
+        if expected_profile is not None:
+            self.require_write_tags()
+            if not self.guarded_profile_save:raise RuntimeError(_ui_tr('저장할 프로필의 설정 버전을 확인하지 못했습니다.'))
         tag=(secrets.randbelow(0xffffffff)+1).to_bytes(4,'little')
         try:
-            reply=self.command(2,tag,0x84,echo=tag,echo_offset=4,attempts=40,
-                accept=lambda r:len(r)>=8 and r[3]==1 and r[2] in (0,2))
+            reply=self.command(2,tag+profile_save_guard(expected_profile),0x84,echo=tag,echo_offset=4,attempts=40,
+                accept=lambda r:len(r)>=8 and r[3]==1 and r[2] in (0,2,3))
         except TimeoutError as exc:
             raise TimeoutError(_ui_tr('Pico 저장 응답 미확인 · 구형 펌웨어는 저장 확인 미지원 · 다른 설정창을 닫고 상태를 확인하세요.')) from exc
+        if reply[2]==3:raise ProfileSaveConflict(_ui_tr('저장 전에 설정이 바뀌었습니다. 다시 읽어 주세요.'))
         if reply[2]==2:raise RuntimeError(_ui_tr('Pico 설정 저장 실패 · 연결과 저장 상태를 확인하세요.'))
         return True
 
     def reconnect_usb(self):
         if self.cancel():raise RuntimeError(_ui_tr('Studio 재연결 취소됨'))
         return super().reconnect_usb()
-    def save_slot(self,index,name,*,preserve_active=False):
+    def save_slot(self,index,name,*,preserve_active=False,expected_profile=None):
         if not 0<=index<32:raise ValueError(_ui_tr('슬롯 범위 오류'))
         raw=name.encode('utf-8')
         if len(raw)>16:raise ValueError(_ui_tr('프로필 이름은 UTF-8 16바이트 이내로 입력하세요.'))
         if preserve_active:self.require_background_slot_save()
-        payload=bytes([index])+(raw.ljust(16,b'\0')+b'\1' if preserve_active else raw)
-        r=self._tagged_write(8,payload,accept=lambda r:r[3]==index and r[2] in (0,1))
+        if expected_profile is not None:
+            self.require_write_tags()
+            if not self.guarded_profile_save:raise RuntimeError(_ui_tr('저장할 프로필의 설정 버전을 확인하지 못했습니다.'))
+        guard=profile_save_guard(expected_profile)
+        payload=bytes([index])+(raw.ljust(16,b'\0')+bytes([preserve_active])+guard if preserve_active or guard else raw)
+        r=self._tagged_write(8,payload,accept=lambda r:r[3]==index and r[2] in (0,1,3))
+        if r[2]==3:raise ProfileSaveConflict(_ui_tr('저장 전에 설정이 바뀌었습니다. 다시 읽어 주세요.'))
         if r[2]!=0:raise RuntimeError(_ui_tr('슬롯 저장 실패 · 적용 결과를 조회하세요.'))
     def read_effects(self,slot=None):
         raise RuntimeError(_ui_tr('커스텀 트리거는 공사 중이므로 읽지 않습니다.'))

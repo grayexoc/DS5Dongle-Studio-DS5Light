@@ -2,7 +2,7 @@
 from pathlib import Path
 import json, os, re, subprocess
 root=Path(__file__).resolve().parents[1]
-base=root.parent/'DS5Dongle-Studio-build'
+base=Path(os.environ.get('DS5_FIRMWARE_TOOLS',root.parent/'DS5Dongle-Studio-build'))
 out=base/'reports/rumble-shape-tests';out.mkdir(parents=True,exist_ok=True)
 bin_dir=base/'source/toolchain/mingw64/mingw64/bin'
 env=dict(os.environ);env['PATH']=str(bin_dir)+os.pathsep+env.get('PATH','')

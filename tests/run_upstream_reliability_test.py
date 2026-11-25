@@ -14,6 +14,11 @@ failure=main[start:main.index('\nint main()',start)]
 usb_wait=bt[bt.index('bool bt_usb_features_pending() {'):bt.index('\n#else\nbool bt_usb_features_pending()')]
 cmd=(root/'src/cmd.cpp').read_text(encoding='utf-8')
 disconnect=bt[bt.index('bool bt_disconnect()'):bt.index('bool bt_is_connected()')]
+idle_start=bt.index('            if (size < 66',bt.index('bt_data_callback(INTERRUPT, packet, size);'))
+idle_policy=bt[idle_start:bt.index('        } else if (channel == hid_control_cid)',idle_start)]
+activity_start=bt.index('static absolute_time_t inactive_time')
+activity=bt[activity_start:bt.index('void bt_register_data_callback',activity_start)]
+gyro_motion=main[main.index('static bool deliberate_gyro_motion('):main.index('static inline void __not_in_flash_func(gyro_emit_mouse)')]
 control_start=bt.index('            if (packet[0] == 0xA3 && size < 2)')
 control=bt[control_start:bt.index('            dse_on_control_packet',control_start)]
 wake=(root/'src/wake.cpp').read_text(encoding='utf-8')
@@ -155,6 +160,75 @@ bool wake_host_is_suspended(){return host_suspended;}
 void restore_full_usb_identity(){++restored;}
 '''
 code+=usb_wait+'\n'+disconnect+'\n'+reply+'\n'+get_report+'\n'+neutral+input_reset+wake_reset
+code+=r'''
+#include "input_buttons.h"
+namespace idle {
+constexpr int64_t minute=60'000'000;
+using absolute_time_t=int64_t;
+int64_t now=0;
+unsigned disconnects=0;
+struct Config { bool disable_inactive_disconnect=false; uint8_t inactive_time=5; } config;
+const Config &get_config() {return config;}
+int64_t get_absolute_time() {return now;}
+uint64_t time_us_64() {return now;}
+int64_t absolute_time_diff_us(int64_t from,int64_t to) {return to-from;}
+void bt_disconnect() {++disconnects;}
+'''+activity+gyro_motion+r'''
+void receive(const uint8_t *packet,uint16_t size) {
+'''+idle_policy+r'''
+}
+void check() {
+ uint8_t report[66]={0,0x31,1,128,128,128,128,0,0,0,8,0,0};
+ report[3+RPT_TOUCH0]=report[3+RPT_TOUCH1]=0x80;
+ receive(report,sizeof report);
+ now=minute;config.disable_inactive_disconnect=true;
+ receive(report,sizeof report);
+ now=120*minute;
+ receive(report,sizeof report);assert(disconnects==0);
+ config.disable_inactive_disconnect=false;
+ receive(report,sizeof report);assert(disconnects==0);
+ now+=5*minute;
+ receive(report,sizeof report);assert(disconnects==0);
+ ++now;
+ receive(report,sizeof report);assert(disconnects==1);
+
+ config.inactive_time=30;
+ receive(report,sizeof report);
+ now+=10*minute;
+ config.inactive_time=5;
+ receive(report,sizeof report);assert(disconnects==1);
+ now+=4*minute;
+ report[3]=155;
+ receive(report,sizeof report);
+ report[3]=128;
+ now+=2*minute;
+ receive(report,sizeof report);assert(disconnects==1);
+ now+=3*minute+1;
+ receive(report,sizeof report);assert(disconnects==2);
+ uint8_t full[66]{};
+ memcpy(full,report,sizeof report);
+ full[3+RPT_TOUCH0]=0;
+ full[3+RPT_TOUCH0+1]=15;
+ now+=4*minute;
+ receive(full,sizeof full);
+ now+=4*minute;
+ full[3+RPT_TOUCH0+1]=25;
+ receive(full,sizeof full);assert(disconnects==2);
+ now+=4*minute;
+ assert(!deliberate_gyro_motion(12,30,true));
+ assert(!deliberate_gyro_motion(800,0,false));
+ assert(deliberate_gyro_motion(0,-96,true));
+ if (deliberate_gyro_motion(0,-96,true)) bt_note_gyro_activity();
+ receive(full,sizeof full);assert(disconnects==2);
+ bt_hold_dock_disconnect();assert(bt_dock_disconnect_held());
+ now+=2'999'000;assert(bt_dock_disconnect_held());
+ now+=1'000;assert(!bt_dock_disconnect_held());
+ now+=5*minute;
+ receive(full,sizeof full);assert(disconnects==3);
+ puts("PASS: re-enabling idle disconnect or changing its timeout starts a fresh period; input still resets it");
+}
+}
+'''
 code+='void receive_control(uint8_t *packet,uint16_t size) {\n'+control+'}\n'
 start=bt.index('void bt_macro_power_off_task(bool requested)')
 end=bt.index('\n}',bt.index('void init_feature()',start))+2
@@ -164,6 +238,7 @@ code+='\n#define printf link_key_log\nvoid request_link_key(uint8_t *packet) {sw
 code+=failure+'\n'
 code+=r'''
 int main() {
+ idle::check();
  uint8_t address[6]{};
  request_link_key(address);
  assert(positive_key_replies==1&&negative_key_replies==0&&key_logs==1);
@@ -296,7 +371,7 @@ int main() {
 (out/'test.cpp').write_text(code,encoding='utf-8')
 bin_dir=base/'source/toolchain/mingw64/mingw64/bin'
 env=dict(os.environ);env['PATH']=str(bin_dir)+os.pathsep+env.get('PATH','')
-subprocess.run([str(bin_dir/'g++.exe'),'-std=c++17',str(out/'test.cpp'),'-o',str(out/'test.exe')],env=env,check=True)
+subprocess.run([str(bin_dir/'g++.exe'),'-std=c++17','-I'+str(root/'src'),str(out/'test.cpp'),'-o',str(out/'test.exe')],env=env,check=True)
 p=subprocess.run([str(out/'test.exe')],env=env,check=True,capture_output=True,text=True)
 (out/'result.txt').write_text(p.stdout,encoding='utf-8');print(p.stdout)
 if '--host-only' in sys.argv:sys.exit(0)

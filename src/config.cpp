@@ -728,6 +728,7 @@ static constexpr uint32_t slot_sector_offset(uint8_t sector) {
 
 constexpr uint32_t SLOT_MAGIC_V1 = 0x53355344; // "DS5S" — legacy: fixed-size body, layout-fragile
 constexpr uint32_t SLOT_MAGIC_V2 = 0x54355344; // "DS5T" — v2: explicit body_len, survives body growth
+constexpr uint32_t SLOT_DELETED = 0x44355344; // Prevent legacy migration from restoring deleted profiles.
 
 // v2 record: body_len makes the CRC span self-describing, so future firmware with
 // a LARGER Config_body can still validate and read records written by older
@@ -758,7 +759,7 @@ static const uint8_t *flash_slot_raw_at(uint32_t base_offset, uint8_t idx) {
     return reinterpret_cast<const uint8_t *>(XIP_BASE + base_offset + idx * SLOT_STRIDE);
 }
 static const uint8_t *flash_slot_raw(uint8_t idx) {
-    return flash_slot_raw_at(SLOTS_FLASH_OFFSET, idx);
+    return flash_slot_raw_at(slot_sector_offset(idx / SLOTS_PER_SECTOR), idx % SLOTS_PER_SECTOR);
 }
 
 // Unified reader: returns true and fills name/body if the slot holds a valid
@@ -823,9 +824,7 @@ static bool slot_read_at(uint32_t base_offset, uint8_t idx, uint8_t name_out[SLO
 }
 // Sector-mapped reader for the live slot store.
 static bool slot_read(uint8_t idx, uint8_t name_out[SLOT_NAME_LEN], Config_body &body_out) {
-    const uint8_t *p = reinterpret_cast<const uint8_t *>(
-        XIP_BASE + slot_sector_offset(idx / SLOTS_PER_SECTOR) + (idx % SLOTS_PER_SECTOR) * SLOT_STRIDE);
-    return slot_read_ptr(p, name_out, body_out);
+    return slot_read_ptr(flash_slot_raw(idx), name_out, body_out);
 }
 
 // --- Currently-loaded profile tracking (RAM only, v1.18.22) -----------------
@@ -932,6 +931,9 @@ bool active_profile_restore(uint8_t slot, uint32_t fingerprint) {
     return true;
 }
 
+static uint32_t catalog_revision = 0;
+uint32_t slot_catalog_revision() { return catalog_revision; }
+
 bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len, bool select_slot) {
     if (idx >= SLOT_COUNT) return false;
     const uint32_t sec_off = slot_sector_offset(idx / SLOTS_PER_SECTOR);
@@ -955,6 +957,28 @@ bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len, bool select_s
     uint8_t nm[SLOT_NAME_LEN]; Config_body bd;
     if (!slot_read(idx, nm, bd)) return false;
     if (select_slot || g_active_slot == idx) active_profile_set(idx);
+    ++catalog_revision;
+    usb_profile_event_slot_saved();
+    return true;
+}
+
+bool slot_delete(uint8_t idx) {
+    if (idx >= SLOT_COUNT) return false;
+    const uint32_t offset = slot_sector_offset(idx / SLOTS_PER_SECTOR);
+    const uint32_t local = (idx % SLOTS_PER_SECTOR) * SLOT_STRIDE;
+    memcpy(slot_sector_image, reinterpret_cast<const void *>(XIP_BASE + offset), FLASH_SECTOR_SIZE);
+    memset(slot_sector_image + local, 0xff, SLOT_STRIDE);
+    memcpy(slot_sector_image + local, &SLOT_DELETED, sizeof(SLOT_DELETED));
+    slot_op_offset = offset;
+    if (flash_safe_execute(slots_flash_op, nullptr, 500) != PICO_OK || !slot_write_ok)
+        return false;
+    const auto *stored = reinterpret_cast<const void *>(XIP_BASE + offset + local);
+    if (memcmp(stored, slot_sector_image + local, SLOT_STRIDE) != 0) return false;
+    if (g_active_slot == idx) {
+        g_active_slot = -1;
+        g_active_snapshot_valid = false;
+    }
+    ++catalog_revision;
     usb_profile_event_slot_saved();
     return true;
 }
@@ -1053,8 +1077,11 @@ bool slot_info(uint8_t idx, uint8_t name_out[SLOT_NAME_LEN], uint8_t &valid, uin
 static void migrate_legacy_slots() {
     bool new_has = false;
     uint8_t nm[SLOT_NAME_LEN]; static Config_body bd;
-    for (uint8_t i = 0; i < SLOT_COUNT && !new_has; ++i)
-        new_has = slot_read(i, nm, bd);
+    for (uint8_t i = 0; i < SLOT_COUNT && !new_has; ++i) {
+        uint32_t magic;
+        memcpy(&magic, flash_slot_raw(i), sizeof(magic));
+        new_has = magic == SLOT_DELETED || slot_read(i, nm, bd);
+    }
     if (new_has) return;
     uint8_t migrated = 0;
     memset(slot_sector_image, 0xff, FLASH_SECTOR_SIZE);

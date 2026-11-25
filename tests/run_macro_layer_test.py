@@ -2,7 +2,7 @@
 from pathlib import Path
 import os,shutil,subprocess
 root=Path(__file__).resolve().parents[1]
-out=root.parent/'DS5Dongle-Studio-build/reports/macro-layer-tests';out.mkdir(parents=True,exist_ok=True)
+out=Path(os.environ.get('DS5_FIRMWARE_TOOLS', root.parent / 'DS5Dongle-Studio-build')) / 'reports/macro-layer-tests';out.mkdir(parents=True,exist_ok=True)
 stubs=out/'stubs';shutil.copytree(root/'tools/macro-tests/stubs',stubs,dirs_exist_ok=True)
 shutil.copyfile(root/'src/macro.cpp',stubs/'macro.cpp')
 assert (stubs/'macro.cpp').read_bytes()==(root/'src/macro.cpp').read_bytes()
@@ -139,7 +139,7 @@ int main(){
 }
 '''.replace('ORIGINAL',(root/'tools/macro-tests/macro-tests.cpp').as_posix())
 (out/'test.cpp').write_text(source,encoding='utf-8')
-bin_dir=root.parent/'DS5Dongle-Studio-build/source/toolchain/mingw64/mingw64/bin'
+bin_dir=Path(os.environ.get('DS5_FIRMWARE_TOOLS', root.parent / 'DS5Dongle-Studio-build')) / 'source/toolchain/mingw64/mingw64/bin'
 env=dict(os.environ);env['PATH']=str(bin_dir)+os.pathsep+env.get('PATH','')
 subprocess.run([str(bin_dir/'g++.exe'),'-std=c++17','-DENABLE_WAKE_HID','-I'+str(root/'src'),'-I'+str(stubs),str(out/'test.cpp'),str(stubs/'macro.cpp'),'-o',str(out/'test.exe')],env=env,check=True)
 result=subprocess.run([str(out/'test.exe')],env=env,capture_output=True,text=True)

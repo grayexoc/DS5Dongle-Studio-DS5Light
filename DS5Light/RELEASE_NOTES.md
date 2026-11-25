@@ -1,3 +1,29 @@
+# v1.2.4
+
+### English
+
+Use `DS5Light-win-x64-v1.2.4.zip` with `ds5-studio-light_v55.uf2` for Raspberry Pi Pico 2 W.
+
+**If you’re using DS5Light for the first time or upgrading from a version earlier than v1.2.2**, we strongly recommend applying the updated Mix or Replace preset under **Studio settings → Profile slots → Recommended presets** before using audio haptics. Back up the destination slot before saving.
+
+- Improved Studio device discovery and reconnection. The app can detect when HID devices arrive or are removed, and it retains draft settings when reconnecting.
+- Added profile slot deletion on supported firmware. Before saving or deleting a slot, the app and firmware check whether the relevant settings or slot list have changed. The app also reports which settings it could verify after backup restoration.
+- Improved selected-process audio capture recovery and refined idle disconnect handling for touchpad and gyro activity. When dock disconnect is enabled, the firmware briefly delays applying it so the settings response can be returned.
+
+Windows and game volume affect haptic strength. The bundled Mix and Replace presets can be used as starting points.
+
+### 한국어
+
+Windows 앱 `DS5Light-win-x64-v1.2.4.zip`과 Raspberry Pi Pico 2 W용 Studio 펌웨어 `ds5-studio-light_v55.uf2`를 함께 사용하세요.
+
+처음 사용 혹은 **v1.2.2보다 오래된 버전에서 업그레이드하는 경우**, 오디오햅틱을 사용하기 전에 **Studio 설정 → 프로필 슬롯 → 추천 프리셋**에서 변경된 믹스 또는 대체 프리셋을 다시 적용할 것을 강력히 권장합니다. 저장하기 전에 대상 슬롯을 백업하세요.
+
+- Studio 장치 검색과 재연결을 개선했습니다. 앱이 HID 장치 연결·해제를 감지하고, 다시 연결할 때 편집 중인 설정을 보관합니다.
+- 지원 펌웨어에서 프로필 슬롯 삭제를 추가했습니다. 슬롯을 저장하거나 삭제하기 전 관련 설정이나 슬롯 목록이 바뀌었는지 확인하고, 백업 복원 후 어떤 설정을 확인했는지 표시합니다.
+- 선택한 프로세스의 오디오 캡처 복구를 보완하고, 터치패드·자이로 동작이 유휴 연결 해제 판정에 반영되도록 개선했습니다. 충전독 연결 해제 설정을 켤 때는 설정 응답을 보낼 수 있도록 해제를 잠시 지연합니다.
+
+햅틱 세기는 Windows와 게임 음량의 영향을 받습니다. 동봉된 믹스와 대체 프리셋을 시작점으로 사용할 수 있습니다.
+
 # v1.2.3
 
 ### English

@@ -6,7 +6,7 @@ from tkinter import ttk
 from studio_dialogs import messagebox
 from studio_fields import FIELDS
 from studio_scope import EDITABLE,SUPPORTED_CONFIGS
-from studio_settings_protocol import needs_reconnect,validate_changes
+from studio_settings_protocol import checked_save_profile,needs_reconnect,validate_changes
 from studio_document import SettingsDocument
 from localization import LANGUAGE
 
@@ -117,26 +117,41 @@ def save_and_activate(client,fields,name,index,expected_slot,stamp,baseline,prog
     progress(_ui_tr('오디오햅틱 추천값 적용 중…'))
     client.write_fields(changes,current)
     expected=dict(current,**fields)
-    profile=client.profile()
+    supports_guard=getattr(client,'guarded_profile_save',False) is True
+    profile=client.profile(include_revision=True) if supports_guard else client.profile()
     if any(profile.get(k)!=stamp.get(k) for k in ('index','name')):raise RuntimeError(_ui_tr('적용 중 프로필이 바뀌었습니다. 다시 조회하세요.'))
     if client.read_one(FIELDS['macro_disable'])!=mask:raise RuntimeError(_ui_tr('매크로 사용 체크가 외부에서 변경되었습니다. 다시 조회하세요.'))
     slot=client.info(index)
     if (slot.state,slot.name)!=expected_slot:raise RuntimeError(_ui_tr('저장 대상 슬롯이 변경되었습니다. 다시 조회하세요.'))
     progress(_ui_tr('{0} · {1}에 저장 중…').format(f'{index + 1:02d}',f'{name}'))
-    client.save_slot(index,name)
+    guard=checked_save_profile(client,profile,expected)
+    if guard is None:client.save_slot(index,name)
+    else:client.save_slot(index,name,expected_profile=guard)
     profile=client.profile()
     if profile.get('index')!=index or profile.get('name')!=name or profile.get('edited'):
         raise RuntimeError(_ui_tr('슬롯 저장 상태를 확인하지 못했습니다. 다시 조회하세요.'))
     result=dict(index=index,name=name,expected=expected,mask=mask,verified=False,reconnect=False)
+    if guard is not None:
+        # Slot save already selects it. Do not reload it over a concurrent edit.
+        result['reconnect']=needs_reconnect(current,expected)
+        try:client.save_flash(expected_profile=dict(guard,index=index))
+        except (OSError,RuntimeError) as exc:
+            result['notice']=_ui_tr('프로필 슬롯 저장 확인 · ')+str(exc)
+            return result
+        if result['reconnect']:
+            try:client.reconnect_usb()
+            except (OSError,RuntimeError):
+                if client.cancel():raise
+        return result
     progress(_ui_tr('저장된 프로필로 전환 중…'))
     try:activation=client.activate(index)  # Never retry an ambiguous activation.
-    except (OSError,TimeoutError) as exc:
+    except (OSError,RuntimeError) as exc:
         result['notice']=_ui_tr('슬롯 저장 확인 · 전환 응답 미확인 · 새로 고침으로 확인하세요.')
         return result
     result['reconnect']=bool(activation.get('reconnect') or activation.get('deferred') or needs_reconnect(current,expected))
     progress(_ui_tr('Pico 저장 확인 중 · 다른 앱의 Pico 오디오 출력을 중지하세요.'))
     try:client.save_flash()
-    except (OSError,TimeoutError) as exc:
+    except (OSError,RuntimeError) as exc:
         result['notice']=_ui_tr('슬롯 저장 확인 · ')+str(exc)
         return result
     if result['reconnect']:
@@ -215,6 +230,8 @@ class RecommendedPresets:
         stamp=copy.deepcopy(self.profile_stamp);baseline=dict(self.doc.baseline);path=self.path
         if self.busy or not self.write_ready or stamp is None:return
         serial=next((d.get('serial_number') for d in self.device_rows if d['path']==path),None) or self.app.studio.device_serials.get(path)
+        from studio_reconnect import capture_reconnect_binding
+        recovery_binding=capture_reconnect_binding(self.device_rows,path)
         def progress(text):self.results.put(('progress',text,None))
         def operation():
             result=self.with_client(lambda c:save_and_activate(c,fields,name,index,expected_slot,stamp,baseline,progress))
@@ -223,7 +240,7 @@ class RecommendedPresets:
             from studio_reconnect import wait_for_macros
             self.results.put(('progress',dict(reconnecting=True),None))
             try:
-                fresh=wait_for_macros(path,serial,self.cancel)
+                fresh=wait_for_macros(path,serial,self.cancel,device_binding=recovery_binding)
                 profile=fresh['profile']
                 if profile.get('index')!=index or profile.get('name')!=name or profile.get('edited'):
                     raise RuntimeError(_ui_tr('전환 후 프로필이 저장 대상과 다릅니다.'))

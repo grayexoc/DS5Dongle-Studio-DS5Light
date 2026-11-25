@@ -4,7 +4,7 @@ import os
 import subprocess
 
 root = Path(__file__).resolve().parents[1]
-base = root.parent / 'DS5Dongle-Studio-build'
+base = Path(os.environ.get('DS5_FIRMWARE_TOOLS', root.parent / 'DS5Dongle-Studio-build'))
 out = base / 'reports/suspend-release-tests'
 out.mkdir(parents=True, exist_ok=True)
 state = (root / 'src/state_mgr.cpp').read_text(encoding='utf-8')

@@ -525,6 +525,11 @@ uint32_t gyro_natural_degrees_x10_read(void) {
     return (uint32_t) (d < 0 ? 0 : (d > 0xFFFFFFFFLL ? 0xFFFFFFFFLL : d));
 }
 
+static bool deliberate_gyro_motion(int32_t horiz, int32_t pitch, bool produced_output) {
+    // A raw motion floor keeps high-sensitivity mappings from counting sensor drift.
+    return produced_output && (horiz >= 96 || horiz <= -96 || pitch >= 96 || pitch <= -96);
+}
+
 static inline void __not_in_flash_func(gyro_emit_mouse)(int32_t horiz, int32_t pitch,
                                                         const Config_body &cfg) {
     // Feed the angle check in EVERY mode: you need to calibrate before switching
@@ -580,6 +585,7 @@ static inline void __not_in_flash_func(gyro_emit_mouse)(int32_t horiz, int32_t p
         if (cfg.gyro_invert & 2) dy = -dy;
         g_gm_pend_x += dx;
         g_gm_pend_y += dy;
+        if (deliberate_gyro_motion(horiz, pitch, dx || dy)) bt_note_gyro_activity();
         return;
     }
     const int32_t s   = cfg.gyro_sens;
@@ -595,6 +601,7 @@ static inline void __not_in_flash_func(gyro_emit_mouse)(int32_t horiz, int32_t p
     if (cfg.gyro_invert & 2) dy = -dy;
     g_gm_pend_x += dx;
     g_gm_pend_y += dy;
+    if (deliberate_gyro_motion(horiz, pitch, dx || dy)) bt_note_gyro_activity();
 }
 
 // --- Flick Stick -----------------------------------------------------------
@@ -1197,8 +1204,11 @@ static inline void __not_in_flash_func(apply_gyro_stick)(uint8_t *d) {
     }
     int32_t rx = (int32_t)d[2] + dx;
     int32_t ry = (int32_t)d[3] + dy;
-    d[2] = (uint8_t)(rx < 0 ? 0 : (rx > 255 ? 255 : rx));
-    d[3] = (uint8_t)(ry < 0 ? 0 : (ry > 255 ? 255 : ry));
+    const uint8_t x = rx < 0 ? 0 : (rx > 255 ? 255 : rx);
+    const uint8_t y = ry < 0 ? 0 : (ry > 255 ? 255 : ry);
+    if (deliberate_gyro_motion(horiz, pitch, x != d[2] || y != d[3])) bt_note_gyro_activity();
+    d[2] = x;
+    d[3] = y;
 }
 
 static bool dock_disconnect_requested = false;
@@ -1218,7 +1228,7 @@ void __not_in_flash_func(on_bt_data)(CHANNEL_TYPE channel, uint8_t *data, uint16
         constexpr uint8_t kDockDetect = 1u << 6;
         if (!(data[56] & kDockDetect) || !device_disconnect_on_dock()) {
             dock_disconnect_requested = false;
-        } else if (!dock_disconnect_requested && bt_is_ready()) {
+        } else if (!dock_disconnect_requested && bt_is_ready() && !bt_dock_disconnect_held()) {
             dock_disconnect_requested = bt_disconnect();
         }
         set_headset(data[56] & 1);

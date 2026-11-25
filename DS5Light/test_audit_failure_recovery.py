@@ -149,7 +149,7 @@ class ShutdownTests(unittest.TestCase):
         self.panel=NS(busy=False,_cancel=threading.Event(),close=Mock())
         self.editor=NS(busy=False,recording=False,closing_recording=False,cancel=threading.Event(),close=Mock())
         self.app=NS(root=self.root,_closing=False,_close_requested=False,studio=self.panel,studio_settings=self.editor,
-                    status=Mock(),battery=Mock(),controller_presence=Mock(),idle_presence=Mock(),profile_watch=Mock(),
+                    status=Mock(),battery=Mock(),controller_presence=Mock(),idle_presence=Mock(),profile_watch=Mock(),hid_changes=Mock(),
                     mute_shortcut=Mock(),flush_preferences=Mock(side_effect=lambda on_complete:on_complete()),
                     stop=Mock(side_effect=lambda on_complete:on_complete()))
         self.lock=Mock();self.close=make_close_handler(self.app,self.lock)

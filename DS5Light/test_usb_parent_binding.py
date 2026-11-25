@@ -44,21 +44,26 @@ class ParentBindingTests(unittest.TestCase):
         self.assertIsNone(b.output([row]))
         self.assertEqual(b.output([dict(row,container_id='hid')])['endpoint_id'],'audio')
 
-    def test_unannounced_usb_mode_switch_checks_cached_port_and_unique_hid(self):
+    def test_planned_usb_mode_switch_checks_cached_port_and_unique_hid(self):
         native=dict(path=b'vid_054c',vendor_id=0x054c,product_id=0x0df2,usb_parent_id='native')
         xbox=dict(path=b'vid_1209',vendor_id=0x1209,product_id=1,usb_parent_id='xbox',serial_number='pico')
         with patch('windows_device_identity.usb_port_paths',side_effect=lambda p:('port',) if p in ('native','xbox') else ()):
             b=DeviceBinding()
             b.bind_hid(native)
             b.bind_output(self.row())
+            self.assertIsNone(b.resolve_hid([xbox]))
+            b.expect_reconnect(usb_mode_change=True)
             self.assertIsNone(b.resolve_hid([dict(xbox,usb_parent_id='other')]))
             self.assertIsNone(b.resolve_hid([xbox,dict(xbox,path=b'duplicate')]))
             self.assertEqual(b.resolve_hid([xbox]),xbox)
             b.bind_hid(xbox)
             self.assertIsNone(b.snapshot().endpoint_id)
+            self.assertIsNone(b.resolve_hid([native]))
+            b.expect_reconnect(usb_mode_change=True)
             self.assertEqual(b.resolve_hid([native]),native)
             b.bind_hid(native)
             self.assertEqual(b.snapshot().serial,'pico')
+            b.expect_reconnect(usb_mode_change=True)
             self.assertIsNone(b.resolve_hid([dict(xbox,serial_number='different')]))
 
     def test_stale_manual_confirmation_is_rejected(self):

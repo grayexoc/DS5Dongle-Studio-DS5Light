@@ -8,8 +8,29 @@ from studio_scope import EDITABLE
 # Custom effect records are excluded, so their enable flags must be excluded too.
 FIELDS = {key: field for key, field in EDITABLE.items() if not key.startswith('ce_')}
 from studio_scope import LIGHTBAR_FIELDS,RUMBLE_FIELDS,USB_MODE_FIELDS,RUMBLE_MODE_FIELDS,OPTIONAL_FIELDS,TOUCH_MOUSE_FIELDS,config_version
-from studio_settings_protocol import EDGE_SERIAL_STORAGE_FIELD,EdgeSerialUnsupported,USBModeUnsupported,RumbleModeUnsupported,TouchMouseUnsupported,HapticHighpassUnsupported,encode,validate_changes
+from studio_settings_protocol import EDGE_SERIAL_STORAGE_FIELD,EdgeSerialUnsupported,USBModeUnsupported,RumbleModeUnsupported,TouchMouseUnsupported,HapticHighpassUnsupported,checked_save_profile,encode,validate_changes
 from studio_records import effect_states,macro_records
+
+
+class RestoreInterrupted(RuntimeError):
+    def __init__(self,message,original,pending):
+        super().__init__(message)
+        self.original=original
+        self.pending=pending
+
+    def read_recovery(self,client,snapshot):
+        from studio_recommended import equal_value
+        values=snapshot['values']
+        live_ok=all(equal_value(values.get(key),value) for key,value in self.original.items())
+        status=[_ui_tr('복원 전 실시간 설정 일치') if live_ok else _ui_tr('복원 전 실시간 설정 불일치 또는 미확인')]
+        if self.pending is not None:
+            index,name,expected=self.pending
+            slot=client.info(index)
+            matches=slot.state=='saved' and slot.name==name and all(
+                equal_value(client.read_one(FIELDS[key],index),value)
+                for key,value in expected.items() if key in FIELDS)
+            status.append(_ui_tr('중단된 슬롯 저장값 일치') if matches else _ui_tr('중단된 슬롯 저장값 불일치'))
+        return ' · '.join(status)
 
 # The slot wire command reads flash directly. Missing legacy tails are
 # filled with 0xFF; use the defaults from the firmware's config validation.
@@ -158,7 +179,9 @@ def restore_all(client,rows,macros,progress=lambda text:None,*,recovery_path):
         os.fsync(file.fileno())
 
     client.check_cancel()
-    done=[];pending_slot=None;live_changed=False;errors=[]
+    done=[];pending_slot=None;pending=None;live_changed=False;errors=[]
+    supports_guard=getattr(client,'guarded_profile_save',False) is True
+    owned_profile=client.profile(include_revision=True) if supports_guard else None
     macro_state=_ui_tr('변경 시도 없음')
     try:
         client.start_macro_pause()
@@ -173,13 +196,31 @@ def restore_all(client,rows,macros,progress=lambda text:None,*,recovery_path):
         for row in rows:
             progress(_ui_tr('슬롯 {0} 복원 중').format(f"{row['index'] + 1:02d}"))
             current,_=client.read_fields()
+            if owned_profile is not None and client.profile(include_revision=True)!=owned_profile:
+                raise RuntimeError(_ui_tr('복원 중 외부에서 설정이 변경되었습니다.'))
             live_changed=True
-            client.write_fields(dict(original,**row['fields']),current,profile_snapshot=True)
+            staged=dict(original,**row['fields'])
+            client.write_fields(staged,current,profile_snapshot=True)
             for trig,states in row['effects'].items():
                 for index,state in enumerate(states):client.write_effect(int(trig),index,state)
-            pending_slot=row['index']
-            client.save_slot(pending_slot,row['name'],preserve_active=True)
-            done.append(pending_slot);pending_slot=None
+            if supports_guard:
+                profile=client.profile(include_revision=True)
+                if (profile['index'],profile['name'])!=(owned_profile['index'],owned_profile['name']):
+                    raise RuntimeError(_ui_tr('복원 중 외부에서 설정이 변경되었습니다.'))
+                owned_profile=checked_save_profile(client,profile,staged)
+            pending_slot=row['index'];pending=(pending_slot,row['name'],staged)
+            if supports_guard:
+                client.save_slot(pending_slot,row['name'],preserve_active=True,expected_profile=owned_profile)
+            else:client.save_slot(pending_slot,row['name'],preserve_active=True)
+            done.append(pending_slot);pending_slot=None;pending=None
+            if supports_guard:
+                after=client.profile(include_revision=True)
+                # Saving the active slot may update its name and clean baseline, but never its live config.
+                expected_name=row['name'] if owned_profile['index']==row['index'] else owned_profile['name']
+                if (after['index'],after['name'],after.get('config_token'))!=(
+                        owned_profile['index'],expected_name,owned_profile['config_token']):
+                    raise RuntimeError(_ui_tr('복원 중 외부에서 설정이 변경되었습니다.'))
+                owned_profile=after
     except Exception as exc:
         errors.append(str(exc))
     finally:
@@ -188,7 +229,10 @@ def restore_all(client,rows,macros,progress=lambda text:None,*,recovery_path):
         try:
             if live_changed:
                 try:
-                    current,_=client.read_fields();client.write_fields(original,current,profile_snapshot=True)
+                    current,_=client.read_fields()
+                    if supports_guard and client.profile(include_revision=True)!=owned_profile:
+                        raise RuntimeError(_ui_tr('외부 설정을 덮어쓰지 않도록 복구를 중지했습니다.'))
+                    client.write_fields(original,current,profile_snapshot=True)
                 except Exception as exc:
                     errors.append(_ui_tr('복원 전 임시 설정을 되돌리지 못했습니다.')+' '+str(exc))
             try:
@@ -205,5 +249,5 @@ def restore_all(client,rows,macros,progress=lambda text:None,*,recovery_path):
         pending=f'{pending_slot+1:02d}' if pending_slot is not None else '—'
         status=_ui_tr('저장 확인 슬롯 {0} · 저장 미확인 슬롯 {1} · 공유 매크로 {2}').format(confirmed,pending,macro_state)
         recovery_hint=_ui_tr('같은 Pico의 현재 상태를 새로 고침하세요. 복원 전 백업 파일')
-        raise RuntimeError('\n'.join((status,*errors,recovery_hint,str(recovery_path))))
+        raise RestoreInterrupted('\n'.join((status,*errors,recovery_hint,str(recovery_path))),original,pending)
     return done

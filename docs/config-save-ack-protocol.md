@@ -22,3 +22,12 @@ Implemented DS5Light flow:
 5. Other 0x84 commands and external settings clients can overwrite replies. A wrong tag or command must not acknowledge the save; ask to close other settings clients if needed.
 
 Example request tag 12 34 56 78 -> successful raw reply begins `84 66 02 00 01 12 34 56 78`.
+
+## Conditional slot and startup save
+
+The tagged capability reply for command `0x22` sets bit 1 of payload byte 4 when both save commands can verify an expected live profile. The app brackets setting readback with the same profile metadata and uses the revision and checksum returned by `REV1`. Firmware compares the token and active slot before writing flash on core 0.
+
+- For `0x08`, the optional guard starts at request payload byte 18 after the 16-byte name and the preserve-active flag. It contains ASCII `S1`, the expected active slot (255 for no active slot), and the eight `REV1` bytes.
+- For `0x02`, the same guard starts at request payload byte 4 after the request tag. After a slot save that selected its destination, this guard carries the destination as the expected active slot and the original verified config token.
+- Status `03` means the guard failed before the flash call. Legacy unguarded requests retain their existing layout and behavior. The app never retries a save when the reply is missing.
+- The app reports the live apply, slot save, startup save, and reconnect confirmation separately. Read-only recovery checks the captured Pico identity and never replays the writes.

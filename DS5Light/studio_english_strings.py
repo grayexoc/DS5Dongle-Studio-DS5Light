@@ -1,6 +1,9 @@
 """Bundled English UI translations; no runtime network access."""
 EN = {'자동 선택 · 기존 BAT 방식': 'Automatic · original BAT method',
  '상태 메시지': 'Status message',
+ '슬롯을 삭제하려면 Pico 펌웨어를 업데이트하세요.': 'Update Pico firmware to delete slots.',
+ '슬롯이 변경되었습니다. 목록을 새로 고침하세요.': 'The slot changed. Refresh the slot list.',
+ '슬롯 삭제를 확인하지 못했습니다. 목록을 새로 고침하세요.': 'Could not verify deletion. Refresh the slot list.',
  '설정 저장 실패': 'Could not save settings',
  '저장된 오디오햅틱 세기 {0}%를 지원 최솟값 {1}%로 적용했습니다.':
  'Saved audio haptics strength was {0}%. Applied the supported minimum of {1}%.',
@@ -5019,3 +5022,22 @@ EN.update({
     'Rear WASAPI 쓰기': 'Rear WASAPI write',
 })
 FIELD_HELP['mix_native_filter'] = 'Uses a fixed 120 Hz low-pass independently of the Audio Haptics cutoff. Select Original to preserve the game’s native haptics.'
+EN.update({
+    '일부 슬롯을 확인하지 못했습니다.': 'Some slots could not be verified.',
+    '재연결 확인 · 편집값을 보관했습니다. 새로 고침으로 확인하세요.': 'Reconnected. Draft changes were kept. Refresh to verify the device.',
+    '재연결 확인 · 설정을 다시 읽습니다.': 'Reconnected. Reading settings again.',
+    '저장할 프로필의 설정 버전을 확인하지 못했습니다.': 'Could not verify the revision of the profile to save.',
+    '저장 전에 설정이 바뀌었습니다. 다시 읽어 주세요.': 'Settings changed before the save. Refresh to read them again.',
+    '설정 충돌로 해당 저장을 실행하지 않았습니다.': 'This save was rejected because the settings changed.',
+    '현재 설정 적용 확인': 'Live settings verified',
+    '슬롯 저장 응답 미확인': 'Slot save response unconfirmed',
+    '프로필 슬롯 저장 확인': 'Profile slot save confirmed',
+    'Pico 시작 설정 저장 응답 미확인': 'Pico startup settings save response unconfirmed',
+    'Pico 시작 설정 저장 확인': 'Pico startup settings save confirmed',
+    '복원 전 실시간 설정 일치': 'Live settings match their pre-restore values',
+    '복원 전 실시간 설정 불일치 또는 미확인': 'Pre-restore live settings differ or could not be verified',
+    '중단된 슬롯 저장값 일치': 'The interrupted slot matches the requested settings',
+    '중단된 슬롯 저장값 불일치': 'The interrupted slot differs from the requested settings',
+    '복원 중 외부에서 설정이 변경되었습니다.': 'Settings changed outside the app during restore.',
+    '외부 설정을 덮어쓰지 않도록 복구를 중지했습니다.': 'Recovery stopped to preserve settings changed outside the app.',
+})

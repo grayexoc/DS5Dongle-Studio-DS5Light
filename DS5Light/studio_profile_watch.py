@@ -62,9 +62,16 @@ class ProfileWatch:
         self.results=queue.SimpleQueue();self.busy=False;self.closed=False;self.key=None;self.generation=0
         self.next_check=0.;self.next_full=0.;self.profile=None;self.failures=0;self.was_paused=False
         self.extended=False;self.event_backed=False
+        self.event_discovery=False;self.recovery_until=0.;self.discovery_pending=False
+        self.recovery_attempts=0
+
+    def wake_discovery(self):
+        self.discovery_pending=True
+
     def tick(self,binding,enabled,token,seed=None,paused=False):
         now=time.monotonic();identity=binding.snapshot();key=(token,identity.serial,identity.hid_path) if enabled else None
-        if enabled:self.events.tick(identity)
+        if enabled and (not self.failures or now<self.recovery_until or self.discovery_pending):
+            self.events.tick(identity)
         else:
             self.events.stop.set();self.events.key=None;self.events.healthy=False;self.events.changed=False
         if key!=self.key:self.extended=False
@@ -74,6 +81,7 @@ class ProfileWatch:
             self.next_check=now+self.INTERVAL;self.next_full=now+self.MODE_INTERVAL
             if rebound:self.next_check=self.next_full=now
             self.profile=dict(seed) if seed else None;self.failures=0
+            self.recovery_until=0.;self.recovery_attempts=0
         result=None
         try:generation,data,error=self.results.get_nowait()
         except queue.Empty:pass
@@ -81,16 +89,28 @@ class ProfileWatch:
             self.busy=False
             if generation==self.generation and key is not None and not paused:
                 if data:
+                    if self.failures:data['recovered']=True
                     self.profile=data['profile'];self.failures=0;result=data
+                    self.recovery_until=0.;self.recovery_attempts=0
                     self.extended=data.get('extended',False)
                     if data['full']:self.next_full=now+self.MODE_INTERVAL
                 elif error:
+                    if not self.recovery_until:self.recovery_until=now+5
                     self.failures+=1
-                delay=.2 if not data and not error else min(12.,self.INTERVAL*max(1,self.failures))
+                    self.recovery_attempts+=1
+                if error:delay=(.5,1.,2.,5.)[min(self.recovery_attempts-1,3)]
+                else:delay=.2 if not data else self.INTERVAL
+                if error and now+delay>=self.recovery_until:
+                    delay=float('inf') if self.event_discovery else 30.
                 if data and self.extended and self.events.healthy:delay=self.EVENT_SAFETY_INTERVAL
                 self.next_check=now+delay
+        if self.discovery_pending and not paused and not self.busy:
+            self.discovery_pending=False
+            if key is not None and identity.hid_path:
+                self.recovery_until=now+5;self.recovery_attempts=0
+                self.next_check=self.next_full=now
         event_backed=self.extended and self.events.healthy
-        if self.event_backed and not event_backed:
+        if self.event_backed and not event_backed and not self.failures:
             self.next_check=min(self.next_check,now+self.INTERVAL)
             self.next_full=now
         self.event_backed=event_backed

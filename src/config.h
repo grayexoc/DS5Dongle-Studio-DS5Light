@@ -485,6 +485,7 @@ bool config_activation_save_pending();
 // action; activating one at game launch is a single atomic command instead of
 // a 30-field write.
 constexpr uint8_t SLOT_COUNT = 32;       // v1.22.0: 32 (was 24) - 8 per flash sector, 4 sectors
+uint32_t slot_catalog_revision();
 constexpr uint8_t SLOTS_PER_SECTOR = 8;  // 512-byte stride in a 4 KB sector
 constexpr uint8_t SLOT_NAME_LEN = 16;
 
@@ -498,6 +499,7 @@ constexpr uint8_t SLOT_NAME_LEN = 16;
 constexpr uint32_t SLOT_STRIDE_BYTES = 4096u / SLOTS_PER_SECTOR;          // 512
 constexpr uint32_t SLOT_MAX_BODY_LEN = SLOT_STRIDE_BYTES - (4 + 2 + SLOT_NAME_LEN + 4);
 bool slot_save(uint8_t idx, const uint8_t *name, uint8_t name_len, bool select_slot = true);
+bool slot_delete(uint8_t idx);
 // slot -> active config + flash. Returns 0 = failed (out param stage: 1 bad
 // idx, 2 slot unreadable, 3 flash persist failed even after retry), 1 = fully
 // activated + persisted, 2 = ACTIVATED (settings live in RAM) but persistence

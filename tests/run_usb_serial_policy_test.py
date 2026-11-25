@@ -7,7 +7,7 @@ u=(root/'src/usb_descriptors.cpp').read_text(encoding='utf-8')
 def extract(text,signature):
     start=text.index(signature)
     return text[start:text.index('\n}',start)+2]+'\n'
-out=root.parent/'DS5Dongle-Studio-build/reports/usb-serial-policy'
+out=Path(os.environ.get('DS5_FIRMWARE_TOOLS', root.parent / 'DS5Dongle-Studio-build')) / 'reports/usb-serial-policy'
 out.mkdir(parents=True,exist_ok=True)
 code=r'''
 #include <cassert>
@@ -139,7 +139,7 @@ int main(){
 }
 '''
 (out/'test.cpp').write_text(code,encoding='utf-8')
-bin=root.parent/'DS5Dongle-Studio-build/source/toolchain/mingw64/mingw64/bin'
+bin=Path(os.environ.get('DS5_FIRMWARE_TOOLS', root.parent / 'DS5Dongle-Studio-build')) / 'source/toolchain/mingw64/mingw64/bin'
 env=dict(os.environ);env['PATH']=str(bin)+os.pathsep+env.get('PATH','')
 subprocess.run([str(bin/'g++.exe'),'-std=c++17',str(out/'test.cpp'),'-o',str(out/'test.exe')],env=env,check=True)
 result=subprocess.run([str(out/'test.exe')],env=env,capture_output=True,text=True)

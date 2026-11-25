@@ -1,0 +1,12 @@
+spec GuardedProfileSave.tla
+check INVARIANTS TypeOK IntendedSnapshot NoSilentSuccess SlotFirst AtMostOnce
+check PROPERTIES ConfirmedSlotStays ReadOnlyRecovery NoForeignRecovery NoWrongActiveWrite EventuallyFinished
+reach BothSaved | slots=1 edits=0
+reach SlotCommittedReplyLost | slots=1 edits=0
+reach BootCommittedReplyLost | slots=1 edits=0
+reach GuardRejectsSlotEdit | slots=2 edits=2
+reach GuardRejectsBootEdit | slots=2 edits=2
+reach ForeignDuringRecovery | slots=1 edits=0
+run slots=1 edits=0 | Slots=1 Edits=0
+run slots=2 edits=2 | Slots=2 Edits=2
+run slots=32 edits=2 | Slots=32 Edits=2

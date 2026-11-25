@@ -1,5 +1,5 @@
-DS5Light v1.2.3 — Studio
-통합 릴리즈 v1.2.3 / DS5Light v1.2.3 / Studio 펌웨어 v54 (Pico 2 W).
+DS5Light v1.2.4 — Studio
+통합 릴리즈 v1.2.4 / DS5Light v1.2.4 / Studio 펌웨어 v55 (Pico 2 W).
 SETUP_KO.md · RELEASE_NOTES.md
 
 실행

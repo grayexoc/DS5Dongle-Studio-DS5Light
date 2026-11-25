@@ -37,10 +37,37 @@ class RecoveryTests(unittest.TestCase):
         with patch.object(recovery,'devices') as query:
             with self.assertRaisesRegex(RuntimeError,'취소'):recovery.wait_for_macros(b'old','ours',self.cancel)
             query.assert_not_called()
+
+    def test_recovery_uses_captured_binding_when_hid_path_changes(self):
+        from studio_reconnect import capture_reconnect_binding
+        old=dict(ROW,path=b'old',serial_number=None,usb_parent_id='same-pico',vendor_id=0x054c)
+        new=dict(old,path=b'new')
+        client=Mock();client.profile.return_value=PROFILE
+        with patch('windows_device_identity.hid_container',return_value=None),patch('windows_device_identity.usb_port_paths',return_value=()):
+            binding=capture_reconnect_binding([old],b'old')
+            with patch.object(recovery.time,'monotonic',lambda:self.clock),patch.object(recovery,'devices',return_value=[new]),patch.object(recovery,'snapshot',return_value=fresh()),patch('hid.device',return_value=Mock()),patch.object(recovery,'SettingsClient',return_value=client):
+                read=Mock(return_value='verified')
+                self.assertEqual(recovery.wait_for_macros(b'old',None,self.cancel,device_binding=binding,recovery_read=read)['recovery'],'verified')
+                read.assert_called_once()
+                client.save_slot.assert_not_called()
     def test_changed_profile_cannot_be_used_for_refreshed_table(self):
         client=Mock();client.profile.return_value=dict(PROFILE,index=1);client.read_macros.return_value={}
         with patch.object(recovery.time,'monotonic',lambda:self.clock),patch.object(recovery,'devices',return_value=[ROW]),patch.object(recovery,'snapshot',return_value=fresh()),patch('hid.device',return_value=Mock()),patch.object(recovery,'SettingsClient',return_value=client):
             with self.assertRaises(TimeoutError):recovery.wait_for_macros(b'old','ours',self.cancel,timeout=3)
+
+    def test_interrupted_restore_checks_flash_and_live_values_without_writes(self):
+        from studio_backup import RestoreInterrupted
+        from studio_slots import Slot
+        client=Mock()
+        client.info.return_value=Slot(2,'saved','Mix')
+        client.read_one.return_value=55
+        interrupted=RestoreInterrupted('lost connection',{'inactive_time':5},(2,'Mix',{'inactive_time':55}))
+        status=interrupted.read_recovery(client,{'values':{'inactive_time':55}})
+        self.assertIn('실시간 설정 불일치',status)
+        self.assertIn('중단된 슬롯 저장값 일치',status)
+        client.read_one.assert_called_once()
+        client.write_fields.assert_not_called()
+        client.save_slot.assert_not_called()
 
 class RecoveryUITests(unittest.TestCase):
     setUp=fixture.NativeUITests.setUp
@@ -141,6 +168,22 @@ class RecoveryUITests(unittest.TestCase):
         self.finish(e,'apply',answer)
         self.assertTrue(e.uncertain);self.assertFalse(e.write_ready);self.assertFalse(e.doc.save_requested)
         self.assertTrue(e.doc.macro_changes)
+
+    def test_guarded_boot_save_keeps_slot_token_and_reports_conflict_without_a_retry(self):
+        e,c,_=self.prepare();e.changed('auto_haptics_gain',100)
+        c.guarded_profile_save=True
+        loaded=dict(PROFILE,config_token='0000000000000001')
+        applied=dict(loaded,edited=True,config_token='0000000000000002')
+        saved=dict(applied,edited=False)
+        c.profile.side_effect=[loaded,loaded,applied,applied,saved]
+        c.read_fields.side_effect=[(dict(e.doc.baseline),[]),(dict(e.doc.baseline,auto_haptics_gain=100),[])]
+        c.save_slot.side_effect=None
+        c.save_flash.side_effect=RuntimeError('profile changed')
+        with self.assertRaisesRegex(RuntimeError,'프로필 슬롯 저장 확인.*profile changed'):
+            self.transaction(e,c,fresh(),True)
+        self.assertEqual(c.save_slot.call_args.kwargs['expected_profile'],applied)
+        self.assertEqual(c.save_flash.call_args.kwargs['expected_profile']['config_token'],applied['config_token'])
+        c.save_slot.assert_called_once();c.save_flash.assert_called_once()
 
     def test_reconnect_rejects_unverified_saved_settings_and_keeps_edits(self):
         e,c,new=self.prepare()

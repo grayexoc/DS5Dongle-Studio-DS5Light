@@ -3,7 +3,7 @@ from pathlib import Path
 import os,re,subprocess
 
 root=Path(__file__).resolve().parents[1]
-base=root.parent/'DS5Dongle-Studio-build'
+base=Path(os.environ.get('DS5_FIRMWARE_TOOLS',root.parent/'DS5Dongle-Studio-build'))
 out=base/'reports/bootsel-dormant-tests';out.mkdir(parents=True,exist_ok=True)
 source=(root/'src/manual_power.cpp').read_text(encoding='utf-8')
 start=source.index('static void __no_inline_not_in_flash_func(dormant_wait_with_bootsel)() {')

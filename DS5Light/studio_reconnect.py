@@ -7,8 +7,17 @@ from studio_settings_protocol import SettingsClient
 from device_binding import resolve_hid
 
 
+def capture_reconnect_binding(rows,path):
+    from device_binding import DeviceBinding
+    row=next((row for row in rows if row['path']==path),None)
+    if row is None:return None
+    binding=DeviceBinding()
+    binding.bind_hid(row)
+    return binding
+
+
 def wait_for_macros(path,serial,cancel,timeout=30,*,edge_binding=None,serial_hidden=None,
-                    usb_mode_binding=None,usb_mode=None):
+                    usb_mode_binding=None,usb_mode=None,device_binding=None,recovery_read=None):
     """Reopen only the selected Pico; never repeat apply/flash/reset commands."""
     import hid
     deadline=time.monotonic()+timeout
@@ -26,6 +35,8 @@ def wait_for_macros(path,serial,cancel,timeout=30,*,edge_binding=None,serial_hid
             elif usb_mode_binding is not None:
                 vendor=0x1209 if usb_mode==1 else 0x054c
                 target=usb_mode_binding.resolve_hid(row for row in rows if row.get('vendor_id')==vendor)
+            elif device_binding is not None:
+                target=device_binding.resolve_hid(rows,allow_mode_change=False)
             else:
                 target=resolve_hid(rows,path,serial)
             if target is None:continue
@@ -51,6 +62,7 @@ def wait_for_macros(path,serial,cancel,timeout=30,*,edge_binding=None,serial_hid
                     raise RuntimeError(_ui_tr('재연결 조회 중 프로필이 변경되었습니다.'))
                 client.check_cancel()
                 result['macros']=macros
+                if recovery_read is not None:result['recovery']=recovery_read(client,result)
                 return result
             finally:
                 try:

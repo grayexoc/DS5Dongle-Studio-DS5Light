@@ -23,6 +23,32 @@ def activate(status=0, reconnect=0):
 
 class Tests(unittest.TestCase):
 
+    def test_delete_checks_capability_and_slot_then_verifies_empty(self):
+        from unittest.mock import Mock
+        from studio_settings_protocol import SettingsClient
+
+        client = SettingsClient(Fake([]))
+        client.require_write_tags = Mock()
+        client.catalog_page = Mock(return_value=(9, [Slot(2, 'saved', 'Changed')]))
+        client._tagged_write = Mock(return_value=bytes((0x66, 0x28, 0, 2)))
+        client.info = Mock(return_value=Slot(2, 'empty'))
+        slot = Slot(2, 'saved', 'Original', catalog_revision=9)
+        client.slot_delete_supported = False
+        with self.assertRaises(RuntimeError):
+            client.delete_slot(slot)
+        client.catalog_page.assert_not_called()
+        client.slot_delete_supported = True
+        with self.assertRaises(RuntimeError):
+            client.delete_slot(slot)
+        client.catalog_page.return_value = (10, [Slot(2, 'saved', 'Original')])
+        with self.assertRaises(RuntimeError):
+            client.delete_slot(slot)
+        client._tagged_write.assert_not_called()
+        client.catalog_page.return_value = (9, [slot])
+        client.delete_slot(slot)
+        self.assertEqual(client._tagged_write.call_args.args, (0x28, b'\x02\x09\0\0\0'))
+        client.info.assert_called_once_with(2)
+
     def client(self, replies):
         d = Fake(replies)
         return (StudioClient(d, sleep=lambda _: None), d)
@@ -76,6 +102,32 @@ class Tests(unittest.TestCase):
         c, d = self.client([info(i, valid=i % 2) for i in range(32)])
         self.assertEqual(len(c.slots()), 32)
         self.assertEqual([p[3] for p in d.sent], list(range(32)))
+
+    def test_single_unavailable_legacy_slot_does_not_hide_following_slots(self):
+        c,d=self.client([info(i,status=int(i==9)) for i in range(32)])
+        rows=c.slots()
+        self.assertEqual(len(rows),32)
+        self.assertEqual(rows[9].state,'unavailable')
+        self.assertEqual(rows[10].state,'saved')
+
+    def test_bulk_slot_catalog_restarts_if_a_slot_changes_between_pages(self):
+        c,d=self.client([info()[:23]+b'SLT1'+bytes(37)])
+        original=d.get_feature_report
+        pages=[]
+        def reply(report,length):
+            request=d.sent[-1]
+            if request[2]==10:return original(report,length)
+            start=request[3]
+            pages.append(start)
+            count=min(3,32-start)
+            revision=1 if len(pages)==1 else 2
+            rows=(b'\x01'+b'Profile'.ljust(16,b'\0'))*count
+            return (bytes([132,102,0x27,0,start,count])+revision.to_bytes(4,'little')+rows).ljust(61,b'\0')+request[4:7]
+        d.get_feature_report=reply
+        rows=c.slots()
+        self.assertEqual(rows,[Slot(i,'saved','Profile') for i in range(32)])
+        self.assertEqual({slot.catalog_revision for slot in rows},{2})
+        self.assertEqual(pages,[0,3]+list(range(0,32,3)))
 
     def test_rejection(self):
         c, d = self.client([info(), activate(1)])

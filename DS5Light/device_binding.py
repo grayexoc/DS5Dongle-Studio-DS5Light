@@ -90,7 +90,7 @@ class DeviceBinding:
                 parent or (old.usb_parent_id if same else None),edge_serial,strict,expected,
                 old.edge_port_paths if expected is not None else (),ports or (old.usb_ports if same else ()))
         return self.snapshot()
-    def resolve_hid(self,rows,allow_unique=False):
+    def resolve_hid(self,rows,allow_unique=False,*,allow_mode_change=True):
         with self._lock:
             value=self._identity
             reconnect_ports=(self._usb_mode_reconnect_ports
@@ -105,9 +105,10 @@ class DeviceBinding:
         same=[row for row in rows if not (value.serial and row.get('serial_number') and row['serial_number']!=value.serial)
               and (row.get('usb_parent_id') or usb_parent_id(row['path']))==value.usb_parent_id]
         if same:return same[0] if len(same)==1 else None
+        if not allow_mode_change:return None
         vendor=self._usb_vendor(value)
         if vendor not in (0x054c,0x1209):return None
-        ports=set(reconnect_ports or value.usb_ports)
+        ports=set(reconnect_ports)
         if not ports:return None
         other_vendor=0x1209 if vendor==0x054c else 0x054c
         candidates=[row for row in rows if row.get('vendor_id')==other_vendor
@@ -219,5 +220,6 @@ class DeviceBinding:
             self.fast_until=max(self.fast_until,deadline)
             if usb_mode_change:
                 from windows_device_identity import usb_port_paths
-                self._usb_mode_reconnect_ports=usb_port_paths(self._identity.usb_parent_id)
+                self._usb_mode_reconnect_ports=(usb_port_paths(self._identity.usb_parent_id)
+                                                or self._identity.usb_ports)
                 self._usb_mode_reconnect_until=deadline

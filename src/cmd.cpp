@@ -642,6 +642,14 @@ static void pico_power_command(const uint8_t *buffer, uint16_t bufsize) {
     pico_settings_reply.assign(reply, reply + sizeof(reply));
 }
 
+static bool profile_save_guard_matches(const uint8_t *guard) {
+    uint8_t slot;
+    bool edited;
+    active_profile_get(slot, edited, nullptr);
+    const uint32_t token[] = {config_revision(), config_checksum()};
+    return slot == guard[0] && memcmp(guard + 1, token, sizeof(token)) == 0;
+}
+
 static void pico_cmd_reply_read(uint8_t report_id, const uint8_t *payload, uint16_t len) {
     if (report_id == 0x84 && payload && len >= 8 && payload[0] == 0x66 &&
         payload[1] == 0x1b && payload[2] == 0 && payload[3] == 1 && payload[4] == 1)
@@ -669,7 +677,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
     switch (cmd_id) {
         case 0x01: case 0x02: case 0x03: case 0x07:
         case 0x08: case 0x09: case 0x0b: case 0x0d:
-        case 0x11: case 0x13: case 0x18: case 0x19: case 0x1a:
+        case 0x11: case 0x13: case 0x18: case 0x19: case 0x1a: case 0x28:
             manual_power_note_activity(60000);
             break;
         default: break;
@@ -706,7 +714,9 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             uint8_t reply[63]{0x66, 0x02, 0xfe, 1};
             if (bufsize >= 4) memcpy(reply + 4, buffer, 4);
             pico_settings_reply.assign(reply, reply + sizeof(reply));
-            reply[2] = config_save() ? 0 : 2;
+            const bool guarded = bufsize >= 15 && buffer[4] == 'S' && buffer[5] == '1';
+            if (guarded && !profile_save_guard_matches(buffer + 6)) reply[2] = 3;
+            else reply[2] = config_save() ? 0 : 2;
             pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;
         }
@@ -804,7 +814,9 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 const uint8_t nlen = (bufsize > 1) ? (uint8_t)std::min<uint16_t>(bufsize - 1, SLOT_NAME_LEN) : 0;
                 // Tagged clients may write a slot without selecting it.
                 const bool preserve_active = bufsize >= 61 && buffer[17] == 1;
-                if (slot_save(idx, buffer + 1, nlen, !preserve_active)) buf[2] = 0x00;
+                const bool guarded = bufsize >= 61 && buffer[18] == 'S' && buffer[19] == '1';
+                if (guarded && !profile_save_guard_matches(buffer + 20)) buf[2] = 3;
+                else if (slot_save(idx, buffer + 1, nlen, !preserve_active)) buf[2] = 0x00;
                 buf[3] = idx;
             }
             echo_settings_write_tag(buf, buffer, bufsize);
@@ -860,6 +872,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     buf[4] = valid;
                     buf[5] = ver;
                     memcpy(buf + 6, name, SLOT_NAME_LEN);
+                    memcpy(buf + 22, "SLT1", 4);
                 }
                 buf[3] = buffer[0];
             }
@@ -1194,7 +1207,9 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             uint8_t reply[63]{0x66, 0x1d, 1, 1, 0};
             if (bufsize >= 1 && buffer[0] == 0) reply[2] = 0;
             else if (bufsize >= 2 && buffer[0] == 1 && buffer[1] <= 1) {
+                const bool enabling = buffer[1] != 0 && !device_disconnect_on_dock();
                 reply[2] = device_set_disconnect_on_dock(buffer[1] != 0) ? 0 : 2;
+                if (enabling && reply[2] == 0) bt_hold_dock_disconnect();
                 echo_settings_write_tag(reply, buffer, bufsize);
             }
             reply[4] = device_disconnect_on_dock();
@@ -1204,7 +1219,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
 
         case 0x22: {
             // Read-only probe for the write-tag layout version.
-            uint8_t reply[63]{0x66, 0x22, 0, 1, 1}; // bit 0: preserve active slot on save
+            uint8_t reply[63]{0x66, 0x22, 0, 1, 7}; // preserve active, guarded saves, slot deletion
             echo_settings_write_tag(reply, buffer, bufsize);
             pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;
@@ -1360,6 +1375,9 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
             }
             // Optional speaker auto-mute flags. Zero in older firmware means unknown.
             buf[45] = 0xA0 | (cfg.auto_mute_mix ? 1 : 0) | (cfg.auto_mute_replace ? 2 : 0);
+            memcpy(buf + 46, "SLT1", 4);
+            const uint32_t slot_revision = slot_catalog_revision();
+            memcpy(buf + 50, &slot_revision, sizeof(slot_revision));
             // Keep metadata replies on 0x81; 0x84 carries slot commands.
             pico_portal_reply.assign(buf, buf + sizeof(buf));
             break;
@@ -1387,6 +1405,46 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 }
             }
             pico_settings_reply.assign(buf, buf + sizeof(buf));
+            break;
+        }
+
+        case 0x27: {
+            // Read-only catalog page: three [valid, name[16]] rows from one revision.
+            uint8_t reply[63]{0x66, 0x27, 1};
+            if (bufsize >= 4 && buffer[0] < SLOT_COUNT) {
+                const uint8_t start = buffer[0];
+                const uint8_t count = std::min<uint8_t>(3, SLOT_COUNT - start);
+                const uint32_t revision = slot_catalog_revision();
+                reply[2] = 0;
+                reply[3] = start;
+                reply[4] = count;
+                memcpy(reply + 5, &revision, sizeof(revision));
+                memcpy(reply + 60, buffer + 1, 3);
+                for (uint8_t i = 0; i < count; ++i) {
+                    uint8_t version;
+                    auto *row = reply + 9 + i * (1 + SLOT_NAME_LEN);
+                    if (!slot_info(start + i, row + 1, row[0], version)) {
+                        reply[2] = 1;
+                        break;
+                    }
+                }
+            }
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
+            break;
+        }
+
+        case 0x28: {
+            uint8_t reply[63]{0x66, 0x28, 1};
+            if (bufsize >= 61) {
+                const uint8_t idx = buffer[0];
+                uint32_t expected_revision;
+                memcpy(&expected_revision, buffer + 1, sizeof(expected_revision));
+                reply[3] = idx;
+                memcpy(reply + 59, buffer + 57, 4);
+                if (expected_revision != slot_catalog_revision()) reply[2] = 3;
+                else if (slot_delete(idx)) reply[2] = 0;
+            }
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;
         }
 

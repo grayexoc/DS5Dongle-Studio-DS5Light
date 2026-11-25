@@ -254,6 +254,56 @@ class WatchScheduleTests(unittest.TestCase):
             self.tick();self.now+=3;self.tick();self.now+=1;self.assertIsNone(self.tick())
             self.assertEqual(self.m.profile,AH);self.assertEqual(self.m.failures,1)
 
+    def test_recovery_tries_quickly_after_loss_then_returns_to_normal(self):
+        data=dict(path=b'ours',profile=AH,full=True,row=None)
+        with patch.object(watch,'read_current',side_effect=[OSError('lost')]*4+[data]):
+            self.tick()
+            for delay in (.5,1.,2.,30.):
+                self.now=self.m.next_check
+                self.tick();self.tick()
+                self.assertAlmostEqual(self.m.next_check-self.now,delay)
+            self.now=self.m.next_check
+            self.tick()
+            self.assertTrue(self.tick()['recovered'])
+            self.assertAlmostEqual(self.m.next_check-self.now,self.m.INTERVAL)
+
+    def test_missing_pico_stops_probing_until_windows_notification(self):
+        self.m.event_discovery=True
+        data=dict(path=b'ours',profile=AH,full=True,row=None)
+        responses=[OSError('lost')]*4+[OSError('not ready'),data]
+        with patch.object(self.m.events,'tick'),patch.object(watch,'read_current',side_effect=responses) as read:
+            self.tick()
+            for _ in range(4):
+                self.now=self.m.next_check
+                self.tick();self.tick()
+            self.assertEqual(self.m.next_check,float('inf'))
+            self.now+=300
+            self.tick()
+            self.assertEqual(read.call_count,4)
+            self.m.wake_discovery()
+            self.tick()
+            self.assertEqual(read.call_count,5)
+            self.tick()
+            self.assertAlmostEqual(self.m.next_check-self.now,.5)
+            self.now=self.m.next_check
+            self.tick()
+            self.assertTrue(self.tick()['recovered'])
+            self.assertEqual(read.call_count,6)
+
+    def test_notification_waits_for_settings_before_starting_recovery_window(self):
+        self.m.event_discovery=True
+        with patch.object(self.m.events,'tick'),patch.object(watch,'read_current',side_effect=OSError('not ready')) as read:
+            self.tick(paused=True)
+            self.m.wake_discovery()
+            self.now+=10
+            self.tick(paused=True)
+            read.assert_not_called()
+            self.tick()
+            self.assertEqual(self.m.recovery_until,self.now+5)
+            self.now+=1
+            self.tick()
+            self.assertAlmostEqual(self.m.next_check-self.now,.5)
+
 class IntentTests(unittest.TestCase):
     def test_only_off_pause_retains_auto_resume_intent(self):
         for reason in ('manual','process_exit','engine_exit','start_error','route_changed'):
@@ -280,6 +330,29 @@ class AppPolicyTests(unittest.TestCase):
         e.profile_stamp={k:AH[k] for k in ('index','name','edited')};e.doc.values['auto_haptics_gain']=123
         u._external_profile(dict(path=b'ours',profile=OFF,row=hidrow()))
         self.assertFalse(e.write_ready);self.assertEqual(e.doc.values['auto_haptics_gain'],123)
+
+    def test_same_profile_reconnect_reopens_visible_editor_on_path_change(self):
+        u=self.ui
+        e=u.studio_settings;e.build()
+        u._external_profile(dict(path=b'ours',profile=AH,row=hidrow()))
+        e.path=b'ours';e.loaded=e.write_ready=True
+        e.profile_stamp={k:AH[k] for k in ('index','name','edited')}
+        e.doc.load({'auto_haptics_enable':AH['auto_haptics_enable']})
+        u.selected_tab=2
+        with patch.object(e,'begin_entry') as refresh:
+            u._external_profile(dict(path=b'new',profile=AH,row=dict(hidrow(),path=b'new')))
+        self.assertFalse(e.write_ready);self.assertTrue(e.external_stale)
+        refresh.assert_called_once()
+
+    def test_read_failure_is_reset_once_when_same_path_recovers(self):
+        u=self.ui
+        e=u.studio_settings;e.build();u.selected_tab=2
+        u._external_profile(dict(path=b'ours',profile=AH,row=hidrow()))
+        e.path=b'ours';e.loaded=False;e.entry_failed=True;e.external_stale=True
+        with patch.object(e,'begin_entry') as refresh:
+            u._external_profile(dict(path=b'ours',profile=AH,row=None,recovered=True))
+            u._external_profile(dict(path=b'ours',profile=AH,row=None))
+        refresh.assert_called_once()
     def test_verified_mix_observation_switches_live_channel_route(self):
         u=self.ui
         u.engine=SimpleNamespace(front_only=False,studio_live=False)
@@ -336,9 +409,12 @@ class AppPolicyTests(unittest.TestCase):
     def test_visible_clean_studio_requests_one_scalar_refresh_without_slot_scan(self):
         import test_studio_settings as f
         u=self.ui;e=u.studio_settings;e.build();e.doc.load(f.defaults());e.loaded=True;e.write_ready=True;u.selected_tab=2
+        e.entry_queries_enabled=True
         e.profile_stamp={k:AH[k] for k in ('index','name','edited')}
-        with patch.object(e,'task') as task:
+        with patch.object(e,'task') as task,patch.object(e,'schedule_entry') as schedule:
             u._external_profile(dict(path=b'ours',profile=OFF,row=hidrow()))
+            schedule.assert_called_once()
+            e.entry_step(e.entry_generation)
         self.assertTrue(e.external_stale);task.assert_called_once();self.assertEqual(task.call_args.args[0],'entry_read')
         self.assertIn('Off',e.identity.get())
 

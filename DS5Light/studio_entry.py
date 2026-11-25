@@ -1,4 +1,4 @@
-"""One read attempt per user entry, with no background retry after failure."""
+"""Read on tab entry and on verified reconnect or catalog change."""
 from studio_i18n import text as _ui_tr
 import sys
 from studio_fields import SECTIONS
@@ -38,8 +38,8 @@ class EntryQueries:
             row=next((r for r in self.device_rows if r['path']==self.path),None)
             if row and sum(r.get('serial_number')==row.get('serial_number') for r in self.device_rows)==1:
                 cached=self.app.studio.cached_slots(row)
-                if cached:
-                    self.slots=cached;self.slots_cache_path=self.path;self.render_fields();return
+                if cached and not self.slots:
+                    self.slots=cached;self.render_fields()
             self.entry_attempts.add('slots');self.task('slots',lambda:self.with_client(lambda c:c.slots()));return
         if self.category==4 and not self.doc.macros and 'macros' not in self.entry_attempts:
             self.entry_attempts.add('macros');self.task('macros',lambda:self.with_client(lambda c:c.read_macros()))

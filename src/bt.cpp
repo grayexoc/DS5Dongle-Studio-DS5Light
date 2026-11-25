@@ -26,6 +26,7 @@
 #include "dse.h"
 #include "wake.h"
 #include "manual_power.h"
+#include "input_buttons.h"
 #include "pico/util/queue.h"
 #if ENABLE_BATT_LED
 #include "battery_led.h"
@@ -182,7 +183,35 @@ static void bt_control_send_ready() {
     if (!queue_is_empty(&control_fifo)) l2cap_request_can_send_now_event(hid_control_cid);
 }
 
-absolute_time_t inactive_time = 0; // 手柄长时间静默
+static absolute_time_t inactive_time = 0;
+static uint64_t dock_hold_until_us = 0;
+static TouchPoint idle_touch_anchor[2]{};
+
+void bt_note_gyro_activity() { inactive_time = get_absolute_time(); }
+
+void bt_hold_dock_disconnect() {
+    dock_hold_until_us = time_us_64() + 3'000'000;
+}
+
+bool bt_dock_disconnect_held() {
+    return dock_hold_until_us && time_us_64() < dock_hold_until_us;
+}
+
+static bool bt_touch_activity(const uint8_t *report, uint16_t size) {
+    bool moved = false;
+    for (uint8_t finger = 0; finger < 2; ++finger) {
+        const auto touch = touch_point(report, size, finger);
+        auto &last = idle_touch_anchor[finger];
+        if (!touch.down || !last.down) {
+            moved |= touch.down;
+            last = touch;
+        } else if (std::abs(int(touch.x) - last.x) >= 4 || std::abs(int(touch.y) - last.y) >= 4) {
+            moved = true;
+            last = touch;
+        }
+    }
+    return moved;
+}
 
 void bt_register_data_callback(bt_data_callback_t callback) {
     bt_data_callback = callback;
@@ -857,24 +886,33 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
             // printf("[L2CAP] HID Interrupt data len=%u\n", size);
             // printf_hexdump(packet, size);
             bt_data_callback(INTERRUPT, packet, size);
-            if (size < 13) return;
+            if (size < 66 || packet[1] != 0x31 || (packet[2] & 3) != 1) return;
 
-            // 静默检测
-            if (!(packet[2] & 1) || get_config().disable_inactive_disconnect) {
+            const auto &config = get_config();
+            const uint8_t timeout_minutes = config.disable_inactive_disconnect ? 0 : config.inactive_time;
+            static uint8_t previous_timeout_minutes = 0;
+            if (timeout_minutes != previous_timeout_minutes) {
+                // Apply a new timeout from now, without charging past idle time against it.
+                previous_timeout_minutes = timeout_minutes;
+                inactive_time = get_absolute_time();
                 return;
             }
-            if (packet[3] < 120 || packet[3] > 140 ||
+            if (timeout_minutes == 0) return;
+
+            const auto now = get_absolute_time();
+            if (bt_touch_activity(packet + 3, size - 3) ||
+                packet[3] < 120 || packet[3] > 140 ||
                 packet[4] < 120 || packet[4] > 140 ||
                 packet[5] < 120 || packet[5] > 140 ||
                 packet[6] < 120 || packet[6] > 140 ||
                 packet[7] > 0 || packet[8] > 0 ||
                 packet[10] != 0x08 || packet[11] != 0x00 ||
                 packet[12] != 0x00) {
-                inactive_time = get_absolute_time();
-            } else if (absolute_time_diff_us(inactive_time, get_absolute_time()) >
-                       static_cast<int64_t>(get_config().inactive_time) * 60 * 1000 * 1000) {
+                inactive_time = now;
+            } else if (absolute_time_diff_us(inactive_time, now) >
+                       static_cast<int64_t>(timeout_minutes) * 60 * 1000 * 1000) {
                 printf("disconnect when inactive\n");
-                inactive_time = get_absolute_time();
+                inactive_time = now;
                 bt_disconnect();
             }
         } else if (channel == hid_control_cid) {
@@ -967,6 +1005,7 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, true);
                     }
                     inactive_time = get_absolute_time();
+                    idle_touch_anchor[0] = idle_touch_anchor[1] = {};
 
                     printf("Init DualSense\n");
 

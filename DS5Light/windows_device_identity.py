@@ -11,6 +11,9 @@ class Key(C.Structure):
         super().__init__();C.memmove(C.addressof(self),uuid.UUID(guid).bytes_le,16);self.pid=pid
 
 _cache={};_cache_lock=Lock()
+def invalidate_identity_cache():
+    with _cache_lock:_cache.clear()
+
 def hid_container(path):
     with _cache_lock:
         if path in _cache:return _cache[path]

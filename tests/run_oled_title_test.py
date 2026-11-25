@@ -7,9 +7,9 @@ import subprocess
 root = Path(__file__).resolve().parents[1]
 source = (root / 'src/oled_status.cpp').read_text(encoding='utf-8')
 version = re.search(r'set\(VERSION "([^"]+)"', (root / 'CMakeLists.txt').read_text()).group(1)
-out = root.parent / 'DS5Dongle-Studio-build/reports/oled-title-scroll'
+out = Path(os.environ.get('DS5_FIRMWARE_TOOLS', root.parent / 'DS5Dongle-Studio-build')) / 'reports/oled-title-scroll'
 out.mkdir(parents=True, exist_ok=True)
-compiler = root.parent / 'DS5Dongle-Studio-build/source/toolchain/mingw64/mingw64/bin/g++.exe'
+compiler = Path(os.environ.get('DS5_FIRMWARE_TOOLS', root.parent / 'DS5Dongle-Studio-build')) / 'source/toolchain/mingw64/mingw64/bin/g++.exe'
 
 def function(signature):
     start = source.index(signature)

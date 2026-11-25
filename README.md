@@ -25,14 +25,14 @@ Thank you to the original authors and contributors. This repository contains mod
 
 ## Download and quick start
 
-**Release v1.2.3 · DS5Light v1.2.3 · Studio firmware v54**
+**Release v1.2.4 · DS5Light v1.2.4 · Studio firmware v55**
 
-Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.2.3):
+Download the two attachments from [Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.2.4):
 
 | File | Purpose |
 | --- | --- |
-| `ds5-studio-light_v54.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
-| `DS5Light-win-x64-v1.2.3.zip` | Complete Windows x64 app package. Python is not required. |
+| `ds5-studio-light_v55.uf2` | Studio firmware for **Raspberry Pi Pico 2 W**. This attachment is not for RP2040 Pico W or Waveshare boards. |
+| `DS5Light-win-x64-v1.2.4.zip` | Complete Windows x64 app package. Python is not required. |
 
 1. Back up current dongle settings and slots. To install this firmware, enter BOOTSEL mode on the Pico 2 W and copy the UF2 to its USB drive. The app does not flash firmware automatically.
 2. Extract the entire app ZIP into a writable folder. Run `DS5Light.exe`, keeping `_internal` beside it. GitHub's automatic **Source code** archives are not the executable package.
@@ -90,7 +90,7 @@ The filter uses changes over time and energy levels across frequency bands. It d
 - Pico settings: Configure device-wide sleep, dock-disconnect and USB serial hiding independently of profiles. The serial choice is adopted once from saved settings and retained across profile changes; changing USB identity can require selecting the Windows default audio output again.
 - Dongle settings: Read and edit Studio settings for audio haptics, triggers, gyro, buttons, macros, and LEDs directly in the app.
 - Touchpad mouse: Adjust operation, speed, small-motion rejection, axis inversion, trackball inertia and friction in Studio settings.
-- Profiles and slots: Load profiles stored on the dongle, manage settings and slots, and back up or restore configurations. On Studio v54 or later, slot backup restoration preserves the active profile selection and restores the live settings that were in effect before the operation.
+- Profiles and slots: Load profiles stored on the dongle, manage settings and slots, and back up or restore configurations. On Studio v55 or later, slot backup restoration preserves the active profile selection and restores the live settings that were in effect before the operation.
 - **Custom triggers and macros.** Use shortcuts to add trigger effects, edit button actions, and temporarily apply an effect to test it on the controller before saving the profile.
 
 ### Convenience and diagnostics
@@ -172,14 +172,14 @@ DS5Light는 DS5Dongle-Studio 펌웨어의 오디오 햅틱 기능을 보완하�
 
 ## 다운로드와 시작
 
-**릴리즈 v1.2.3 · DS5Light v1.2.3 · Studio 펌웨어 v54**
+**릴리즈 v1.2.4 · DS5Light v1.2.4 · Studio 펌웨어 v55**
 
-[Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.2.3)에서 첨부 파일을 받으세요.
+[Releases](https://github.com/grayexoc/DS5Dongle-Studio-DS5Light/releases/tag/v1.2.4)에서 첨부 파일을 받으세요.
 
 | 파일 | 용도 |
 | --- | --- |
-| `ds5-studio-light_v54.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
-| `DS5Light-win-x64-v1.2.3.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
+| `ds5-studio-light_v55.uf2` | **Raspberry Pi Pico 2 W**용 Studio 펌웨어입니다. RP2040 Pico W나 Waveshare용 파일이 아닙니다. |
+| `DS5Light-win-x64-v1.2.4.zip` | 실행에 필요한 파일을 포함한 Windows x64 앱입니다. Python 설치는 필요하지 않습니다. |
 
 1. 현재 동글 설정과 슬롯을 백업합니다. 펌웨어 설치 시 Pico 2 W를 BOOTSEL 모드로 연결하고 USB 드라이브에 UF2를 복사하세요. 앱이 펌웨어를 자동으로 설치하지는 않습니다.
 2. 앱 ZIP 전체를 쓰기 가능한 폴더에 풀고 `DS5Light.exe`를 실행합니다. `_internal` 폴더를 함께 유지하세요. GitHub의 자동 **Source code** 압축 파일은 실행 배포본이 아닙니다.
@@ -233,7 +233,7 @@ DS5Light는 Windows 10/11 x64용이며 게임 전용 캡처에는 빌드 20348 �
 
 - 동글 설정 편집: 오디오 햅틱, 트리거, 자이로, 버튼·매크로, LED 등 Studio 설정을 앱에서 조회하고 수정합니다.
 - 터치패드 마우스: Studio 설정에서 사용 여부, 이동 속도, 미세 움직임 차단, 방향 반전, 트랙볼 관성과 감속을 조절합니다.
-- 프로필·슬롯 관리: 동글에 저장된 프로필을 불러오고, 설정과 슬롯을 관리하며 백업·복원 기능을 사용합니다. Studio v54 이상에서는 슬롯 백업을 복원해도 활성 프로필 선택이 유지되며 작업이 끝나면 복원 전 실시간 설정으로 돌아갑니다.
+- 프로필·슬롯 관리: 동글에 저장된 프로필을 불러오고, 설정과 슬롯을 관리하며 백업·복원 기능을 사용합니다. Studio v55 이상에서는 슬롯 백업을 복원해도 활성 프로필 선택이 유지되며 작업이 끝나면 복원 전 실시간 설정으로 돌아갑니다.
 - **커스텀 트리거·매크로.** 단축 옵션으로 트리거 효과를 추가하고 버튼 동작을 편집할 수 있습니다. 임시 적용으로 프로필에 저장하기 전에 컨트롤러에서 효과를 시험할 수 있습니다.
 
 ### 사용 편의 및 진단

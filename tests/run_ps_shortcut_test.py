@@ -108,7 +108,7 @@ int main(){
 }
 '''
 (out/'test.cpp').write_text(code,encoding='utf-8')
-bin_dir=root.parent/'DS5Dongle-Studio-build/source/toolchain/mingw64/mingw64/bin'
+bin_dir=Path(os.environ.get('DS5_FIRMWARE_TOOLS', root.parent / 'DS5Dongle-Studio-build')) / 'source/toolchain/mingw64/mingw64/bin'
 compiler=Path(os.environ.get('CXX',str(bin_dir/'g++.exe')))
 bin_dir=compiler.parent
 env=dict(os.environ);env['PATH']=str(bin_dir)+os.pathsep+env.get('PATH','')

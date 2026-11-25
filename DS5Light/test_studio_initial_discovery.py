@@ -6,15 +6,31 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import Mock,patch
 from preferences import PreferenceStore,default_preferences,validate
-from studio_startup import StartupDiscovery,initial_profile
+from studio_startup import NO_HID_CANDIDATE,StartupDiscovery,initial_profile
 from studio_slots import Slot
 from device_binding import DeviceBinding
 import test_studio_settings as fixture
 
 
 class InitialDiscoveryTests(unittest.TestCase):
+    def test_windows_hid_events_filter_and_coalesce_without_io(self):
+        import ctypes
+        from windows_hid_events import HidChanges
+        changes=HidChanges()
+        def emit(path,action):
+            data=bytes(24)+(path+'\0').encode('utf-16-le')
+            buffer=ctypes.create_string_buffer(data)
+            self.assertEqual(changes._notify(None,None,action,ctypes.addressof(buffer),len(data)),0)
+        emit('HID#VID_0000&PID_0001',0)
+        self.assertFalse(changes.take())
+        emit('HID#VID_054C&PID_0DF2',0)
+        emit('HID#VID_1209&PID_0001',1)
+        self.assertTrue(changes.take())
+        self.assertFalse(changes.take())
+
     def panel(self):
         p=StartupDiscovery();p.initial_connected=False;p.initial_deadline=None;p.closed=False;p.busy=False
+        p.startup_id=None
         p._cancel=threading.Event();p.binding=DeviceBinding();p.task=Mock();p.device_serials={b'old':'PICO-A'}
         p.app=NS(_closing=False,_close_requested=False,root=Mock(),studio_settings=NS(busy=False),
                  preference_store=NS(data=default_preferences()),schedule_preferences_save=Mock())
@@ -51,8 +67,9 @@ class InitialDiscoveryTests(unittest.TestCase):
         self.assertEqual(p.app.root.after.call_args.args[0],600)
         p.task.reset_mock();p.app.root.after.reset_mock()
         with patch('studio_startup.time.monotonic',return_value=110):
-            p.finish_initial_read(None);p.initial_read()
-        p.app.root.after.assert_not_called();p.task.assert_not_called()
+            p.initial_read();p.finish_initial_read(None)
+        self.assertEqual(p.app.root.after.call_args.args[0],30000);p.task.assert_called_once()
+        p.task.reset_mock()
         p.initial_connected=True
         with patch('studio_startup.time.monotonic',return_value=102):p.initial_read()
         p.task.assert_not_called()
@@ -74,11 +91,71 @@ class InitialDiscoveryTests(unittest.TestCase):
         client.profile_state.assert_called_once();client.slots.assert_not_called()
         device.close.assert_called_once();lock.release.assert_called_once()
 
-    def test_unknown_or_ambiguous_device_does_not_open_hid(self):
+    def test_multiple_verified_picos_do_not_auto_select(self):
         rows=[{'path':b'A','serial_number':'A'},{'path':b'B','serial_number':'B'}]
-        with patch('studio_startup.devices',return_value=rows),patch('hid.device') as device:
+        with patch('studio_startup.devices',return_value=rows),patch('hid.device'),patch('studio_settings_protocol.SettingsClient') as factory:
+            factory.return_value.profile_state.return_value={'auto_haptics_enable':0}
             self.assertIsNone(initial_profile(DeviceBinding(),lambda:False,10**15))
-        device.assert_not_called()
+        self.assertEqual(factory.call_count,2)
+
+    def test_direct_controller_does_not_block_a_verified_pico(self):
+        rows=[{'path':b'pad','serial_number':'pad'},{'path':b'pico','serial_number':'pico'}]
+        with patch('studio_startup.devices',return_value=rows),patch('hid.device'),patch('studio_settings_protocol.SettingsClient') as factory:
+            factory.return_value.profile_state.side_effect=[TimeoutError('not Studio'),{'auto_haptics_enable':0}]
+            self.assertEqual(initial_profile(DeviceBinding(),lambda:False,10**15)[0],rows[1])
+
+    def test_absent_pico_waits_for_notification_after_initial_budget(self):
+        p=self.panel();p.app.hid_events_available=True;p.initial_deadline=110
+        with patch('studio_startup.time.monotonic',return_value=111):
+            p.initial_read()
+            p.finish_initial_read(None)
+            p.task.assert_not_called()
+            p.app.root.after.assert_not_called()
+            p.wake_discovery()
+            self.assertTrue(p.initial_notification_pending)
+            self.assertEqual(p.app.root.after.call_args.args[0],150)
+
+    def test_notification_waits_for_settings_before_starting_discovery_window(self):
+        p=self.panel()
+        p.app.hid_events_available=True
+        p.app.studio_settings.busy=True
+        p.initial_deadline=110
+        with patch('studio_startup.time.monotonic',return_value=111):
+            p.wake_discovery()
+            p.initial_read()
+        with patch('studio_startup.time.monotonic',return_value=120):
+            p.initial_read()
+            p.task.assert_not_called()
+            self.assertEqual(p.app.root.after.call_args.args[0],200)
+            p.app.studio_settings.busy=False
+            p.initial_read()
+        p.task.assert_called_once()
+        self.assertFalse(p.initial_notification_pending)
+        self.assertEqual(p.initial_deadline,125)
+
+    def test_empty_initial_enumeration_goes_directly_to_notification_wait(self):
+        p=self.panel();p.app.hid_events_available=True;p.initial_deadline=110
+        with patch('studio_startup.devices',return_value=[]),patch('hid.device') as device:
+            self.assertIs(initial_profile(p.binding,lambda:False,10**15),NO_HID_CANDIDATE)
+            device.assert_not_called()
+        with patch('studio_startup.time.monotonic',return_value=101):
+            self.assertIsNone(p.finish_initial_read(NO_HID_CANDIDATE))
+        p.app.root.after.assert_not_called()
+
+    def test_notification_retries_when_first_enumeration_is_empty(self):
+        p=self.panel()
+        p.app.hid_events_available=True
+        with patch('studio_startup.time.monotonic',return_value=100):
+            p.wake_discovery()
+            p.initial_read()
+            p.finish_initial_read(NO_HID_CANDIDATE)
+            self.assertEqual(p.app.root.after.call_args.args[0],600)
+        p.app.root.after.reset_mock()
+        with patch('studio_startup.time.monotonic',return_value=105):
+            p.initial_read()
+            p.finish_initial_read(NO_HID_CANDIDATE)
+        p.app.root.after.assert_not_called()
+        self.assertEqual(p.task.call_count,1)
 
     def test_failed_query_releases_handle_and_shared_lock(self):
         row={'path':b'A','serial_number':'A'};device=Mock();client=Mock()
@@ -111,14 +188,15 @@ class SharedDiscoveryUITests(unittest.TestCase):
         self.assertTrue(panel.initial_connected)
         self.assertEqual(panel.binding.snapshot().hid_path,b'A')
 
-    def test_settings_slot_entry_reuses_same_catalog_without_full_slot_query(self):
+    def test_settings_slot_entry_shows_cache_while_refreshing_from_pico(self):
         ui=self.editor();row={'path':b'A','serial_number':'PICO-A'}
         self.ui.studio.remember_slots(row,[Slot(0,'saved','Audio'),Slot(2,'empty')])
         ui.category=5;ui.path=b'A';ui.device_rows=[row];ui.slots=[];ui.slots_cache_path=None
         ui.entry_attempts={'fields'}
         with patch.object(ui,'task') as query,patch.object(ui,'render_fields'):
             ui.entry_step(ui.entry_generation)
-        query.assert_not_called()
+        self.assertEqual(query.call_args.args[0],'slots')
+        self.assertIsNone(ui.slots_cache_path)
         self.assertEqual(ui.slots,[Slot(0,'saved','Audio'),Slot(2,'empty')])
 
 

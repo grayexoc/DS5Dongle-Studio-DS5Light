@@ -1079,6 +1079,7 @@ void audio_mic_policy_changed(){}
 void set_volume(uint8_t,uint8_t){}
 void set_gain(uint8_t){}
 uint32_t calc_config_crc(const Config &c){return c.body.speaker_volume;}
+uint32_t slot_catalog_revision(){return 42;}
 Config_body& get_config(){return config.body;}
 bool active_profile_get(uint8_t &slot,bool &edited,uint8_t *name){slot=3;edited=true;memset(name,0,SLOT_NAME_LEN);return true;}
 bool macro_uses_mute_button(){return false;}
@@ -1092,6 +1093,7 @@ int main(){
  config.body.speaker_volume=55;
  query(nullptr,0);assert(!memcmp(pico_portal_reply.data()+29,"REV1",4)&&word(41)==0);
  query(request,sizeof(request));assert(word(33)==0&&word(37)==55);
+ assert(!memcmp(pico_portal_reply.data()+46,"SLT1",4)&&word(50)==42);
  assert(!memcmp(pico_portal_reply.data()+41,request+2,4));
  assert(pico_portal_reply[3]==3&&pico_portal_reply[4]==1&&!memcmp(pico_portal_reply.data()+22,"SLP2",4));
  Config_body next=config.body;next.speaker_volume=70;
@@ -1179,12 +1181,16 @@ run('config-save-reply',r"""
 std::vector<uint8_t> pico_settings_reply;
 bool save_ok=true;int saves=0;
 bool config_save(){++saves;const auto &p=pico_settings_reply;assert(p.size()==63&&p[0]==0x66&&p[1]==2&&p[2]==0xfe&&p[3]==1);return save_ok;}
+bool profile_save_guard_matches(const uint8_t *p){return p[0]==4;}
 void command(const uint8_t *buffer,uint16_t bufsize){switch(2){
 """+s[a:b]+r"""
 }}
 int main(){uint8_t tag[]{0x12,0x34,0x56,0x78};
  for(bool ok:{true,false}){save_ok=ok;command(tag,4);const auto &r=pico_settings_reply;assert(r[2]==(ok?0:2)&&r[3]==1&&!memcmp(r.data()+4,tag,4));}
  command(nullptr,0);for(int i=4;i<8;i++)assert(pico_settings_reply[i]==0);assert(saves==3);
+ uint8_t guarded[15]{0,0,0,0,'S','1',5};
+ command(guarded,15);assert(pico_settings_reply[2]==3&&saves==3);
+ guarded[6]=4;command(guarded,15);assert(pico_settings_reply[2]==2&&saves==4);
  puts("PASS: pending before flash, success/failure, request-tag echo and legacy empty payload");}
 """)
 
@@ -1203,6 +1209,11 @@ constexpr unsigned SLOT_NAME_LEN=16, SLOT_COUNT=32;
 std::vector<uint8_t> pico_settings_reply;
 bool ok=true, policy=false;
 int writes=0;
+int dock_holds=0;
+void bt_hold_dock_disconnect(){++dock_holds;}
+bool active_profile_get(uint8_t &idx,bool&,uint8_t*){idx=4;return true;}
+uint32_t config_revision(){return 11;}
+uint32_t config_checksum(){return 12;}
 bool selected_slot = false;
 bool slot_save(uint8_t idx,const uint8_t *name,uint8_t len,bool select_slot){
     ++writes;assert(idx==4&&len==16&&!memcmp(name,"0123456789ABCDEF",16));
@@ -1218,7 +1229,7 @@ bool device_auto_dormant(){return policy;}
 bool device_disconnect_on_dock(){return policy;}
 bool device_usb_serial_hidden(){return policy;}
 void manual_power_note_activity(unsigned=0){}
-"""+extract(s,'static void echo_settings_write_tag(')+r"""
+"""+extract(s,'static void echo_settings_write_tag(')+extract(s,'static bool profile_save_guard_matches(')+r"""
 void command(uint8_t cmd,const uint8_t *buffer,uint16_t bufsize){switch(cmd){
 """+'\n'.join(cases)+r"""
 }}
@@ -1226,7 +1237,7 @@ int main(){
     uint8_t p[61]{}, tag[]{0x89,0x67,0x45,0x23};
     memcpy(p+57,tag,4);
     command(0x22,p,61);
-    assert(pico_settings_reply[2]==0&&pico_settings_reply[3]==1&&pico_settings_reply[4]==1&&writes==0);
+    assert(pico_settings_reply[2]==0&&pico_settings_reply[3]==1&&pico_settings_reply[4]==7&&writes==0);
     assert(!memcmp(pico_settings_reply.data()+59,tag,4));
     p[0]=4;memcpy(p+1,"0123456789ABCDEF",16);
     command(8,p,61);assert(pico_settings_reply[2]==0&&pico_settings_reply[3]==4&&selected_slot);
@@ -1234,6 +1245,10 @@ int main(){
     p[17]=1;
     command(8,p,61);assert(pico_settings_reply[2]==0&&!selected_slot);
     command(8,p,17);assert(pico_settings_reply[2]==0&&pico_settings_reply[59]==0&&selected_slot);
+    p[18]='S';p[19]='1';p[20]=4;p[21]=11;p[25]=12;
+    command(8,p,61);assert(pico_settings_reply[2]==0&&writes==4);
+    p[21]^=1;command(8,p,61);assert(pico_settings_reply[2]==3&&writes==4);
+    p[21]^=1;p[20]=9;command(8,p,61);assert(pico_settings_reply[2]==3&&writes==4);
     ok=false;command(0x19,p,61);assert(pico_settings_reply[2]==1);
     assert(!memcmp(pico_settings_reply.data()+59,tag,4));
     ok=true;command(0x19,nullptr,0);assert(pico_settings_reply[2]==0&&pico_settings_reply[59]==0);
@@ -1247,7 +1262,42 @@ int main(){
         p[0]=0;command(id,p,61);
         assert(pico_settings_reply[2]==0&&pico_settings_reply[4]==1&&pico_settings_reply[59]==0);
     }
-    assert(writes==11);
+    assert(writes==12&&dock_holds==1);
     puts("PASS: actual dispatch cases, tagged outcomes, legacy slot/macro, policy reads and failure");
+}
+""")
+
+start=dispatcher.index('        case 0x27: {')
+page_case=dispatcher[start:dispatcher.index('\n        }',start)+10]
+run('slot-catalog-page',r"""
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <vector>
+constexpr uint8_t SLOT_COUNT=32, SLOT_NAME_LEN=16;
+std::vector<uint8_t> pico_settings_reply;
+uint32_t slot_catalog_revision(){return 1234;}
+bool slot_info(uint8_t index,uint8_t *name,uint8_t &valid,uint8_t &version) {
+    assert(index<32);valid=index%2;version=22;
+    if(valid) memset(name,'A'+index%26,SLOT_NAME_LEN);
+    return true;
+}
+void command(uint8_t cmd,const uint8_t *buffer,uint16_t bufsize){switch(cmd){
+"""+page_case+r"""
+}}
+int main(){
+    uint8_t p[4]{0,18,52,86};
+    command(0x27,p,4);
+    auto &r=pico_settings_reply;
+    assert(r.size()==63&&r[2]==0&&r[3]==0&&r[4]==3&&r[5]==0xd2&&r[6]==4);
+    assert(r[9]==0&&r[26]==1&&r[27]=='B'&&r[42]=='B'&&r[43]==0);
+    assert(!memcmp(r.data()+60,p+1,3));
+    p[0]=30;command(0x27,p,4);
+    assert(r[2]==0&&r[3]==30&&r[4]==2&&r[26]==1&&r[27]=='F');
+    p[0]=32;command(0x27,p,4);assert(r[2]==1);
+    p[0]=0;command(0x27,p,3);assert(r[2]==1);
+    puts("PASS: catalog page rows, revision, request tag, final page and invalid requests");
 }
 """)

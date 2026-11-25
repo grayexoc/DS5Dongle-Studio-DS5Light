@@ -24,7 +24,7 @@ def ui_text(ko,en):return en if LANGUAGE=='en' else ko
 from studio_document import SettingsDocument
 from studio_save_flow import SaveFlow
 from studio_recommended import RecommendedPresets,equal_value
-from studio_settings_protocol import SettingsClient,needs_reconnect,validate_changes
+from studio_settings_protocol import ProfileSaveConflict,SettingsClient,checked_save_profile,needs_reconnect,validate_changes
 from studio_slots import devices,_DEVICE_LOCK
 from studio_power import blocked as power_blocked
 from controller_glyphs import ControllerChoice,GlyphStrip
@@ -800,7 +800,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             if self.built:self.progress.configure(text=_ui_tr('프로필 조회가 끝난 후 다시 시도하세요.'))
             return
         self.stop_live()
-        if kind in ('read','slots','restore','slot_save','recommended','bootloader'):
+        if kind in ('read','slots','restore','slot_save','slot_delete','recommended','bootloader'):
             self.invalidate_slot_cache()
         if kind=='slots':self.entry_attempts.add('slots')
         self.progress.clear()
@@ -909,6 +909,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         reconnect_path=self.path
         reconnect_row=next((d for d in self.device_rows if d["path"]==self.path),None)
         reconnect_serial=(reconnect_row or {}).get("serial_number") or self.app.studio.device_serials.get(self.path)
+        from studio_reconnect import capture_reconnect_binding
+        recovery_binding=capture_reconnect_binding(self.device_rows,reconnect_path)
         usb_mode=changes.get('usb_gamepad_mode')
         usb_mode_binding=None
         if usb_mode is not None:
@@ -919,6 +921,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 usb_mode_binding=DeviceBinding()
                 usb_mode_binding.bind_hid(reconnect_row)
         reconnect=needs_reconnect(baseline,dict(baseline,**changes),self.doc.macro_baseline)
+        stages=[]
         def op(client):
             if persist:client.require_write_tags()
             before=client.profile(include_revision=True) if profile_stamp is not None else None
@@ -951,17 +954,24 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                 verified=client.read_effects()
                 if any(verified[str(t)][i]!=s for (t,i),s in effects.items()):raise RuntimeError(_ui_tr('효과 적용값 불일치 · 새로 고침을 누르세요.'))
             # Read metadata before a flash/reset can remove the USB handle.
+            if changes or effects:stages.append(_ui_tr('현재 설정 적용 확인'))
             profile=client.profile(include_revision=True)
             profile_saved=False
+            guarded=None
             if persist:
                 # Recheck the source identity after applying fields. Do not
                 # silently save an OLED-selected different profile to our slot.
                 if profile_stamp is not None and any(profile.get(k)!=profile_stamp.get(k) for k in ('index','name')):
                     raise RuntimeError(_ui_tr('저장 전 프로필이 바뀌었습니다. 새로 고침으로 확인하세요.'))
                 self.results.put(('progress',_ui_tr('{0} · {1}에 저장 중…').format(f'{target[0] + 1:02d}',f"{target[1] or '이름 없음'}"),None))
-                client.save_slot(*target)
+                guarded=checked_save_profile(client,profile,dict(current,**checked))
+                stages.append(_ui_tr('슬롯 저장 응답 미확인'))
+                if guarded is None:client.save_slot(*target)
+                else:client.save_slot(*target,expected_profile=guarded)
+                stages[-1]=_ui_tr('프로필 슬롯 저장 확인')
                 profile=client.profile(include_revision=True)
-                if profile.get('index')!=target[0] or profile.get('name')!=target[1] or profile.get('edited'):
+                if (profile.get('index')!=target[0] or profile.get('name')!=target[1] or profile.get('edited') or
+                        guarded is not None and profile.get('config_token')!=guarded['config_token']):
                     raise RuntimeError(_ui_tr('프로필 저장 후 상태가 다릅니다. 새로 고침으로 확인하세요.'))
                 profile_saved=True
             if refresh_macros or persist or reconnect_needed:self.results.put(('progress',dict(reconnecting=True),None))
@@ -969,10 +979,13 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             try:
                 if persist:
                     self.results.put(('progress',_ui_tr('Pico 저장 확인 중 · 다른 앱의 Pico 오디오 출력을 중지하세요.'),None))
-                    client.save_flash()
+                    stages.append(_ui_tr('Pico 시작 설정 저장 응답 미확인'))
+                    if guarded is None:client.save_flash()
+                    else:client.save_flash(expected_profile=dict(guarded,index=target[0]))
+                    stages[-1]=_ui_tr('Pico 시작 설정 저장 확인')
             except (OSError,TimeoutError) as exc:
                 if self.cancel.is_set():raise
-                save_uncertain=True;save_error=str(exc)
+                save_uncertain=True;save_error=' · '.join((*stages,str(exc)))
             reset_uncertain=False
             if reconnect_needed and not save_uncertain:
                 if edge_serial_changed:binding.expect_edge_serial_reconnect(hidden=bool(changes['disable_usb_sn']))
@@ -987,7 +1000,13 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                         save_uncertain=save_uncertain,save_error=save_error,reset_uncertain=reset_uncertain,volume_warning=volume_warning,
                         edge_serial_reconnect=edge_serial_changed and reconnect_needed and not save_uncertain)
         def operation():
-            result=self.with_client(op)
+            try:
+                result=self.with_client(op)
+            except (OSError,RuntimeError,TimeoutError) as exc:
+                if stages and isinstance(exc,ProfileSaveConflict):
+                    stages[-1]=_ui_tr('설정 충돌로 해당 저장을 실행하지 않았습니다.')
+                if stages:raise RuntimeError(' · '.join((*stages,str(exc)))) from exc
+                raise
             if refresh_macros or persist or reconnect or result.get('save_uncertain'):
                 from studio_reconnect import wait_for_macros
                 try:
@@ -998,8 +1017,10 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                         result['reloaded']=wait_for_macros(reconnect_path,reconnect_serial,self.cancel,
                             usb_mode_binding=usb_mode_binding,usb_mode=usb_mode)
                     else:
-                        result['reloaded']=wait_for_macros(reconnect_path,reconnect_serial,self.cancel)
+                        result['reloaded']=wait_for_macros(reconnect_path,reconnect_serial,self.cancel,
+                                                          device_binding=recovery_binding)
                 except Exception as exc:
+                    result['persist_confirmed']=result['saved']
                     result['saved']=False
                     result['reload_error']=str(exc)
                     if result['edge_serial_reconnect']:
@@ -1013,17 +1034,17 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                     fresh_profile=fresh.get('profile') or {}
                     if any(key not in fresh_profile or fresh_profile[key]!=result['profile'][key]
                            for key in ('index','name','edited')):
-                        raise RuntimeError(ui_text(
+                        raise RuntimeError(' · '.join((*stages,ui_text(
                             '재연결 후 프로필이 달라 적용 또는 저장 결과를 확인할 수 없습니다. 새로 고침하세요.',
-                            'The profile changed after reconnect. Refresh to verify whether the settings were applied or saved.'))
+                            'The profile changed after reconnect. Refresh to verify whether the settings were applied or saved.'))))
                     for key,expected in changes.items():
                         actual=fresh['values'].get(key)
                         if not equal_value(actual,expected):
                             observed=actual if actual is not None else ui_text('조회 불가','unavailable')
-                            raise RuntimeError(ui_text(
+                            raise RuntimeError(' · '.join((*stages,ui_text(
                                 '재연결 후 설정값이 일치하지 않습니다. 새로 고침하세요.',
                                 'A setting differs after reconnect. Refresh to verify it.')
-                                +f' {key} ({expected} → {observed})')
+                                +f' {key} ({expected} → {observed})')))
             return result
         if reconnect or refresh_macros or persist:self.app.studio.binding.expect_reconnect()
         self.stopped_task('apply',operation)
@@ -1041,7 +1062,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             else:self.progress.configure(text=result,kind='progress')
             self.poll_id=self.parent.after(60,self.poll);return
         self.busy=False;self.reconnect_wait=False
-        if kind in ('slot_save','restore','recommended') or error and kind=='apply':
+        if kind in ('slot_save','slot_delete','restore','recommended') or error and kind=='apply':
             self.app.studio.forget_slot_history(self.path)
         if kind in READ_JOBS:
             edge_row_present='disable_usb_sn' in self.field_views
@@ -1155,7 +1176,12 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                     self.device_choice.configure(values=device_labels(self.device_rows,None,None))
                     self.device_choice.set('')
                     self.progress.configure(text=_ui_tr('Edge 재연결 후 Pico를 확인하지 못했습니다. 장치 목록에서 같은 Pico를 선택하세요.'),kind='warning')
-                else:self.progress.configure(text=_ui_tr('재연결 조회 미완료 · 새로 고침을 눌러 주세요.'))
+                else:
+                    status=[]
+                    if result.get('profile_saved'):status.append(_ui_tr('프로필 슬롯 저장 확인'))
+                    if result.get('persist_confirmed'):status.append(_ui_tr('Pico 시작 설정 저장 확인'))
+                    status.append(_ui_tr('재연결 조회 미완료 · 새로 고침을 눌러 주세요.'))
+                    self.progress.configure(text=' · '.join(status),kind='warning')
             elif result['reconnect']:
                 self.loaded=False;self.path=None;self.doc.effects={};self.doc.effect_baseline={};self.doc.macros={};self.doc.macro_baseline={};self.app.refresh_devices()
             if self.path and result.get('profile') and not result.get('reloaded') and not result.get('reload_error'):
@@ -1207,17 +1233,28 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                                     ui_text(f'공통 반동 신호 {signal}/255',f'Shared recoil signal {signal}/255'),kind='action')
         elif kind=='chime_preview':self.progress.configure(text=_ui_tr('전환 신호음 요청 완료 · 프로필은 바뀌지 않았습니다.'),kind='info')
         elif kind=='slots' and not self.external_stale:
-            self.slots=result;self.slots_cache_path=self.path
+            self.slots=result
+            self.slots_cache_path=self.path if any(slot.state!='unavailable' for slot in result) else None
             row=next((r for r in self.device_rows if r['path']==self.path),None)
             if row and sum(r.get('serial_number')==row.get('serial_number') for r in self.device_rows)==1:
                 self.app.studio.remember_slots(row,result)
-            self.progress.configure(text=_ui_tr('슬롯 목록 새로 고침 완료'),kind='info')
+            if self.slots_cache_path and all(slot.state!='unavailable' for slot in result):
+                self.progress.configure(text=_ui_tr('슬롯 목록 새로 고침 완료'),kind='info')
+            else:
+                self.entry_attempts.add('slots')
+                self.progress.configure(text=ui_text('일부 슬롯을 확인하지 못했습니다. 새로 고침을 눌러 주세요.',
+                                                     'Some slots could not be verified. Refresh to try again.'),kind='warning')
         elif kind=='slot_save':
             self.app.studio.forget_slot_history(self.path)
             self.profile_save_needed=False;self.progress.configure(text=_ui_tr('프로필 슬롯 저장 응답 확인'));self.app.studio.last_read=-1e9;self.app.studio.catalog_invalid=True
             if isinstance(result,dict):
                 from studio_slots import Slot
                 self.slots=[Slot(s.index,'saved',result['name']) if s.index==result['index'] else s for s in self.slots]
+        elif kind=='slot_delete':
+            self.slots=result
+            self.slots_cache_path=self.path
+            self.entry_attempts.add('slots')
+            self.progress.configure(text=ui_text('프로필 슬롯 삭제 완료', 'Profile slot deleted'),kind='info')
         elif kind=='bootloader':self.progress.configure(text=_ui_tr('Pico UF2 설치 모드 요청 완료'));self.loaded=False;self.write_ready=False;self.path=None;self.pico_recognized=False
         elif kind=='restore':
             self.app.studio.forget_slot_history(self.path)
@@ -1664,6 +1701,16 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         for i,(title,action) in enumerate([(_ui_tr('슬롯 목록 새로 고침'),lambda:self.task('slots',lambda:self.with_client(lambda c:c.slots()))),(_ui_tr('전체 슬롯 내보내기'),self.backup),(_ui_tr('전체 슬롯 가져오기'),self.restore_backup)]):
             ttk.Button(tools,text=title,command=action).grid(row=0,column=i,sticky='ew',padx=(0,6));tools.columnconfigure(i,weight=1)
         tk.Label(box,text=_ui_tr('백업 범위: 현재 편집 가능한 설정·일반 매크로'),bg=CARD,fg=MUTED,wraplength=440,justify='left').grid(row=2,column=0,columnspan=2,sticky='w',pady=10)
+        if not hasattr(self,'slot_delete_icons'):
+            icons=[]
+            for color in (FG,MUTED):
+                icon=tk.PhotoImage(master=self.parent,width=10,height=10)
+                for y in range(10):
+                    for x in range(10):
+                        if abs(x-y)<=1 or abs(x+y-9)<=1:
+                            icon.put(color,(x,y))
+                icons.append(icon)
+            self.slot_delete_icons=tuple(icons)
         visible=(self.slots if self.slots_expanded else self.slots[:8]) or [None]*8
         for n,slot in enumerate(visible):
             index=n if slot is None else slot.index
@@ -1674,9 +1721,17 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             slot_label.grid(row=0,column=0,sticky='ew')
             slot_label.bind('<Configure>',self.fit_slot_label)
             ttk.Button(row,text=_ui_tr('현재 설정 저장'),command=lambda i=index:self.save_slot(i),width=0,padding=(12,6),
-                       state='normal' if slot else 'disabled').grid(row=0,column=2,padx=4)
+                       state='normal' if slot and self.slots_cache_path==self.path and slot.state!='unavailable' else 'disabled').grid(row=0,column=2,padx=4)
             ttk.Button(row,text=_ui_tr('불러오기'),command=lambda i=index:self.activate_slot(i),width=9,
-                       state='normal' if slot and slot.state=='saved' else 'disabled').grid(row=0,column=3)
+                       state='normal' if slot and self.slots_cache_path==self.path and slot.state=='saved' else 'disabled').grid(row=0,column=3)
+            delete_box=tk.Frame(row,bg=CARD,width=24,height=24)
+            delete_box.grid(row=0,column=4,padx=(4,0))
+            delete_box.pack_propagate(False)
+            enabled=self.can_delete_slot(slot)
+            ttk.Button(delete_box,text=ui_text('슬롯 삭제','Delete slot'),compound='image',
+                       image=self.slot_delete_icons[0 if enabled else 1],padding=0,
+                       command=lambda item=slot:self.delete_slot(item),
+                       state='normal' if enabled else 'disabled').pack(fill='both',expand=True)
             if slot and active:
                 ttk.Button(row,text=_ui_tr('이름 변경'),command=self.rename_current_profile,width=9).grid(row=0,column=1,padx=(4,0))
         if len(self.slots)>8:
@@ -1698,6 +1753,32 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             overlay.place_forget()
 
     def toggle_slots(self):self.slots_expanded=not self.slots_expanded;self.render_fields()
+
+    def can_delete_slot(self, slot):
+        return (slot is not None and slot.state == 'saved' and slot.catalog_revision is not None
+                and self.path is not None
+                and self.slots_cache_path == self.path and self.write_ready
+                and not (self.closed or self.busy or self.app.studio.busy or power_blocked(self.app)))
+
+    def delete_slot(self, slot):
+        if not self.can_delete_slot(slot):return
+        path = self.path
+        name = slot.name or ui_text('이름 없음', 'Unnamed')
+        message = ui_text('{0:02d}번 슬롯의 “{1}” 프로필을 삭제할까요?\n저장된 이름과 설정이 지워집니다.',
+                          'Delete “{1}” from slot {0:02d}?\nThe saved name and settings will be cleared.')
+        if not messagebox.askyesno(ui_text('프로필 슬롯 삭제', 'Delete profile slot'),
+                                   message.format(slot.index + 1, name), parent=self.parent):
+            return
+        if (self.path != path or not self.can_delete_slot(slot)
+                or not any(s == slot and s.catalog_revision == slot.catalog_revision for s in self.slots)):
+            return
+
+        def delete_and_refresh(client):
+            client.delete_slot(slot)
+            return client.slots()
+
+        self.task('slot_delete',lambda:self.with_client(delete_and_refresh))
+
     def save_slot(self,index):
         if self.busy or not self.write_ready:return
         from studio_dialogs import profile_name
@@ -1725,6 +1806,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             panel=self.app.studio
             panel.slot_paths=[self.path for _ in self.slots]
             panel.slots=list(self.slots)
+            if self.slots_cache_path==self.path:panel.catalog_invalid=False
             panel.choice.configure(values=[s.label() for s in self.slots])
             panel.choice.current(position)
             panel.activate(confirmed=True)
@@ -1746,14 +1828,27 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.read_json_file(name,self.confirm_restore,validate_backup)
     def confirm_restore(self,result):
         if not self.write_ready:return
-        from studio_backup import restore_all
+        from studio_backup import RestoreInterrupted,restore_all
+        from studio_reconnect import capture_reconnect_binding,wait_for_macros
         rows,macros=result;path=self.path
         if not messagebox.askyesno(_ui_tr('Pico 슬롯 덮어쓰기'),_ui_tr('{0}개 유효 슬롯과 포함된 일반 매크로 정의를 덮어씁니다.\n\n지원 필드만 복원합니다. 제외된 트리거 등은 현재 연결의 값으로 슬롯에 저장됩니다. 전체 설정을 보존하려면 원본 Studio 백업을 사용하세요.\n\n빈 슬롯은 삭제하지 않습니다. 계속할까요?').format(f'{len(rows)}'),parent=self.parent):return
         recovery_path=filedialog.asksaveasfilename(parent=self.parent,title=_ui_tr('복원 전 백업 저장'),
             defaultextension='.json',initialfile='ds5dongle-before-restore.json',filetypes=[(_ui_tr('슬롯 백업 JSON'),'*.json')])
         if not recovery_path or self.closed or self.app._close_requested or self.busy or not self.write_ready or self.path!=path:return
-        self.stopped_task('restore',lambda:self.with_client(lambda c:restore_all(c,rows,macros,
-            lambda t:self.results.put(('progress',t,None)),recovery_path=recovery_path)))
+        binding=capture_reconnect_binding(self.device_rows,path)
+        serial=(binding.snapshot().serial if binding is not None else self.app.studio.device_serials.get(path))
+        def operation():
+            try:
+                return self.with_client(lambda c:restore_all(c,rows,macros,
+                    lambda t:self.results.put(('progress',t,None)),recovery_path=recovery_path))
+            except RestoreInterrupted as exc:
+                if self.cancel.is_set():raise
+                try:
+                    checked=wait_for_macros(path,serial,self.cancel,timeout=10,device_binding=binding,
+                                            recovery_read=exc.read_recovery)
+                except (OSError,RuntimeError):raise exc from None
+                raise RuntimeError(str(exc)+'\n'+checked['recovery']) from exc
+        self.stopped_task('restore',operation)
     def close(self):
         self.close_entry_queries();self.stop_live();self.closed=True;self.cancel.set()
         if self.return_list_job:

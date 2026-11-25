@@ -1,7 +1,7 @@
 """Studio slot protocol ported from DS5Light-OG; see vendor/LICENSE-Studio.txt.
 Slot enumeration, profile activation and read-only battery status are exposed.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 import secrets
 import time
 import threading
@@ -20,6 +20,7 @@ class Slot:
     index: int
     state: str
     name: str = ''
+    catalog_revision: int | None = field(default=None, compare=False)
 
     def label(self):
         value = self.name if self.state == 'saved' else 'Empty' if self.state == 'empty' else 'Unavailable'
@@ -29,6 +30,7 @@ class StudioClient:
 
     def __init__(self, device, sleep=time.sleep):
         self.device, self.sleep = (device, sleep)
+        self.bulk_slot_catalog = False
 
     def check_cancel(self):
         """SettingsClient supplies the cancellation/deadline policy."""
@@ -101,6 +103,8 @@ class StudioClient:
             profile.update(auto_mute_mix=bool(raw[46] & 1), auto_mute_replace=bool(raw[46] & 2))
         if include_revision and len(raw)>=46 and raw[30:34]==b'REV1':
             profile['config_token']=raw[34:42].hex()
+        if include_revision and len(raw)>=55 and raw[47:51]==b'SLT1':
+            profile['catalog_revision']=int.from_bytes(raw[51:55],'little')
         return profile
 
     def profile_state(self, header=None):
@@ -173,6 +177,7 @@ class StudioClient:
 
     def info(self, index):
         r = self.request(10, index, 10)
+        self.bulk_slot_catalog = len(r)>=26 and r[22:26]==b'SLT1'
         if r[2] != 0:
             return Slot(index, 'unavailable')
         if len(r) < 22 or r[4] not in (0, 1):
@@ -182,12 +187,42 @@ class StudioClient:
         return Slot(index, 'saved', r[6:22].decode('utf-8', errors='replace').rstrip('\x00').strip())
 
     def slots(self):
-        slots=[]
-        for i in range(32):
-            slot=self.info(i)
-            if slot.state=='unavailable':break
-            slots.append(slot)
-        return slots
+        first=self.info(0)
+        if not self.bulk_slot_catalog:
+            return [first]+[self.info(i) for i in range(1,32)]
+        for _ in range(2):
+            rows=[];revision=None
+            for start in range(0,32,3):
+                page_token,page=self.catalog_page(start)
+                if revision is not None and page_token!=revision:break
+                revision=page_token
+                rows.extend(page)
+            if len(rows)==32:return [replace(slot,catalog_revision=revision) for slot in rows]
+        raise RuntimeError('Studio slot catalog changed during refresh')
+
+    def catalog_page(self, start):
+        tag=secrets.token_bytes(3)
+        packet=bytes((128,102,0x27,start))+tag+bytes(57)
+        self.check_cancel()
+        if self.device.send_feature_report(packet)!=64:
+            raise OSError('Studio catalog request failed')
+        for attempt in range(10):
+            self.check_cancel()
+            if attempt:self.sleep(.02)
+            try:raw=bytes(self.device.get_feature_report(132,64))
+            except OSError:continue
+            if len(raw)!=64 or raw[:3]!=bytes((132,102,0x27)) or raw[4]!=start or raw[61:64]!=tag:
+                continue
+            count=min(3,32-start)
+            if raw[3]!=0 or raw[5]!=count:raise RuntimeError('Studio catalog page unavailable')
+            slots=[]
+            for i in range(count):
+                offset=10+17*i
+                if raw[offset] not in (0,1):raise RuntimeError('Invalid Studio catalog page')
+                name=raw[offset+1:offset+17].decode('utf-8',errors='replace').rstrip('\0').strip()
+                slots.append(Slot(start+i,'saved' if raw[offset] else 'empty',name if raw[offset] else ''))
+            return int.from_bytes(raw[6:10],'little'),slots
+        raise TimeoutError('Studio catalog reply timeout')
 
     def activate(self, index):
         slot = self.info(index)

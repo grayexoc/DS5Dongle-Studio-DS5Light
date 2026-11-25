@@ -1,9 +1,7 @@
 """Windows per-process loopback helper transport. Fail closed, never full-system fallback."""
 from thread_start import start_thread
 from studio_i18n import text as _ui_tr
-import csv
 import ctypes
-import io
 import math
 import os
 import struct
@@ -23,16 +21,43 @@ CAPTURE_RATE=48000
 CAPTURE_READ_FRAMES=480
 MAX_TRANSPORT_AGE=.060
 
+class ProcessEntry(ctypes.Structure):
+    _fields_ = [
+        ('size', wintypes.DWORD), ('usage', wintypes.DWORD), ('pid', wintypes.DWORD),
+        ('heap_id', ctypes.c_size_t), ('module_id', wintypes.DWORD), ('threads', wintypes.DWORD),
+        ('parent_pid', wintypes.DWORD), ('priority', wintypes.LONG), ('flags', wintypes.DWORD),
+        ('exe', wintypes.WCHAR * 260),
+    ]
+
+
 def processes():
-    result=subprocess.run(['tasklist.exe','/FO','CSV','/NH'],capture_output=True,timeout=8,creationflags=0x08000000)
-    if result.returncode: raise RuntimeError(_ui_tr('프로그램 목록 조회 실패'))
-    import locale
-    rows=csv.reader(io.StringIO(result.stdout.decode(locale.getpreferredencoding(False),errors='replace')))
-    out=[]
-    for row in rows:
-        if len(row)>1 and row[1].isdigit() and not is_excluded_process(row[0]) and int(row[1])!=os.getpid():
-            out.append((row[0],int(row[1])))
-    return sorted(out,key=lambda x:(x[0].lower(),x[1]))
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    first, advance = kernel.Process32FirstW, kernel.Process32NextW
+    for read in (first, advance):
+        read.argtypes = [wintypes.HANDLE, ctypes.POINTER(ProcessEntry)]
+        read.restype = wintypes.BOOL
+    snapshot = kernel.CreateToolhelp32Snapshot(0x02, 0)  # TH32CS_SNAPPROCESS
+    if snapshot == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    entry = ProcessEntry()
+    entry.size = ctypes.sizeof(entry)
+    current_pid = os.getpid()
+    rows = []
+    try:
+        found = first(snapshot, ctypes.byref(entry))
+        while found:
+            if entry.pid and entry.pid != current_pid and not is_excluded_process(entry.exe):
+                rows.append((entry.exe, entry.pid))
+            found = advance(snapshot, ctypes.byref(entry))
+        error = ctypes.get_last_error()
+        if error != 18:  # ERROR_NO_MORE_FILES
+            raise ctypes.WinError(error)
+    finally:
+        kernel.CloseHandle(snapshot)
+    return sorted(rows, key=lambda row: (row[0].lower(), row[1]))
 
 
 class ProcessSampler:

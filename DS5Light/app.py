@@ -1250,6 +1250,11 @@ class App:
         if self.device_error: self.status.set(_ui_tr('장치 목록 조회 실패: ')+tr(self.device_error))
 
         root.after(150,self._initial_process_refresh); root.after(1000,self.tick)
+        from windows_hid_events import HidChanges
+        self.hid_changes=HidChanges()
+        self.hid_events_available=self.profile_watch_enabled and self.hid_changes.start()
+        self.profile_watch.event_discovery=self.hid_events_available
+        self._last_hid_tick=time.monotonic()
         if self.profile_watch_enabled:root.after(200,self._profile_tick)
 
         if '--smoke-test' not in sys.argv:self.studio.schedule_initial_read()
@@ -1459,6 +1464,9 @@ class App:
         (self.game_page,self.device_page,self.studio_page)[index].tkraise()
 
         if index==2:self.studio_settings.open()
+        elif (index==0 and hasattr(self,'studio') and self.studio.catalog_invalid
+              and self.studio.pico_available and self.studio.profile_path):
+            self.studio.discover(allow_running=True,refresh=True,target_device={'path':self.studio.profile_path})
 
         if index==1 and hasattr(self,'diagnostics_body'):
 
@@ -2771,6 +2779,15 @@ class App:
     def _external_profile(self,result):
 
         profile=result['profile'];path=result['path'];old=self.studio.observed_profile
+        previous_path=self.studio.profile_path
+        reconnect=bool(result.get('recovered') or previous_path is not None and previous_path!=path
+                       or not self.studio.pico_available)
+        catalog_revision=profile.get('catalog_revision')
+        last_catalog=getattr(self.studio,'observed_catalog_revision',None)
+        catalog_marker=(path,catalog_revision) if catalog_revision is not None else None
+        catalog_changed=bool(catalog_marker is not None and last_catalog is not None and catalog_marker!=last_catalog)
+        if catalog_marker is not None:self.studio.observed_catalog_revision=catalog_marker
+        had_catalog=bool(self.studio.slots)
 
         current={k:profile.get(k) for k in ('index','name','edited','auto_haptics_enable')}
         if profile.get('auto_haptics_enable')==1:
@@ -2798,14 +2815,16 @@ class App:
                 self.studio.observed_profile_revision = revision
 
         editor=self.studio_settings
+        observes_editor=editor.path in (None,previous_path,path)
         editor_revision_changed = bool(not editor.external_stale and revision and editor.path == path and editor.profile_revision
                                        and revision != editor.profile_revision)
 
-        if editor.loaded:
+        refresh_editor=observes_editor and (reconnect or editor.path!=path and not editor.external_stale)
+        if observes_editor and (editor.loaded or editor.built and refresh_editor):
 
             stamp={k:profile.get(k) for k in ('index','name','edited')}
 
-            if (editor_revision_changed or route_changed and (
+            if (refresh_editor or editor_revision_changed or route_changed and (
                     editor.profile_stamp!=stamp or editor.doc.baseline.get('auto_haptics_enable')!=profile.get('auto_haptics_enable')
                     or any(key in current and editor.doc.baseline.get(key)!=current[key]
                            for key in ('mix_native_level','ah_dsp_source','auto_mute_mix','auto_mute_replace')))):
@@ -2819,7 +2838,11 @@ class App:
 
                     editor.identity.set(_ui_tr('현재 프로필 · ')+str(profile.get('name') or _ui_tr('미저장 설정'))+_ui_tr(' · 오디오햅틱 ')+mode)
 
-                    editor.progress.configure(text=_ui_tr('외부 프로필 변경 · 새로 고침이 필요합니다.'))
+                    if reconnect:
+                        message=(_ui_tr('재연결 확인 · 편집값을 보관했습니다. 새로 고침으로 확인하세요.')
+                                 if editor.doc.dirty else _ui_tr('재연결 확인 · 설정을 다시 읽습니다.'))
+                    else:message=_ui_tr('외부 프로필 변경 · 새로 고침이 필요합니다.')
+                    editor.progress.configure(text=message)
 
                 editor.update_state()
 
@@ -2829,10 +2852,20 @@ class App:
 
                         and not (macro is not None and not macro.closed)):
 
-                    editor.task('entry_read',editor.entry_snapshot)
+                    editor.begin_entry()
 
-        if not route_changed:return
-        self.studio._observe_profile(path,profile);self.studio._sync_current_profile(path,profile)
+        if catalog_changed or reconnect:
+            self.studio.catalog_invalid=True
+            if observes_editor:
+                editor.invalidate_slot_cache()
+                if editor.built and self.selected_tab==2 and editor.category==5 and not refresh_editor:
+                    editor.schedule_entry()
+
+        if route_changed or reconnect:
+            self.studio._observe_profile(path,profile);self.studio._sync_current_profile(path,profile)
+        if (catalog_changed or reconnect) and self.selected_tab==0 and (had_catalog or previous_path is not None):
+            self.studio.discover(allow_running=True,refresh=True,target_device=result.get('row') or {'path':path})
+        if not route_changed and not reconnect:return
         if self.engine and self.studio.native_mix_conflict():
             self.stop(message=tr('Mix 네이티브 햅틱 혼합을 쓰려면 햅틱 입력 채널을 앞 채널(Front)로 변경하세요.'),reason='invalid_route')
         elif (self.engine and not self.studio.haptics_blocked
@@ -2845,8 +2878,18 @@ class App:
 
     def _profile_tick(self):
         if self._closing or self._close_requested:return
+        now=time.monotonic()
+        resumed=now-self._last_hid_tick>=5
+        self._last_hid_tick=now
+        if self.hid_changes.take() or resumed:
+            from windows_device_identity import invalidate_identity_cache
+            invalidate_identity_cache()
+            self.studio.wake_discovery()
+            self.profile_watch.wake_discovery()
         self._watch_external_profile()
-        self.root.after(200,self._profile_tick)
+        waiting=(not self.studio.binding.snapshot().hid_path
+                 or self.profile_watch.next_check==float('inf'))
+        self.root.after(1000 if waiting else 200,self._profile_tick)
 
     def _watch_external_profile(self):
         paused=(self._closing or self._close_requested or self._stopping or self.studio_power.blocked
@@ -2860,6 +2903,9 @@ class App:
             self._mute_macro_policy=(observation['path'],observation['profile'].get('mute_macro',False))
             self._external_profile(observation)
             self._update_mute_state()
+        elif (not paused and self.profile_watch.failures>=2 and self.studio_settings.write_ready
+              and self.studio_settings.path==self.studio.binding.snapshot().hid_path):
+            self.studio_settings.invalidate_profile()
         if self.run_intent.profile_paused and self.run_intent.route!=self._run_route():
             self.run_intent.stop('route_changed')
         if (not paused and self.engine is None and self.run_intent.can_resume(self._run_route())
@@ -3019,9 +3065,11 @@ class App:
 
         self._update_diagnostics()
 
-        preferred=self.studio.selected[0] if self.studio.selected else self.studio.paths[0] if len(self.studio.paths)==1 else None
+        preferred=self.studio.profile_path
 
-        self.battery.tick(paused=self._closing or self.studio.busy or self.studio_settings.busy or self.idle_presence.absent or '--smoke-test' in sys.argv,preferred=preferred)
+        self.battery.tick(paused=self._closing or self.studio.busy or self.studio_settings.busy
+                          or self.idle_presence.absent or self.studio.pico_available is not True
+                          or self.profile_watch.failures>=2 or '--smoke-test' in sys.argv,preferred=preferred)
 
         if '--smoke-test' not in sys.argv:self.studio.recover_battery_connection(self.battery)
 
@@ -3210,6 +3258,7 @@ def make_close_handler(app,lock):
             if diagnostic is not None:diagnostic.close(force=True)
         app.battery.close()
         app.controller_presence.close();app.idle_presence.close();app.profile_watch.close()
+        app.hid_changes.close()
         app.mute_shortcut.close()
         app.studio.close()
         editor.close()

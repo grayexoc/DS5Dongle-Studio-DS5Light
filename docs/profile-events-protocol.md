@@ -46,3 +46,8 @@ No firmware image build, flash, or physical USB enumeration test is implied by h
 Required hardware checks: DualSense/Edge/XInput enumeration, profile changes by
 macro/OLED/app while running and stopped, Off stopping transmission, manual stop
 preservation, reconnect and multiple Pico identity, browser concurrent use, and audio continuity.
+## Slot catalog change tracking
+
+Firmware with slot paging appends `SLT1` to legacy slot metadata at payload offset 22. The active profile reply also appends `SLT1` at offset 46 followed by a 32-bit little-endian catalog revision. The revision advances after a successful slot write. It is scoped to the running firmware session.
+
+Feature command `0x27` accepts a zero-based starting slot and a three-byte request tag. Report `0x84` returns status, starting slot, row count, catalog revision, and up to three records containing a validity byte and 16-byte name. The tag is echoed at payload offsets 60–62. The host accepts the list only when every page belongs to the same catalog revision. Firmware that does not advertise `SLT1` continues to use individual slot reads.

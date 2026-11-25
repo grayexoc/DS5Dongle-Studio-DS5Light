@@ -104,7 +104,9 @@ class StudioPanel(StartupDiscovery):
         # Startup, Start and post-activation reads keep the current slot fresh.
 
         if not self.busy and (not self.slots or self.catalog_invalid):
-            self.discover(refresh=True)
+            if self.app.engine and self.profile_path:
+                self.discover(allow_running=True,refresh=True,target_device={'path':self.profile_path})
+            else:self.discover(refresh=True)
             self._open_after_discover=self.operation=='discover'
 
         # The native Post command flushes idle callbacks before showing the popup.
@@ -436,6 +438,7 @@ class StudioPanel(StartupDiscovery):
         self.initial_connected=True
 
         old=self.observed_profile
+        if 'catalog_revision' in profile:self.observed_catalog_revision=(path,profile['catalog_revision'])
         if 'config_token' in profile or path != self.profile_path:
             self.observed_profile_revision = profile.get('config_token')
 
@@ -722,7 +725,7 @@ class StudioPanel(StartupDiscovery):
 
                 and time.monotonic()-self.last_read<30 and not self.catalog_invalid):return
 
-        if self.startup_id is not None:
+        if self.startup_id is not None and not self.initial_notification_pending:
 
             self.app.root.after_cancel(self.startup_id);self.startup_id=None
 
@@ -810,7 +813,7 @@ class StudioPanel(StartupDiscovery):
 
         if bool(getattr(getattr(self.app,'studio_settings',None),'busy',False)):return
 
-        if self.connection_missing():
+        if self.connection_missing() or self.catalog_invalid:
 
             self.discover(allow_running=True,refresh=True);return
 
@@ -982,6 +985,7 @@ class StudioPanel(StartupDiscovery):
 
         self.busy=False;self.operation=None
         reopen=kind=='discover' and self._open_after_discover
+        initial_discovery=kind=='startup'
         if reopen:self._open_after_discover=False
         if kind=='startup':
             result=self.finish_initial_read(result if not error else None)
@@ -1014,6 +1018,8 @@ class StudioPanel(StartupDiscovery):
                 self.catalog_invalid=True
 
                 if not errors and not self._cancel.is_set():self.mark_pico_absent()
+                if not self.initial_connected and self.startup_id is None and not self.app.hid_events_available:
+                    self.startup_id=self.app.root.after(self.LATE_DISCOVERY_INTERVAL_MS,self.initial_read)
 
                 self._status(tr(_ui_tr('Studio 응답 확인 실패 · '))+(errors[0] if errors else tr(_ui_tr('연결된 듀얼센스가 없습니다.'))))
 
@@ -1075,7 +1081,7 @@ class StudioPanel(StartupDiscovery):
 
             for device,slots,profile in found:
 
-                if device['path']==target:
+                if device['path']==target and profile is not None:
 
                     self._observe_profile(target,dict(profile,device_row=device,device_serial=device.get('serial_number')))
 
@@ -1083,9 +1089,18 @@ class StudioPanel(StartupDiscovery):
 
             if found:
 
-                self.catalog_invalid=False
+                self.catalog_invalid=initial_discovery
 
-                self._discovery_status(tr(_ui_tr('Studio 프로필 조회 완료')))
+                if initial_discovery and self.pico_available:
+                    editor=self.app.studio_settings
+                    if editor.path in (None,self.profile_path) and (editor.entry_failed or not editor.loaded):
+                        editor.invalidate_profile()
+                        if self.app.selected_tab==2 and not editor.doc.dirty:editor.begin_entry()
+
+                if initial_discovery:message=_ui_tr('Studio 연결 확인 완료')
+                elif any(slot.state=='unavailable' for slot in self.slots):message=_ui_tr('일부 슬롯을 확인하지 못했습니다.')
+                else:message=_ui_tr('Studio 프로필 조회 완료')
+                self._discovery_status(tr(message))
 
             elif errors:self._status(tr(_ui_tr('Studio 응답 확인 실패 · '))+errors[0])
 

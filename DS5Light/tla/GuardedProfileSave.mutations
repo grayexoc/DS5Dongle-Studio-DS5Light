@@ -1,0 +1,82 @@
+mutation wrong status is surfaced
+detects TypeOK
+only slots=1
+- /\ slotStatus' = "unknown"
++ /\ slotStatus' = "invalid"
+
+mutation pre-fix slot save copies whatever is live
+detects IntendedSnapshot
+only slots=2
+- SlotGuard == TokenMatches /\ active = Source
++ SlotGuard == active = Source
+
+mutation boot save accepts an unchecked fresh token
+detects IntendedSnapshot
+only slots=2
+- BootGuard == TokenMatches /\ active = Destination
++ BootGuard == active = Destination
+
+mutation slot write and active target checks are not atomic
+detects NoWrongActiveWrite
+only slots=2
+- SlotGuard == TokenMatches /\ active = Source
++ SlotGuard == TokenMatches
+
+mutation boot saves a different active slot
+detects NoWrongActiveWrite
+only slots=2
+- BootGuard == TokenMatches /\ active = Destination
++ BootGuard == TokenMatches
+
+mutation lost flash ACK treated as success
+detects NoSilentSuccess
+only slots=1
+- /\ bootStatus' = "unknown"
++ /\ bootStatus' = "done"
+
+mutation start boot write after rejected slot command
+detects SlotFirst
+only slots=1
+- /\ phase' = IF reply = "done" THEN "bootStart" ELSE "recover"
++ /\ phase' = "bootStart"
+
+mutation automatically resend a slot write on timeout
+detects AtMostOnce
+only slots=1
+- TimeoutSlot ==
+-     /\ phase \in {"slotDispatch", "slotReply"}
+-     /\ phase' = "recover"
++ TimeoutSlot ==
++     /\ phase \in {"slotDispatch", "slotReply"}
++     /\ phase' = IF slotSends = 1 THEN "start" ELSE "recover"
+
+mutation erase known slot status when boot ACK is lost
+detects ConfirmedSlotStays
+only slots=1
+- /\ bootStatus' = "unknown"
+-     /\ UNCHANGED <<slotStatus, slotSends, bootSends, recovery, firmware, usb>>
++ /\ bootStatus' = "unknown"
++     /\ slotStatus' = "unknown"
++     /\ UNCHANGED <<slotSends, bootSends, recovery, firmware, usb>>
+
+mutation recovery repeats the boot flash write
+detects ReadOnlyRecovery
+only slots=1
+- /\ UNCHANGED <<slotStatus, bootStatus, slotSends, bootSends, firmware, usb>>
++ /\ bootVersion' = 0
++     /\ UNCHANGED <<slotStatus, bootStatus, slotSends, bootSends, token, active, slotVersion, reply, usb>>
+
+mutation choose the only visible device without identity evidence
+detects NoForeignRecovery
+only slots=1
+- /\ recovery' \in IF OriginalDevice THEN {"original", "unavailable"}
++ /\ recovery' \in IF usb # "missing" THEN {"original", "unavailable"}
+
+mutation poll forever when the original USB device does not return
+detects EventuallyFinished
+only slots=1
+- Recover ==
+-     /\ phase = "recover"
++ Recover ==
++     /\ phase = "recover"
++     /\ OriginalDevice

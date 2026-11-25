@@ -84,7 +84,7 @@ class RecentUITests(unittest.TestCase):
                 ui.profile_save_needed=False;ui.slots=[Slot(0,'saved','Existing'),Slot(2,'empty','')]
                 ui.select_category(5);ui.select_recommended(filename)
                 ui.recommended_choice.current(1);ui.recommended_choice.event_generate('<<ComboboxSelected>>')
-                def reloaded(*args):
+                def reloaded(*args,**kwargs):
                     return dict(rows=[row],path=b'ours',cfg=19,version='v1.42.0',unsupported=[],
                                 values=dict(client.values),profile=dict(client.stamp,auto_haptics_enable=client.values['auto_haptics_enable'],device_row=row),
                                 macros={'0':[0]*35})

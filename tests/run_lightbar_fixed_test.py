@@ -3,7 +3,7 @@ from pathlib import Path
 import os, re, subprocess
 
 root = Path(__file__).resolve().parents[1]
-out = root.parent / 'DS5Dongle-Studio-build' / 'reports' / 'lightbar-fixed-tests'
+out = Path(os.environ.get('DS5_FIRMWARE_TOOLS', root.parent / 'DS5Dongle-Studio-build')) / 'reports/lightbar-fixed-tests'
 out.mkdir(parents=True, exist_ok=True)
 source = (root / 'src/config.cpp').read_text(encoding='utf-8')
 start = source.index('static void config_body_valid(Config_body &value) {')
@@ -27,7 +27,7 @@ static bool slot_read(uint8_t slot, uint8_t *name, Config_body &body) {
 (out / 'lightbar_config_extract.h').write_text('#include <array>\n' + version + '\n' + source[start:end] + '\n' + crc + fixture +
     function('static uint32_t resume_slot_fingerprint(') + '\n' +
     function('bool active_profile_restore('), encoding='utf-8')
-bin_dir = root.parent / 'DS5Dongle-Studio-build/source/toolchain/mingw64/mingw64/bin'
+bin_dir = Path(os.environ.get('DS5_FIRMWARE_TOOLS', root.parent / 'DS5Dongle-Studio-build')) / 'source/toolchain/mingw64/mingw64/bin'
 env = dict(os.environ)
 env['PATH'] = str(bin_dir) + os.pathsep + env.get('PATH', '')
 exe = out / 'lightbar_fixed_test.exe'
