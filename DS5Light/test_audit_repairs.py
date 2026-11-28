@@ -113,8 +113,8 @@ class AuditRepairs(unittest.TestCase):
  def test_backup_preserves_conflicting_legacy_values(self):
   values=defaults();values.update(gyro_output=2,stick_mouse=1,macro_disable=0xffffffff)
   class Client:
-   def read_lightbar(self):return {}
-   def read_rumble(self):return {}
+   def read_lightbar(self,*,refresh=False):return {}
+   def read_rumble(self,*,refresh=False):return {}
    def slots(self):return [Slot(0,'saved','Legacy')]
    def read_one(self,field,slot=None):return values.get(field[1],_SLOT_DEFAULTS.get(field[1],0))
    def read_macros(self):return {}

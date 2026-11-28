@@ -122,10 +122,14 @@ def confirm_hid_shutdown(parent):
         _ui_tr('지금 종료하면 진행 중인 장치 작업의 결과를 확인할 수 없습니다. 저장이나 복원 중이었다면 다음 실행에서 같은 Pico의 상태를 확인하세요.'),
         _ui_tr('앱 종료'),cancel=True,cancel_label=_ui_tr('계속 기다리기'))
 
-def confirm_macro_profile(parent,target,other_changes):
+def confirm_macro_profile(parent,target,other_changes,*,other_checks=False,live_changes=False,before_shared=False):
     name=target[1] or _ui_tr('이름 없음')
     message=_ui_tr('매핑 동작은 Pico에 저장되었습니다.\n현재 프로필: {0:02d} · {1}\n현재 프로필의 사용 체크와 설정을 저장하시겠습니까?').format(target[0]+1,name)
+    if before_shared:
+        message=_ui_tr('새 매핑과 현재 프로필의 설정을 함께 저장합니다. 나중에를 선택하면 공유 매핑만 저장합니다.')+f'\n{target[0]+1:02d} · {name}'
     if other_changes:message+='\n'+_ui_tr('함께 저장할 다른 프로필 설정 변경: {0}개').format(other_changes)
+    if other_checks:message+='\n'+_ui_tr('다른 매핑의 사용 여부 변경도 함께 저장합니다.')
+    if live_changes:message+='\n'+_ui_tr('현재 프로필에 임시 적용된 설정도 함께 저장합니다.')
     return _message(parent,_ui_tr('매핑 프로필 저장'),_ui_tr('현재 프로필에 저장하시겠습니까?'),message,
                     _ui_tr('저장'),cancel=True,cancel_label=_ui_tr('나중에'))
 

@@ -120,6 +120,24 @@ class MacroFlowUITests(unittest.TestCase):
         ui.toggle_macro(0,True);ui.toggle_macro(1,True);self.assertIn('단독 입력',ui.macro_warning.get())
         ui.toggle_macro(1,False);self.assertEqual(ui.macro_warning_label.winfo_manager(),'')
         ui.filter_macros('버튼 매핑');self.assertFalse(hasattr(ui,'macro_filter'))
+
+    def test_profile_activation_label_tracks_check_color(self):
+        from studio_settings_ui import GOLD,MUTED
+        ui=self.editor()
+        ui.doc.macros={'0':record(chord=1,keys=[4])}
+        ui.doc.values['macro_disable']=0xfffffffe
+        ui.select_category(4)
+        def children(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from children(child)
+        label=next(w for w in children(ui.parent) if w.winfo_class()=='Label'
+                   and w.cget('text')==ui.macro_activation_text(True))
+        self.assertEqual(label.cget('foreground'),GOLD)
+        check=next(w for w in label.master.winfo_children() if hasattr(w,'variable'))
+        check.variable.set(False)
+        self.assertEqual(label.cget('text'),ui.macro_activation_text(False))
+        self.assertEqual(label.cget('foreground'),MUTED)
     def test_editor_stays_inside_viewport_for_each_input_and_output(self):
         ui,e=self.macro(record(chord=1,keys=[4]));self.root.deiconify();self.root.update();e.dialog.deiconify();e.dialog.update()
         self.assertGreater(e.canvas.winfo_width(),200)

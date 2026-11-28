@@ -35,10 +35,10 @@ class RestoreInterrupted(RuntimeError):
 # The slot wire command reads flash directly. Missing legacy tails are
 # filled with 0xFF; use the defaults from the firmware's config validation.
 _SLOT_DEFAULTS = {
-    'auto_haptics_enable': 0, 'auto_haptics_gain': 100, 'auto_haptics_smooth': 40,
-    'auto_haptics_gate': 20, 'mix_native_level': 0, 'mix_native_filter': 1,
-    'ah_dsp_source': 0, 'auto_haptics_lowpass_hz': 60, 'ah_low_gain': 100,
-    'ah_high_gain': 100, 'ah_highpass': 0, 'auto_haptics_slope': 12, 'auto_mute_replace': 1,
+    'auto_haptics_enable': 0, 'auto_haptics_gain': 100, 'auto_haptics_smooth': 15,
+    'auto_haptics_gate': 16, 'mix_native_level': 0, 'mix_native_filter': 1,
+    'ah_dsp_source': 0, 'auto_haptics_lowpass_hz': 120, 'ah_low_gain': 100,
+    'ah_high_gain': 45, 'ah_highpass': 0, 'auto_haptics_slope': 24, 'auto_mute_replace': 1,
     'auto_mute_mix': 0, 'rumble_haptic_strength': 100, 'haptics_gain': 1.0,
     'speaker_volume': 100, 'headset_volume': 100, 'speaker_gain': 2,
     'sync_spk_headset_volume': 1, 'lock_volume': 0, 'disable_mic': 0,
@@ -64,10 +64,13 @@ _SLOT_DEFAULTS.update(dict.fromkeys(('t2_mode','t2_pos','t2_button','t2_l2_mode'
 
 _SLOT_DEFAULTS.update({'at_mode': 0, 'at_strength': 70, 'at_threshold': 30, 'at_start_pos': 0, 'at_shape': 0, 'at_strength_b': 70, 'at_detent_pos': 5, 'at_pushback': 0, 'at_kick_style': 0, 'at_pushback_freq': 35, 'at_l2_mode': 0, 'at_l2_strength': 70, 'at_l2_threshold': 30, 'at_l2_start_pos': 0, 'at_l2_shape': 0, 'at_l2_strength_b': 70, 'at_l2_detent_pos': 5, 'at_l2_pushback': 0, 'at_l2_kick_style': 0, 'at_l2_pushback_freq': 35, 'at_pushback_src': 2, 'ce_r2_enable': 0, 'ce_l2_enable': 0, 'ce_r2_yield': 0, 'ce_l2_yield': 0})
 
-def _slot_value(field,value):
+def _slot_value(field,value,raw):
     key=field[1]
     if key=='ah_xover_hz':
-        if value in (0,0xffff):return 0
+        if value == 0xffff:
+            cutoff = _slot_value(FIELDS['auto_haptics_lowpass_hz'], raw['auto_haptics_lowpass_hz'], raw)
+            return 55 if cutoff > 55 else 0
+        if value == 0:return 0
         return min(200,max(30,value))
     try:
         encode(field,value)
@@ -78,8 +81,8 @@ def _slot_value(field,value):
 
 def backup_all(client,progress=lambda text:None,*,indices=None):
     slots=[]
-    lightbar=bool(getattr(client,'read_lightbar',lambda:{})())
-    rumble=bool(getattr(client,'read_rumble',lambda:{})())
+    lightbar=bool(getattr(client,'read_lightbar',lambda **_: {})(refresh=True))
+    rumble=bool(getattr(client,'read_rumble',lambda **_: {})(refresh=True))
     available={k:f for k,f in FIELDS.items() if (lightbar or k not in LIGHTBAR_FIELDS) and (rumble or k not in RUMBLE_FIELDS)}
     try:client.read_one(FIELDS['usb_gamepad_mode'])
     except USBModeUnsupported:available.pop('usb_gamepad_mode',None)
@@ -90,17 +93,29 @@ def backup_all(client,progress=lambda text:None,*,indices=None):
     try:client.read_one(FIELDS['touch_mouse'])
     except TouchMouseUnsupported:
         for key in TOUCH_MOUSE_FIELDS:available.pop(key,None)
-    targets=client.slots() if indices is None else (client.info(index) for index in indices)
+    targets=client.slots() if indices is None else [client.info(index) for index in indices]
+    bulk = getattr(client, 'bulk_stored_slot', False)
+    if bulk and len({slot.catalog_revision for slot in targets}) > 1:
+        raise ValueError(_ui_tr('백업 중 슬롯 목록이 변경되었습니다.'))
     for slot in targets:
         if slot.state not in ('saved','empty'):
             raise RuntimeError(_ui_tr('슬롯 {0}의 원래 상태를 확인하지 못했습니다.').format(f'{slot.index + 1:02d}'))
         if slot.state!='saved':slots.append(dict(index=slot.index,valid=False));continue
         progress(_ui_tr('슬롯 {0} 백업 중').format(f'{slot.index + 1:02d}'))
+        raw = {}
+        if bulk:
+            raw = client.read_stored_slot(slot, available.values())
+        else:
+            for key, field in available.items():
+                try:
+                    raw[key] = client.read_one(field, slot.index)
+                except (ValueError, OSError) as exc:
+                    raise ValueError(f"{slot.index + 1:02d} / {key} · {exc}") from exc
         fields={}
         for key,field in available.items():
             try:
-                fields[key]=_slot_value(field,client.read_one(field,slot.index))
-            except (ValueError,OSError) as exc:
+                fields[key]=_slot_value(field,raw[key],raw)
+            except ValueError as exc:
                 raise ValueError(f"{slot.index + 1:02d} / {key} · {exc}") from exc
         validate_changes({},fields,profile_snapshot=True)
         effects={} # excluded construction area

@@ -3,6 +3,7 @@ import time,unittest,struct
 from types import SimpleNamespace as NS
 from unittest.mock import patch,Mock
 import test_studio_settings as fixture
+from studio_backup import backup_all
 from studio_fields import FIELDS
 from studio_scope import EDITABLE,LIGHTBAR_FIELDS,OPTIONAL_FIELDS
 from studio_settings_protocol import SettingsClient,encode
@@ -15,6 +16,38 @@ class ReadTests(unittest.TestCase):
         sleeps=[];c=SettingsClient(d,sleep=sleeps.append)
         self.assertEqual(c.read_lightbar(),{})
         self.assertEqual(sleeps,[.06]);d.send_feature_report.assert_called_once()
+    def test_failed_optional_probe_can_recover_on_same_client(self):
+        for name,keys in (('read_lightbar',('lightbar_fixed','lightbar_rgb')),
+                          ('read_rumble',('rumble_gain','rumble_release'))):
+            for error in (TimeoutError,OSError):
+                with self.subTest(probe=name,error=error):
+                    d=fixture.Device();c=SettingsClient(d,sleep=lambda _:None)
+                    probe=getattr(c,name)
+                    fields=[FIELDS[key] for key in keys]
+                    with patch.object(c,'command',side_effect=error):
+                        with self.assertRaises(error):probe()
+                        self.assertEqual(c.read_fields(fields),({},list(keys)))
+                    expected={key:d.values[key] for key in keys}
+                    self.assertEqual(probe(),expected)
+                    self.assertEqual(c.read_fields(fields),(expected,[]))
+    def test_negative_optional_probe_validates_supported_prefix(self):
+        c=SettingsClient(None)
+        with patch.object(c,'command',return_value=b'\x66\x0c\x01\x01\xc3\x01\x64'):
+            self.assertEqual(c.read_rumble(),{})
+        with patch.object(c,'command',return_value=b'\x66\x0c\x01\x01\xc1\x01\x00'):
+            with self.assertRaises(ValueError):c.read_rumble(refresh=True)
+    def test_backup_rechecks_optional_fields_and_stops_on_transport_failure(self):
+        for failed_fid in (0xc1,0xc3):
+            with self.subTest(failed_fid=failed_fid):
+                c=SettingsClient(fixture.Device(),sleep=lambda _:None)
+                c.read_lightbar();c.read_rumble()
+                original=c.command
+                def command(code,payload=b'',*args,**kwargs):
+                    if code==12 and payload[:2]==bytes((2,failed_fid)):raise TimeoutError
+                    return original(code,payload,*args,**kwargs)
+                with patch.object(c,'command',side_effect=command),patch.object(c,'slots') as slots:
+                    with self.assertRaises(TimeoutError):backup_all(c)
+                    slots.assert_not_called()
     def test_one_unsupported_field_does_not_disable_later_bulk_groups(self):
         fields=[f for k,f in EDITABLE.items() if k not in OPTIONAL_FIELDS][:27]
         bad=fields[3][0]

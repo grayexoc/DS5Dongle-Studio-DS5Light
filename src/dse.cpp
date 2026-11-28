@@ -12,22 +12,21 @@
 
 // Provided by bt.cpp
 extern std::unordered_map<uint8_t, std::vector<uint8_t> > feature_data;
-uint16_t bt_control_cid();          // current HID control channel id (0 if none)
-
-
-// Unlock state: 0 = idle, 1 = waiting for the controller to process SET 0x80.
-static int unlock_phase = 0;
+enum class UnlockPhase { Idle, Handshake, Unlock, Wait };
+static UnlockPhase unlock_phase = UnlockPhase::Idle;
 static uint32_t unlock_started_ms = 0;
+static bool edge_connected = false;
 
 // False from connect until the unlock + prefetch completes. While false the
 // USB GET handler NAKs profile reads so the PS app retries (it polls these
 // repeatedly during load) instead of caching an empty snapshot. This avoids
 // any USB enumeration delay.
-static bool profiles_ready = true;
+static bool profiles_ready = false;
 
 // Post-save snapshot regeneration tracking.
-static uint32_t profile_written_ms = 0;
-static int post_save_round = 0;
+static uint32_t post_save_step_ms = 0;
+static uint32_t post_save_attempt_ms = 0;
+static uint8_t post_save_stage = 0;
 
 // Paced profile prefetch sequencer. Fetching all 12 profile reports as a
 // burst overflows the L2CAP control channel and silently drops requests
@@ -37,6 +36,17 @@ static uint8_t prefetch_next = 0;       // 0 = idle, else next report id
 static uint32_t prefetch_last_ms = 0;
 static uint16_t prefetch_received = 0;
 static uint8_t prefetch_round = 0;
+
+static bool request_feature(uint8_t report_id) {
+    const uint8_t request[]{0x43, report_id};
+    return bt_control_send(request, sizeof(request));
+}
+
+static bool request_unlock() {
+    // SET 0x80 needs a CRC32 trailer. set_feature_data appends it.
+    uint8_t unlock[59]{0x70, 0x01};
+    return set_feature_data(0x80, unlock, sizeof(unlock));
+}
 
 static void prefetch_start() {
     prefetch_received = 0;
@@ -55,37 +65,34 @@ bool dse_profiles_ready() {
     return profiles_ready;
 }
 
-void dse_on_connect() {
-    prefetch_next = 0; profile_written_ms = 0; post_save_round = 0;
-    const uint16_t cid = bt_control_cid();
-    // 1) SET 0x65: verbatim echo of the 0x20 firmware report body (native
-    //    sends 63 bytes, no CRC recompute).
-    auto it = feature_data.find(0x20);
-    if (cid != 0 && it != feature_data.end() && it->second.size() >= 62) {
-        const auto &fw = it->second;
-        uint8_t handshake[63];
-        handshake[0] = 0x53;
-        handshake[1] = 0x65;
-        memcpy(handshake + 2, fw.data() + 1, 61);
-        bt_control_send(handshake, sizeof(handshake));
-    }
-    // 2) SET 0x80 {0x70,0x01,...}: profile unlock. Must carry a valid CRC32
-    //    trailer or the controller rejects it with HANDSHAKE 0x04
-    //    (ERR_INVALID_PARAMETER). set_feature_data() appends the checksum.
-    uint8_t unlock[59]{};
-    unlock[0] = 0x70;
-    unlock[1] = 0x01;
-    set_feature_data(0x80, unlock, sizeof(unlock));
-    // 3) Caller connects USB immediately. Gate profile reads until ready.
-    unlock_started_ms = to_ms_since_boot(get_absolute_time());
-    unlock_phase = 1;
+void dse_on_disconnect() {
+    edge_connected = false;
+    unlock_phase = UnlockPhase::Idle;
+    unlock_started_ms = 0;
     profiles_ready = false;
+    prefetch_next = 0;
+    prefetch_last_ms = 0;
+    prefetch_received = 0;
+    prefetch_round = 0;
+    post_save_stage = 0;
+    post_save_step_ms = 0;
+    post_save_attempt_ms = 0;
+}
+
+void dse_on_connect() {
+    dse_on_disconnect();
+    edge_connected = true;
+    unlock_phase = UnlockPhase::Handshake;
+    unlock_started_ms = to_ms_since_boot(get_absolute_time()) - 80;
 }
 
 void dse_on_control_packet(const uint8_t *packet, uint16_t size) {
-    if (!packet || !size) return;
-    if (!profiles_ready && unlock_phase == 0 && size >= 3 && packet[0] == 0xA3 && dse_is_profile_report(packet[1])) {
-        prefetch_received |= 1u << (packet[1] - 0x70);
+    if (!edge_connected || !packet || !size) return;
+    if (packet[0] == 0xA3 && size >= 2 && dse_is_profile_report(packet[1])) {
+        if (size != DSE_PROFILE_PACKET_SIZE || unlock_phase != UnlockPhase::Idle) return;
+        const uint8_t report_id = packet[1];
+        feature_data[report_id].assign(packet + 1, packet + size);
+        prefetch_received |= 1u << (report_id - 0x70);
         if (prefetch_received == 0x0fff) profiles_ready = true;
     }
     // 1-byte HID HANDSHAKE in response to a SET command:
@@ -97,76 +104,80 @@ void dse_on_control_packet(const uint8_t *packet, uint16_t size) {
 }
 
 void dse_on_profile_write(uint8_t reportId) {
-    if (reportId >= 0x60 && reportId <= 0x62) {
-        profile_written_ms = to_ms_since_boot(get_absolute_time());
-        post_save_round = 0;
+    if (edge_connected && reportId >= 0x60 && reportId <= 0x62) {
+        post_save_step_ms = to_ms_since_boot(get_absolute_time());
+        post_save_attempt_ms = post_save_step_ms;
+        post_save_stage = 1;
     }
 }
 
 void dse_task() {
+    if (!edge_connected) return;
     const uint32_t now = to_ms_since_boot(get_absolute_time());
-    const uint16_t cid = bt_control_cid();
 
-    // Paced prefetch sequencer: one profile GET per 80ms.
-    if (prefetch_next != 0 && cid != 0) {
-        if (now - prefetch_last_ms >= 80) {
-            prefetch_last_ms = now;
-            if (prefetch_received == 0x0fff) {
-                prefetch_next = 0;
-                profiles_ready = true;
-            } else if (prefetch_next == 0x7c) {
-                if (++prefetch_round >= 3) {
-                    prefetch_next = 0;
-                    printf("[DSE] Profile snapshot incomplete; reads remain gated\n");
-                } else prefetch_next = 0x70;
-            } else {
-                if (!(prefetch_received & (1u << (prefetch_next - 0x70)))) get_feature_data(prefetch_next, 64);
-                ++prefetch_next;
-            }
+    if (unlock_phase == UnlockPhase::Handshake) {
+        if (now - unlock_started_ms < 80) return;
+        unlock_started_ms = now;
+        const auto fw = feature_data.find(0x20);
+        if (fw == feature_data.end() || fw->second.size() < 62) {
+            request_feature(0x20);
+            return;
         }
-    } else if (prefetch_next != 0) {
-        prefetch_next = 0; // controller gone
+        uint8_t handshake[63]{0x53, 0x65};
+        memcpy(handshake + 2, fw->second.data() + 1, 61);
+        if (!bt_control_send(handshake, sizeof(handshake))) return;
+        unlock_phase = UnlockPhase::Unlock;
+        unlock_started_ms = now - 80;
     }
-
-    // Post-save snapshot regeneration, mirroring the PS app's own cycle:
-    //   SET 0x80  ->  poll GET 0x81 (x6, spaced)  ->  re-read profiles.
-    // A profile write updates controller storage but not the read-back
-    // snapshot; without this the save is only visible after the next app open.
-    if (profile_written_ms != 0 && cid != 0) {
-        const uint32_t since_write = now - profile_written_ms;
-        if (post_save_round == 0 && since_write >= 500) {
-            uint8_t unlock[59]{};
-            unlock[0] = 0x70;
-            unlock[1] = 0x01;
-            set_feature_data(0x80, unlock, sizeof(unlock));
-            post_save_round = 1;
-            printf("[DSE] Post-save: re-sent 0x80\n");
-        } else if (post_save_round >= 1 && post_save_round <= 6 &&
-                   since_write >= 1000 + 250u * (post_save_round - 1)) {
-            get_feature_data(0x81, 64); // status poll, mirrors app behavior
-            post_save_round++;
-        } else if (post_save_round == 7 && since_write >= 5500) {
-            prefetch_start(); // paced refetch of 0x70-0x7B
-            post_save_round = 8;
-            profile_written_ms = 0;
-            printf("[DSE] Post-save: profile snapshot refetch started\n");
-        }
+    if (unlock_phase == UnlockPhase::Unlock) {
+        if (now - unlock_started_ms < 80) return;
+        unlock_started_ms = now;
+        if (!request_unlock()) return;
+        unlock_phase = UnlockPhase::Wait;
     }
-
-    // Unlock wait: once the controller has had ~4s to prepare the snapshot,
-    // prefetch it (paced). USB is already connected; completion flips the
-    // profiles_ready gate so the app's retry reads return real data.
-    if (unlock_phase == 0) {
-        return;
-    }
-    if (cid == 0) { // controller went away mid-unlock
-        unlock_phase = 0;
-        profiles_ready = true; // don't leave profiles gated if it vanished
-        return;
-    }
-    if (unlock_phase == 1 && now - unlock_started_ms >= 4000) {
+    if (unlock_phase == UnlockPhase::Wait) {
+        if (now - unlock_started_ms < 4000) return;
         prefetch_start();
-        unlock_phase = 0;
+        unlock_phase = UnlockPhase::Idle;
         printf("[DSE] Unlock wait done, prefetching profile reports\n");
+    }
+
+    // Pace attempts even if the control queue is full.
+    if (prefetch_next != 0 && now - prefetch_last_ms >= 80) {
+        prefetch_last_ms = now;
+        if (profiles_ready) {
+            prefetch_next = 0;
+        } else if (prefetch_next == 0x7c) {
+            if (++prefetch_round >= 3) {
+                prefetch_next = 0;
+                printf("[DSE] Profile snapshot incomplete; reads remain gated\n");
+            } else {
+                prefetch_next = 0x70;
+            }
+        } else if ((prefetch_received & (1u << (prefetch_next - 0x70))) ||
+                   request_feature(prefetch_next)) {
+            ++prefetch_next;
+        }
+    }
+
+    // Replay the post-save unlock, six spaced status polls, and refetch.
+    if (post_save_stage == 0 || now - post_save_attempt_ms < 80) return;
+    const uint32_t elapsed = now - post_save_step_ms;
+    if (post_save_stage == 1 && elapsed >= 500) {
+        post_save_attempt_ms = now;
+        if (!request_unlock()) return;
+        post_save_stage = 2;
+        post_save_step_ms = now;
+        printf("[DSE] Post-save: re-sent 0x80\n");
+    } else if (post_save_stage >= 2 && post_save_stage <= 7 &&
+               elapsed >= (post_save_stage == 2 ? 500 : 250)) {
+        post_save_attempt_ms = now;
+        if (!request_feature(0x81)) return;
+        ++post_save_stage;
+        post_save_step_ms = now;
+    } else if (post_save_stage == 8 && elapsed >= 3250) {
+        prefetch_start();
+        post_save_stage = 0;
+        printf("[DSE] Post-save: profile snapshot refetch started\n");
     }
 }

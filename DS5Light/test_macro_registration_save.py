@@ -15,7 +15,7 @@ class RegistrationTests(TestCase):
         ui.loaded=ui.write_ready=True
         ui.app=SimpleNamespace(_close_requested=False)
         ui.cancel=threading.Event()
-        ui.parent=None
+        ui.parent=None;ui.path=b'pico'
         ui.profile_stamp=dict(index=0,name='Native',edited=False)
         ui.doc=SimpleNamespace(macros={'0':[1,2,3]},values={'macro_disable':0xffffffff},user_changes={'speaker_volume':80})
         ui.progress=Mock();ui.render_fields=Mock();ui.update_state=Mock();ui.apply=Mock()
@@ -49,6 +49,26 @@ class RegistrationTests(TestCase):
         self.assertEqual(self.ui.doc.values['macro_disable'],0xfffffffe)
         self.assertIn('프로필 저장 시작 실패',self.ui.progress.configure.call_args.kwargs['text'])
         self.assertEqual(self.ui.progress.configure.call_args.kwargs['kind'],'error')
+
+    def test_new_mapping_activates_automatically_after_verified_save(self):
+        self.ui.doc.user_changes={}
+        with patch('studio_dialogs.confirm_macro_profile') as confirm:
+            self.ui.save_registered_macro(0,[1,2,3],self.stamp,auto_activate=True)
+            confirm.assert_not_called()
+        self.ui.save_shared_macros.assert_not_called()
+        self.assertEqual(self.ui.apply.call_args.kwargs['new_mapping'],0)
+        self.assertEqual(self.ui.doc.values['macro_disable'],0xfffffffe)
+        self.ui.apply.assert_called_once()
+        self.assertEqual(self.ui.apply.call_args.kwargs['target'],(0,'Native'))
+        self.ui.apply.call_args.kwargs['after']()
+        self.assertIn('다른 프로필에서는 별도로',self.ui.progress.configure.call_args.kwargs['text'])
+
+    def test_new_mapping_does_not_automatically_save_unrelated_edits(self):
+        with patch('studio_dialogs.confirm_macro_profile',return_value=False) as confirm:
+            self.ui.save_registered_macro(0,[1,2,3],self.stamp,auto_activate=True)
+        confirm.assert_called_once_with(None,(0,'Native'),1,other_checks=False,live_changes=False,before_shared=True)
+        self.ui.save_shared_macros.assert_called_once_with()
+        self.ui.apply.assert_not_called()
 
     def test_delete_mask_is_staged_only_after_verified_save(self):
         self.ui.doc.macros['0']=[0,0,0];self.ui.doc.values['macro_disable']=0xfffffffe

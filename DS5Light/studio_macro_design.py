@@ -32,7 +32,7 @@ def conflicts(records,disable_mask=0xffffffff):
             if a[4]&32:
                 out.append(pair+_ui_tr(' · 같은 스틱의 방향 매핑이 겹칩니다. 여러 출력이 필요한지 확인하세요.'));continue
             if a[4]&128:
-                out.append(pair+_ui_tr(' · 같은 터치 스와이프입니다. 먼저 일치하는 행이 실행됩니다.'));continue
+                out.append(pair+_ui_tr(' · 같은 터치 스와이프입니다. 일치하는 활성 매핑 중 슬롯 번호가 낮은 항목이 실행됩니다.'));continue
             if not ca or not cb:continue
             if ca==cb:
                 modes={condition(a),condition(b)}

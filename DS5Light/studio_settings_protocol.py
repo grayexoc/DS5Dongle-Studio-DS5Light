@@ -137,7 +137,7 @@ class SettingsClient(StudioClient):
         for attempt in range(attempts):
             self.check_cancel()
             # Retry only idempotent reads; never repeat settings/flash writes.
-            if attempt==6 and command in (4,12,13,23):
+            if attempt==6 and command in (4,12,13,23,0x29):
                 if self.device.send_feature_report(packet.ljust(64,b'\0'))!=64:raise OSError(_ui_tr('Studio 재조회 전송 실패'))
             self.sleep(.06)
             try:raw=bytes(self.device.get_feature_report(report,64))
@@ -316,31 +316,62 @@ class SettingsClient(StudioClient):
         return reply[4]
 
     def read_lightbar(self,refresh=False):
-        if self.lightbar_supported is False:return {}
-        if self.lightbar_supported is True and not refresh:return dict(self._lightbar_values)
-        try:
-            r=self.command(12,b'\x02\xc1\xc2',echo=b'\x02\xc1')
-            if len(r)<13 or r[2:6]!=b'\x00\x02\xc1\x01' or r[7:9]!=b'\xc2\x04':
-                raise ValueError(_ui_tr('라이트바 묶음 응답 불일치'))
-            fixed=r[6];rgb=int.from_bytes(r[9:13],'little')
-            if fixed not in (0,1) or rgb>0xffffff:raise ValueError(_ui_tr('라이트바 응답 범위 오류'))
-            self._lightbar_values=dict(lightbar_fixed=fixed,lightbar_rgb=rgb)
-            self.lightbar_supported=True;self.bulk=True
-        except (OSError,ValueError,TimeoutError):
-            self.lightbar_supported=False;self._lightbar_values={}
+        if self.lightbar_supported is not None and not refresh:return dict(self._lightbar_values)
+        self._lightbar_values=self._read_optional_pair('lightbar_fixed','lightbar_rgb')
+        self.lightbar_supported=bool(self._lightbar_values)
         return dict(self._lightbar_values)
     def read_rumble(self,refresh=False):
         cached=getattr(self,'_rumble_values',None)
         if cached is not None and not refresh:return dict(cached)
-        try:
-            reply=self.command(12,bytes([2,0xc3,0xc4]),echo=bytes([2,0xc3]))
-            if len(reply)<10 or reply[2:6]!=bytes([0,2,0xc3,1]) or reply[7:9]!=bytes([0xc4,1]):
-                raise ValueError(_ui_tr('일반 진동 묶음 응답 불일치'))
-            gain,release=reply[6],reply[9]
-            if not 100<=gain<=200 or release not in (0,1,2):raise ValueError(_ui_tr('일반 진동 응답 범위 오류'))
-            self._rumble_values=dict(rumble_gain=gain,rumble_release=release);self.bulk=True
-        except (OSError,ValueError,TimeoutError):self._rumble_values={}
+        self._rumble_values=self._read_optional_pair('rumble_gain','rumble_release')
         return dict(self._rumble_values)
+
+    def _read_optional_pair(self,first,second):
+        fields=(FIELDS[first],FIELDS[second])
+        ids=bytes(field[0] for field in fields)
+        reply=self.command(12,b'\x02'+ids,echo=b'\x02'+ids[:1])
+        error=_ui_tr('Studio 필드 응답 불일치')
+        if len(reply)<4 or reply[2:4] not in (b'\x00\x02',b'\x01\x00',b'\x01\x01'):
+            raise ValueError(error)
+        count=reply[3];offset=4;values={}
+        for field in fields[:count]:
+            fid,key,typ,*_=field
+            size=struct.calcsize('<'+FORMATS[typ])
+            if reply[offset:offset+2]!=bytes([fid,size]):
+                raise ValueError(error)
+            offset+=2
+            value=decode(field,reply[offset:offset+size])
+            encode(field,value)
+            values[key]=value
+            offset+=size
+        self.bulk=True
+        return values if count==2 else {}
+    def read_stored_slot(self, slot, fields):
+        fields = list(fields)
+        if any(field[1] not in EDITABLE for field in fields):
+            raise ValueError(_ui_tr('제외된 설정은 읽지 않습니다.'))
+        values = {}
+        # Eight entries of at most six bytes each fit before the reply tag.
+        for start in range(0, len(fields), 8):
+            group = fields[start:start + 8]
+            tag = secrets.token_bytes(4)
+            payload = bytes((slot.index, len(group), *(f[0] for f in group)))
+            reply = self.command(0x29, payload.ljust(57, b'\0') + tag, 0x84,
+                                 echo=tag, echo_offset=59, accept=lambda r: r[3] == slot.index)
+            if len(reply) != 63 or reply[2] != 0 or reply[4] != len(group):
+                raise ValueError(_ui_tr('Studio 필드 묶음 불일치'))
+            if int.from_bytes(reply[5:9], 'little') != slot.catalog_revision:
+                raise ValueError(_ui_tr('백업 중 슬롯 목록이 변경되었습니다.'))
+            offset = 9
+            for field in group:
+                size = struct.calcsize('<' + FORMATS[field[2]])
+                if reply[offset:offset + 2] != bytes((field[0], size)):
+                    raise ValueError(_ui_tr('Studio 필드 묶음 불일치'))
+                offset += 2
+                values[field[1]] = decode(field, reply[offset:offset + size], raw_slot=True)
+                offset += size
+        return values
+
     def read_one(self,field,slot=None):
         if field[1] in FIELDS and field[1] not in EDITABLE:raise ValueError(_ui_tr('제외된 설정은 읽지 않습니다.'))
         if field[1] in LIGHTBAR_FIELDS:
@@ -407,14 +438,11 @@ class SettingsClient(StudioClient):
         for f in modes:
             try:out[f[1]]=self.read_one(f)
             except (OSError,ValueError,TimeoutError):unsupported.append(f[1])
-        if rumble:
-            values=self.read_rumble(refresh=True)
-            for f in rumble:
-                if f[1] in values:out[f[1]]=values[f[1]]
-                else:unsupported.append(f[1])
-        if optional:
-            values=self.read_lightbar(refresh=True)
-            for f in optional:
+        for group,probe in ((rumble,self.read_rumble),(optional,self.read_lightbar)):
+            if not group:continue
+            try:values=probe(refresh=True)
+            except (OSError,ValueError):values={}
+            for f in group:
                 if f[1] in values:out[f[1]]=values[f[1]]
                 else:unsupported.append(f[1])
         for start in range(0,len(fields),12):

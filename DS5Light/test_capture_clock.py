@@ -28,6 +28,24 @@ def fake_stream(channels=2):
 
 
 class CaptureClockTests(unittest.TestCase):
+    def test_delayed_collection_and_unavailable_qpc(self):
+        s=fake_stream()
+        pcm=bytes(480*4)
+        s.queue.extend([(100.,pcm,99.75,0,0,100.),(100.,pcm,None,480,4,100.)])
+        with patch('process_audio.time.perf_counter',return_value=100.002):
+            self.assertEqual(s.read(480),pcm)
+        self.assertIsNone(s.last_read_timing[0])
+        self.assertEqual(s.stale,1)
+
+    def test_partially_read_packet_expires_by_source_time(self):
+        s=fake_stream()
+        s.queue.append((100.,bytes(480*4),99.95,0,0,100.))
+        with patch('process_audio.time.perf_counter',return_value=100.):
+            s.read(240)
+        with patch('process_audio.time.perf_counter',return_value=100.03):
+            self.assertEqual(s.get_read_available(),0)
+        self.assertEqual(s.stale,1)
+
     def simulate(self, ppm=100, stall=0., seconds=360):
         s = fake_stream()
         now = 1000.01

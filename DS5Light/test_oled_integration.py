@@ -224,8 +224,33 @@ class WatchReadTests(unittest.TestCase):
         b=binding();identity=b.snapshot();row=hidrow(b'new')
         with patch('hid.device',side_effect=[old,new]),patch.object(watch,'devices',return_value=[row]),patch.object(watch,'StudioClient',return_value=client),patch.object(b,'resolve_hid',return_value=row) as resolve:
             result=watch.read_current(identity,AH,binding=b)
-        resolve.assert_called_once_with([row])
+        resolve.assert_called_once_with([row],external_mode_change=True)
         self.assertEqual(result['row'],row)
+
+    def test_pad_profile_switch_from_xbox_recovers_native_hid(self):
+        xbox=dict(path=b'vid_1209',vendor_id=0x1209,product_id=1,
+                  usb_parent_id='xbox',serial_number='pico',container_id='xbox-container')
+        native=dict(path=b'vid_054c',vendor_id=0x054c,product_id=0x0ce6,
+                    usb_parent_id='native',serial_number=None,container_id='native-container')
+        other=dict(native,path=b'other',usb_parent_id='other')
+        b=DeviceBinding()
+        old=Mock();old.open_path.side_effect=OSError('gone')
+        new=Mock();client=Mock();client.profile.return_value=dict(OFF)
+        with patch('windows_device_identity.usb_port_paths',side_effect=lambda parent:
+                   ('pico-port',) if parent in ('xbox','native') else ('other-port',)):
+            b.bind_hid(xbox)
+            identity=b.snapshot()
+            self.assertIsNone(b.resolve_hid([other],external_mode_change=True))
+            duplicate=dict(native,path=b'rostered-duplicate')
+            self.assertIsNone(b.resolve_hid([native,duplicate],external_mode_change=True))
+            with patch('hid.device',side_effect=[old,new]),patch.object(watch,'devices',return_value=[other,native]),patch.object(watch,'StudioClient',return_value=client):
+                result=watch.read_current(identity,AH,binding=b)
+            self.assertEqual(result['row'],native)
+            self.assertEqual(result['profile'],OFF)
+            new.open_path.assert_called_once_with(native['path'])
+            rebound=b.bind_hid(result['row'])
+            self.assertEqual(rebound.serial,'pico')
+            self.assertEqual(rebound.usb_parent_id,'native')
 
 class WatchScheduleTests(unittest.TestCase):
     def setUp(self):

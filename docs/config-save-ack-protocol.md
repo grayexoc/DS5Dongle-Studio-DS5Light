@@ -31,3 +31,11 @@ The tagged capability reply for command `0x22` sets bit 1 of payload byte 4 when
 - For `0x02`, the same guard starts at request payload byte 4 after the request tag. After a slot save that selected its destination, this guard carries the destination as the expected active slot and the original verified config token.
 - Status `03` means the guard failed before the flash call. Legacy unguarded requests retain their existing layout and behavior. The app never retries a save when the reply is missing.
 - The app reports the live apply, slot save, startup save, and reconnect confirmation separately. Read-only recovery checks the captured Pico identity and never replays the writes.
+
+## Bulk stored-slot reads
+
+A successful `0x0a` slot-info reply advertises bulk backup with `SBR1` at body offsets 26–29, followed by the catalog revision as a little-endian unsigned 32-bit value at offsets 30–33. Body offsets exclude the report ID. A successful slot-info reply without `SBR1` selects the legacy `0x0d` field reads. Read failures abort the backup.
+
+Send `0x29` on feature report `0x80` with payload `[slot, count, field IDs...]`, zero padding through payload offset 56, and a fresh four-byte tag at offsets 57–60. Read feature report `0x84`. The 63-byte reply body is `[0x66, 0x29, status, slot, returned_count, revision LE32, entries..., padding, tag[4]]`. Each entry contains `[field ID, length, value bytes...]`. The tag begins at body offset 59. Status zero confirms every requested entry was returned. Status one rejects the request or indicates an unavailable slot or field.
+
+Firmware reads the stored body once per request. The app verifies the slot, tag, revision, count, field IDs, and lengths before using the batch. The catalog revision ties all batches to the slot information the app read before requesting the fields. A failed bulk exchange aborts without switching to the legacy protocol. Both read paths apply the same legacy defaults when exporting missing fields and preserve representable stored values.

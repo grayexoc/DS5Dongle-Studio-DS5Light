@@ -25,6 +25,18 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(result['path'],b'new');self.assertEqual(len(self.waits),3)
         snapshot.assert_called_once();self.assertEqual(snapshot.call_args.kwargs['deadline'],30);client.read_macros.assert_called_once()
         client.write_fields.assert_not_called();client.save_flash.assert_not_called();client.reconnect_usb.assert_not_called()
+    def test_catalog_revision_is_checked_against_snapshot(self):
+        initial=dict(PROFILE,config_token='1234',catalog_revision=7)
+        changed=dict(initial,catalog_revision=8)
+        client=Mock()
+        client.profile.side_effect=[changed,changed,changed,changed]
+        first=fresh();first['profile'].update(initial)
+        second=fresh();second['profile'].update(changed)
+        with patch.object(recovery.time,'monotonic',lambda:self.clock),patch.object(recovery,'devices',return_value=[ROW]),patch.object(recovery,'snapshot',side_effect=[first,second]),patch('hid.device'),patch.object(recovery,'SettingsClient',return_value=client):
+            result=recovery.wait_for_macros(b'old','ours',self.cancel,timeout=4)
+        self.assertIs(result,second)
+        self.assertEqual(client.read_macros.call_count,2)
+
     def test_wrong_or_ambiguous_device_never_opened_and_wait_is_bounded(self):
         for rows in ([dict(path=b'other',serial_number='other')],[ROW,dict(ROW,path=b'duplicate')]):
             self.clock=0.
@@ -111,6 +123,40 @@ class RecoveryUITests(unittest.TestCase):
         c.write_macro.assert_not_called();c.commit_macros.assert_not_called();c.save_flash.assert_called_once();c.save_slot.assert_called_once()
         refresh.assert_called_once();self.finish(e,'apply',answer)
         self.assertTrue(e.doc.macro_changes);self.assertEqual(e.doc.macros,new);self.assertFalse(e.doc.unsaved)
+
+    def test_register_and_activate_one_reconnect(self):
+        e,c,new=self.prepare()
+        empty={'0':[0]*35}
+        e.doc.macro_baseline=empty
+        c.read_macros.side_effect=[empty,new]
+        e.doc.baseline['macro_disable']=e.doc.values['macro_disable']=0xffffffff
+        c.read_fields.return_value=(dict(e.doc.baseline),[])
+        verified=fresh(new)
+        verified['values'].update(e.doc.baseline,macro_disable=0xfffffffe)
+        with patch.object(e,'stopped_task') as task:
+            e.save_registered_macro(0,new['0'],PROFILE,auto_activate=True)
+        with patch.object(e,'with_client',side_effect=lambda op:op(c)),patch.object(recovery,'wait_for_macros',return_value=verified) as readback:
+            answer=task.call_args.args[1]()
+        c.commit_macros.assert_called_once();c.save_slot.assert_called_once_with(0,'Mix')
+        c.save_flash.assert_called_once();c.reconnect_usb.assert_called_once();readback.assert_called_once()
+        self.finish(e,'apply',answer)
+        self.root.update_idletasks()
+        self.assertTrue(e.write_ready);self.assertFalse(e.doc.macro_changes)
+        self.assertEqual(e.doc.values['macro_disable'],0xfffffffe)
+
+    def test_registration_stops_if_profile_changes_after_shared_commit(self):
+        e,c,new=self.prepare()
+        empty={'0':[0]*35}
+        e.doc.macro_baseline=empty
+        c.read_macros.side_effect=[empty,new]
+        c.profile.side_effect=[PROFILE,dict(PROFILE,index=1)]
+        with patch.object(e,'stopped_task') as task:
+            e.save_registered_macro(0,new['0'],PROFILE,auto_activate=True)
+        with patch.object(e,'with_client',side_effect=lambda op:op(c)):
+            with self.assertRaisesRegex(RuntimeError,'공유 매핑 저장 확인'):
+                task.call_args.args[1]()
+        c.commit_macros.assert_called_once();c.write_fields.assert_not_called()
+        c.save_slot.assert_not_called();c.reconnect_usb.assert_not_called()
     def test_trigger_edits_are_sent_again_after_temporary_apply(self):
         e,c,_=self.prepare()
         for strength in (25,90):

@@ -1,8 +1,15 @@
 import unittest
 from unittest.mock import patch
 from device_binding import DeviceBinding,DeviceIdentity
-from windows_audio import attach_endpoint_ids
+from windows_audio import attach_endpoint_ids, cached_render_endpoints
 class IdentityTests(unittest.TestCase):
+ def test_render_cache_keeps_duplicate_names_distinguishable_after_reordering(self):
+  rows=[dict(name='Same',maxOutputChannels=n,defaultSampleRate=48000) for n in (2,4)]
+  endpoints=[dict(name='Same',id=str(n),mix_channels=n,mix_rate=48000) for n in (2,4)]
+  cache=cached_render_endpoints(attach_endpoint_ids([dict(r) for r in rows],endpoints))
+  reopened=attach_endpoint_ids(list(reversed(rows)),cache)
+  self.assertEqual([r['endpoint_id'] for r in reopened],['4','2'])
+
  def binding(self):
   b=DeviceBinding();b._identity=DeviceIdentity(container_id='ours',endpoint_id='out',endpoint_name='Old');return b
  def row(self,**kw):return dict(dict(index=1,name='Renamed',maxOutputChannels=4,endpoint_id='out'),**kw)

@@ -37,8 +37,10 @@ class ProtocolTests(unittest.TestCase):
     def test_invalid_probe_blocks_writes_without_single_fallback(self):
         for mode in ('status','count','id','length','fixed','rgb','short'):
             with self.subTest(mode=mode):
-                c,d=self.client(mode);self.assertFalse(c.read_lightbar())
-                with self.assertRaises(ValueError):c.write_fields({'lightbar_fixed':1},d.values)
+                c,d=self.client(mode)
+                with self.assertRaises((ValueError,TimeoutError)):c.read_lightbar()
+                self.assertIsNone(c.lightbar_supported)
+                with self.assertRaises((ValueError,TimeoutError)):c.write_fields({'lightbar_fixed':1},d.values)
                 self.assertFalse(any(p[2] in (1,11) for p in d.sent))
                 self.assertFalse(any(p[2]==4 and p[3] in (0xc1,0xc2) for p in d.sent))
     def test_enable_is_one_bulk_rgb_off_fixed_and_verified(self):
@@ -112,7 +114,7 @@ class DocumentTests(unittest.TestCase):
         self.assertEqual(c.saved[0]['audio_buffer_length'],48);self.assertEqual(c.values,before)
     def test_slot_backup_includes_verified_fields(self):
         class Client:
-            def read_lightbar(self):return dict(lightbar_fixed=1,lightbar_rgb=0x3366cc)
+            def read_lightbar(self,*,refresh=False):return dict(lightbar_fixed=1,lightbar_rgb=0x3366cc)
             def slots(self):return [Slot(0,'saved','RGB')]
             def read_one(self,field,slot=None):
                 if field[1]=='usb_gamepad_mode':

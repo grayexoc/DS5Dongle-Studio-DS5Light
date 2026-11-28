@@ -19,7 +19,7 @@ def read_current(identity,previous=None,full=False,*,binding=None):
             rows=devices()
             if binding is not None:
                 if binding.snapshot()!=identity:return None
-                target=binding.resolve_hid(rows)
+                target=binding.resolve_hid(rows,external_mode_change=True)
             elif identity.container_id and (not identity.serial or not any(row.get('serial_number')==identity.serial for row in rows)):
                 from windows_device_identity import hid_container
                 rows=[dict(row,container_id=row.get('container_id') or hid_container(row['path'])) for row in rows]

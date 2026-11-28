@@ -97,6 +97,7 @@ class ShiftUITests(unittest.TestCase):
         with patch.object(ui,'schedule_entry'):
             ui.results.put(('macros',records,None));ui.poll()
         self.assertEqual(ui.shift_key_label.cget('text'),NAMES[19])
+        self.assertEqual(ui.shift_key_label.cget('foreground'),'#d6ad52')
         self.assertFalse(ui.shift_editor.winfo_manager())
         def labels(widget):
             for child in widget.winfo_children():

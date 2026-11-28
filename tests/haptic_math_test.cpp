@@ -247,6 +247,21 @@ static void check_mix_packet_direction(float native_level) {
 }
 
 int main() {
+    {
+        HapticImpactTexture texture;
+        assert(texture.emphasize_onset(.1f, .2f) == .1f);
+        unsigned lifted_samples = 0;
+        for (int i = 0; i < 1000; ++i) {
+            texture.update(.2f, .2f);
+            const float lifted = texture.emphasize_onset(.1f, .2f);
+            assert(lifted >= .1f && lifted <= .2f);
+            assert(texture.emphasize_onset(-.1f, .2f) == -lifted);
+            assert(texture.emphasize_onset(.2f, .2f) == .2f);
+            if (lifted > .1f) ++lifted_samples;
+        }
+        assert(lifted_samples > 600 && lifted_samples < 720);
+        assert(texture.emphasize_onset(.1f, .2f) == .1f);
+    }
     static_assert(HapticImpactTexture::uses_front(1, 0));
     static_assert(HapticImpactTexture::uses_front(2, 0));
     static_assert(!HapticImpactTexture::uses_front(1, 1));

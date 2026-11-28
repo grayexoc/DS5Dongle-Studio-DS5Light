@@ -28,6 +28,7 @@ def default_preferences():
         'mute_shortcut': default_binding(),
         'controls': Controls().__dict__,
         'studio_slots': [],
+        'mapping_display_order': [],
     }
 
 
@@ -86,6 +87,10 @@ def validate(value):
     out['controls'] = c.__dict__
     out['mute_shortcut'] = shortcut
     out['studio_slots'] = clean_slot_history(data.get('studio_slots', []))
+    order = data.get('mapping_display_order')
+    out['mapping_display_order'] = list(dict.fromkeys(
+        index for index in order if type(index) is int and 0 <= index < 32
+    )) if isinstance(order, list) else []
     return out
 
 

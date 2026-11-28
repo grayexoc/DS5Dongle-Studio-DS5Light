@@ -677,7 +677,7 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
     switch (cmd_id) {
         case 0x01: case 0x02: case 0x03: case 0x07:
         case 0x08: case 0x09: case 0x0b: case 0x0d:
-        case 0x11: case 0x13: case 0x18: case 0x19: case 0x1a: case 0x28:
+        case 0x11: case 0x13: case 0x18: case 0x19: case 0x1a: case 0x28: case 0x29:
             manual_power_note_activity(60000);
             break;
         default: break;
@@ -873,6 +873,9 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                     buf[5] = ver;
                     memcpy(buf + 6, name, SLOT_NAME_LEN);
                     memcpy(buf + 22, "SLT1", 4);
+                    memcpy(buf + 26, "SBR1", 4);
+                    const uint32_t revision = slot_catalog_revision();
+                    memcpy(buf + 30, &revision, sizeof(revision));
                 }
                 buf[3] = buffer[0];
             }
@@ -1443,6 +1446,40 @@ void pico_cmd_set(uint8_t cmd_id, uint8_t const *buffer, uint16_t bufsize) {
                 memcpy(reply + 59, buffer + 57, 4);
                 if (expected_revision != slot_catalog_revision()) reply[2] = 3;
                 else if (slot_delete(idx)) reply[2] = 0;
+            }
+            pico_settings_reply.assign(reply, reply + sizeof(reply));
+            break;
+        }
+
+        case 0x29: {
+            // Bulk stored fields: [slot, count, field IDs..., padding, tag[4]].
+            // Load once per request and never apply the stored body to live settings.
+            uint8_t reply[63]{0x66, 0x29, 1};
+            constexpr uint8_t tag_offset = 59;
+            if (bufsize >= 61) {
+                const uint8_t slot = buffer[0];
+                const uint8_t count = buffer[1];
+                reply[3] = slot;
+                memcpy(reply + tag_offset, buffer + 57, 4);
+                Config_body stored{};
+                if (count && count <= 55 && slot_load_body(slot, stored)) {
+                    const uint32_t revision = slot_catalog_revision();
+                    memcpy(reply + 5, &revision, sizeof(revision));
+                    size_t out = 9;
+                    for (uint8_t i = 0; i < count; ++i) {
+                        const uint8_t fid = buffer[2 + i];
+                        uint8_t value[8]{};
+                        if (!get_config_field_from(stored, fid, value, sizeof(value))) break;
+                        const uint8_t len = g_last_field_len;
+                        if (out + 2 + len > tag_offset) break;
+                        reply[out++] = fid;
+                        reply[out++] = len;
+                        memcpy(reply + out, value, len);
+                        out += len;
+                        ++reply[4];
+                    }
+                    if (reply[4] == count) reply[2] = 0;
+                }
             }
             pico_settings_reply.assign(reply, reply + sizeof(reply));
             break;

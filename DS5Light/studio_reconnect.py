@@ -57,7 +57,8 @@ def wait_for_macros(path,serial,cancel,timeout=30,*,edge_binding=None,serial_hid
                 macros=client.read_macros()
                 after=client.profile(include_revision=True)
                 expected={k:result['profile'][k] for k in ('index','name','edited')}
-                if 'config_token' in result['profile']:expected['config_token']=result['profile']['config_token']
+                for key in ('config_token','catalog_revision'):
+                    if key in result['profile']:expected[key]=result['profile'][key]
                 if before!=after or after!=expected:
                     raise RuntimeError(_ui_tr('재연결 조회 중 프로필이 변경되었습니다.'))
                 client.check_cancel()

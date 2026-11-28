@@ -843,18 +843,6 @@ class App:
 
         self.brand_wordmark.pack(side='left')
 
-        self.header_controls=controls=tk.Frame(head,bg=BG);controls.grid(row=0,column=1,sticky='e')
-
-        self.language_choice=ttk.Combobox(controls,values=['한국어','English'],state='readonly',width=10)
-
-        self.language_choice.set('한국어' if LANGUAGE=='ko' else 'English')
-
-        self.language_choice.grid(row=0,column=1,padx=(SPACE_LG,0))
-
-        self.language_choice.bind('<<ComboboxSelected>>',self.change_language)
-
-
-
         tab_area=tk.Frame(outer,bg=BG); tab_area.grid(row=1,column=0,sticky='nsew'); tab_area.columnconfigure(0,weight=1); tab_area.rowconfigure(1,weight=1)
 
         self.page_outline=PageOutline(tab_area); self.page_outline.grid(row=1,column=0,sticky='nsew')
@@ -1104,7 +1092,7 @@ class App:
 
         self.run_card=self.card(self.device_page);self.run_card.grid(row=1,column=0,sticky='ew',pady=(0,SPACE_LG));run_card=self.run_card.content
 
-        ttk.Label(run_card,text=_ui_tr('실행 옵션'),font=(_ui_tr('맑은 고딕'),12,'bold')).pack(side='left',padx=(0,SPACE_LG*2))
+        ttk.Label(run_card,text=_ui_tr('실행 옵션'),font=(_ui_tr('맑은 고딕'),12,'bold')).grid(row=0,column=0,sticky='w',padx=(0,SPACE_LG))
 
         self.launch_checks=[]
 
@@ -1114,7 +1102,18 @@ class App:
 
                               background=CARD,foreground=FG,muted=BORDER,accent=ACCENT,disabled=DISABLED)
 
-            check.pack(side='left',padx=(0,SPACE_LG*2));self.launch_checks.append(check)
+            check.grid(row=0,column=len(self.launch_checks)+1,sticky='w',padx=(0,SPACE_LG));self.launch_checks.append(check)
+
+        run_card.columnconfigure(3,weight=1)
+        ttk.Label(run_card,text=_ui_tr('언어')).grid(row=0,column=3,sticky='e',padx=(0,SPACE))
+
+        self.language_choice=ttk.Combobox(run_card,values=['한국어','English'],state='readonly',width=8)
+
+        self.language_choice.set('한국어' if LANGUAGE=='ko' else 'English')
+
+        self.language_choice.grid(row=0,column=4,sticky='w')
+
+        self.language_choice.bind('<<ComboboxSelected>>',self.change_language)
 
         self.mute_card=self.card(self.device_page);self.mute_card.grid(row=2,column=0,sticky='ew',pady=(0,SPACE_LG));mute_card=self.mute_card.content
 
@@ -1379,7 +1378,9 @@ class App:
 
             save_language(code)
 
-            self.notice.set(_ui_tr('다음 실행부터 한국어로 표시됩니다.') if code=='ko' else 'English will be used next time you open the app.')
+            messagebox.showinfo(_ui_tr('언어 변경'),
+                                _ui_tr('앱을 다시 시작하면 변경한 언어가 적용됩니다.'),
+                                parent=self.root)
 
         except Exception as exc:
 
@@ -1454,7 +1455,15 @@ class App:
 
     def select_tab(self,index):
 
-        if getattr(getattr(self,'studio_settings',None),'transfer_locked',False):return
+        editor = getattr(self, 'studio_settings', None)
+        if getattr(editor, 'transfer_locked', False):return
+        if self.selected_tab == 2 and index != 2 and (editor.doc.dirty or editor.invalid):
+            if not messagebox.askyesno(
+                _ui_tr('미적용 Studio 설정'),
+                _ui_tr('아직 적용하지 않은 설정이 있습니다. 편집값을 보관한 채 다른 탭으로 이동할까요?'),
+                parent=self.root,
+            ):
+                return
 
         self.selected_tab=index
         if self.engine: self.engine.diagnostics_enabled=(index==1)
@@ -1680,6 +1689,7 @@ class App:
 
               'mute_shortcut':dict(self.mute_binding),
               'studio_slots':self.preference_store.data.get('studio_slots',[]),
+              'mapping_display_order':self.preference_store.data.get('mapping_display_order',[]),
 
               'window_width':max(860,self.root.winfo_width()),'window_height':max(860,self.root.winfo_height())}
 

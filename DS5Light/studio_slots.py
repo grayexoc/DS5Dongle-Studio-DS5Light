@@ -31,6 +31,7 @@ class StudioClient:
     def __init__(self, device, sleep=time.sleep):
         self.device, self.sleep = (device, sleep)
         self.bulk_slot_catalog = False
+        self.bulk_stored_slot = False
 
     def check_cancel(self):
         """SettingsClient supplies the cancellation/deadline policy."""
@@ -177,14 +178,19 @@ class StudioClient:
 
     def info(self, index):
         r = self.request(10, index, 10)
-        self.bulk_slot_catalog = len(r)>=26 and r[22:26]==b'SLT1'
         if r[2] != 0:
             return Slot(index, 'unavailable')
         if len(r) < 22 or r[4] not in (0, 1):
             raise RuntimeError('Invalid Studio slot response')
+        self.bulk_slot_catalog = r[22:26] == b'SLT1'
+        self.bulk_stored_slot = r[26:30] == b'SBR1'
+        if self.bulk_stored_slot and len(r) < 34:
+            raise RuntimeError('Invalid Studio slot revision')
+        revision = int.from_bytes(r[30:34], 'little') if self.bulk_stored_slot else None
         if not r[4]:
-            return Slot(index, 'empty')
-        return Slot(index, 'saved', r[6:22].decode('utf-8', errors='replace').rstrip('\x00').strip())
+            return Slot(index, 'empty', catalog_revision=revision)
+        return Slot(index, 'saved', r[6:22].decode('utf-8', errors='replace').rstrip('\x00').strip(),
+                    catalog_revision=revision)
 
     def slots(self):
         first=self.info(0)

@@ -248,15 +248,22 @@ class ProcessCaptureStream:
             self.pending.clear();self.pending_segments.clear()
             raise RuntimeError(_ui_tr('지정 프로세스 캡처 중단: ')+(self.error or _ui_tr('종료'))+' / '+' '.join(self.messages))
         now=time.perf_counter()
-        while self.pending_segments and now-self.pending_segments[0][2]>MAX_TRANSPORT_AGE:
+        cutoff=now-MAX_TRANSPORT_AGE
+        bytes_per_second=CAPTURE_RATE*self.channels*2
+        while self.pending_segments:
+            size,captured,stamp=self.pending_segments[0][:3]
+            if stamp>=cutoff and (captured is None or captured+size/bytes_per_second>=cutoff):
+                break
             old=self.pending_segments.popleft();del self.pending[:old[0]];self.stale+=1
         # Preserve each packet's time/position, including boundaries inside a read.
         while len(self.pending)<frames*self.channels*2 and self.queue:
             packet=self.queue.popleft();stamp,data=packet[:2]
-            if now-stamp>MAX_TRANSPORT_AGE:
-                self.stale+=1;continue
             if not data:continue
             captured,position,flags,received=packet[2:] if len(packet)>2 else (None,None,0,stamp)
+            # QPC dates the first frame. Drop only wholly expired packets so
+            # normal packetization and partial reads retain their fresh tail.
+            if stamp<cutoff or (captured is not None and captured+len(data)/bytes_per_second<cutoff):
+                self.stale+=1;continue
             self.pending.extend(data)
             self.pending_segments.append([len(data),captured,stamp,position,flags,received])
         self.pending_time=self.pending_segments[0][2] if self.pending_segments else 0.

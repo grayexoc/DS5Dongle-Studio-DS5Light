@@ -118,6 +118,19 @@ public:
         return blend * direction_gain;
     }
 
+    float emphasize_onset(float sample, float envelope_peak) const {
+        const int age = attack_samples - remaining;
+        constexpr int onset_samples = 720; // 15 ms at 48 kHz.
+        constexpr float ramp = 1.0f / 60.0f; // 1.25 ms.
+        if (!remaining || age >= onset_samples || envelope_peak <= 0.0f) return sample;
+        const float level = sample < 0.0f ? -sample : sample;
+        if (level >= envelope_peak) return sample;
+        const float rise = std::min(1.0f, age * ramp);
+        const float tail = (onset_samples - age) * (1.0f / onset_samples);
+        return sample * (1.0f + .65f * direction_gain * rise * rise * tail * tail *
+                         (1.0f - level / envelope_peak));
+    }
+
 private:
     static constexpr int attack_samples = 768; // 16 ms
     static constexpr int ramp_samples = 96; // 2 ms

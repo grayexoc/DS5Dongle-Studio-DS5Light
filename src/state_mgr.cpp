@@ -1524,6 +1524,21 @@ void state_suspend_release_sent(const uint8_t *data) {
         suspend_release_pending = false;
 }
 
+bool state_native_pcm_resume() {
+    if (usb_xinput_active() || output_test.pending() ||
+        (!state.UseRumbleNotHaptics && !state.EnableImprovedRumbleEmulation)) return false;
+
+    state_rumble_reset();
+    state.EnableRumbleEmulation = true;
+    state.UseRumbleNotHaptics = false;
+    state.EnableImprovedRumbleEmulation = false;
+    // Synthesized control updates must not restore the previous motor selector.
+    g_host_cache[0] = (g_host_cache[0] & ~3u) | 1u;
+    g_host_cache[38] &= ~4u;
+    rumble_output_pending = true;
+    return true;
+}
+
 void state_rumble_reset() {
     if (output_test.pending()) output_test.start(0, to_ms_since_boot(get_absolute_time()));
     extern volatile uint8_t g_rumble_l, g_rumble_r;

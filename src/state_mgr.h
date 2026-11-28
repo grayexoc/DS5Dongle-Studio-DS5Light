@@ -8,6 +8,7 @@
 
 void state_init();
 void state_rumble_reset();
+bool state_native_pcm_resume();
 bool state_rumble_wants_report(const uint8_t *prepared = nullptr);
 bool state_prepare_report(uint8_t *data, bool force); // Writes a full candidate for immediate enqueue.
 bool state_release_for_suspend();

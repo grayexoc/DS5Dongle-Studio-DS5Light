@@ -90,7 +90,7 @@ class DeviceBinding:
                 parent or (old.usb_parent_id if same else None),edge_serial,strict,expected,
                 old.edge_port_paths if expected is not None else (),ports or (old.usb_ports if same else ()))
         return self.snapshot()
-    def resolve_hid(self,rows,allow_unique=False,*,allow_mode_change=True):
+    def resolve_hid(self,rows,allow_unique=False,*,allow_mode_change=True,external_mode_change=False):
         with self._lock:
             value=self._identity
             reconnect_ports=(self._usb_mode_reconnect_ports
@@ -108,6 +108,11 @@ class DeviceBinding:
         if not allow_mode_change:return None
         vendor=self._usb_vendor(value)
         if vendor not in (0x054c,0x1209):return None
+        # A pad-triggered profile change has no app-issued reconnect request.
+        # Use the last confirmed USB location only after the old interface disappears.
+        if (external_mode_change and value.expected_edge_serial is None
+                and not any(row['path']==value.hid_path for row in rows)):
+            reconnect_ports=reconnect_ports or value.usb_ports
         ports=set(reconnect_ports)
         if not ports:return None
         other_vendor=0x1209 if vendor==0x054c else 0x054c

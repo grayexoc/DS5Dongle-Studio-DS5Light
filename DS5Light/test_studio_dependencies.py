@@ -43,9 +43,13 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(client.read_rumble(),dict(rumble_gain=100,rumble_release=0))
         self.assertEqual(client.write_fields(dict(rumble_gain=150,rumble_release=2),device.values),dict(rumble_gain=150,rumble_release=2))
         legacy=SettingsClient.__new__(SettingsClient);legacy.bulk=None
-        legacy.command=lambda *a,**k:bytes([0x66,12,0,2,0xc3,1,0,0xc4,1,0])
+        legacy.command=lambda *a,**k:bytes([0x66,12,1,0])
         self.assertFalse(legacy.read_rumble())
         with self.assertRaises(ValueError):legacy.write_fields({'rumble_gain':150},{'rumble_gain':100})
+        device.values['rumble_gain']=100
+        with patch.object(client,'command',return_value=bytes([0x66,12,0,2,0xc3,1,0,0xc4,1,0])):
+            with self.assertRaises(ValueError):client.read_rumble(refresh=True)
+        self.assertEqual(client.read_rumble(refresh=True),dict(rumble_gain=100,rumble_release=2))
     def test_rumble_mode_probe_write_and_legacy_fallback(self):
         device=fixture.Device();device.values['rumble_mode']=0
         client=SettingsClient(device,sleep=lambda _:None)

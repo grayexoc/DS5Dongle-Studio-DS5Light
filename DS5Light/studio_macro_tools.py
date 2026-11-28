@@ -124,7 +124,13 @@ class MacroTools:
         self._discard_macro_mask_on_read=mask_changed
         self.task('macros',lambda:self.with_client(lambda c:c.read_macros()))
     def filter_macros(self,kind):self.render_fields() # All definitions remain visible.
-    def toggle_macro(self,index,enabled,status=None,kind=''):
+    @staticmethod
+    def macro_activation_text(enabled):
+        if enabled is None:
+            return _ui_tr('활성 상태 미확인')
+        return _ui_tr('현재 프로필에서 활성') if enabled else _ui_tr('현재 프로필에서 비활성')
+
+    def toggle_macro(self,index,enabled,status=None):
         mask=int(self.doc.values.get('macro_disable',0xffffffff))
         if enabled:
             from studio_shift import validate_reserved_inputs
@@ -133,7 +139,7 @@ class MacroTools:
                 messagebox.showinfo(_ui_tr('입력 조합 제한'),str(exc),parent=self.parent)
                 self.render_fields();return
         self.changed('macro_disable',mask&~(1<<index) if enabled else mask|(1<<index))
-        if status:status.set(kind+' · '+(_ui_tr('활성') if enabled else _ui_tr('비활성')))
+        if status:status.set(self.macro_activation_text(enabled))
         self.update_macro_warnings()
     def macro_conflicts(self):
         from studio_macro_design import conflicts
@@ -175,7 +181,7 @@ class MacroTools:
             source=_ui_tr('오른쪽 스틱') if data[4]&64 else _ui_tr('왼쪽 스틱')
             target=' · '.join(d+' '+keyname(c) for d,c in zip(('↑','→','↓','←'),data[7:11]))
         elif data[4]&128:source=(_ui_tr('오른쪽') if data[4]&4 else _ui_tr('왼쪽'))+_ui_tr(' 터치 · ')+[_ui_tr('위'),_ui_tr('아래'),_ui_tr('왼쪽'),_ui_tr('오른쪽')][data[4]&3]+_ui_tr(' 밀기')
-        return (_ui_tr('[시프트] ') if data[5]&32 else '')+source+' → '+target+'\n'+(_ui_tr('스와이프 감지 시') if data[4]&128 and not data[4]&48 else CONDITIONS[condition(data)])+(_ui_tr(' · 전환 신호음') if data[5]&64 else '')+((_ui_tr(' · 터치패드 클릭 차단') if data[4]&128 and not data[4]&48 else _ui_tr(' · 조건 버튼 숨김')) if data[5]&4 else '')
+        return source+' → '+target+'\n'+(_ui_tr('스와이프 감지 시') if data[4]&128 and not data[4]&48 else CONDITIONS[condition(data)])+(_ui_tr(' · 전환 신호음') if data[5]&64 else '')+((_ui_tr(' · 터치패드 클릭 차단') if data[4]&128 and not data[4]&48 else _ui_tr(' · 조건 버튼 숨김')) if data[5]&4 else '')
     def new_macro(self):
         if self.busy or not self.loaded:return
         if 'macro_disable' not in self.doc.values:self.progress.configure(text=_ui_tr('매크로 사용 설정을 먼저 읽어 주세요.'));return
@@ -284,6 +290,7 @@ class MacroTools:
         self.live_text=tk.StringVar(value=_ui_tr('화면에 보이는 동안 관측한 마지막 입력·출력을 유지합니다. 숨긴 조건 버튼과 짧은 출력은 놓칠 수 있습니다.'))
         self.live_label=tk.Label(box,textvariable=self.live_text,bg=BG,fg=MUTED,wraplength=425,justify='left',anchor='w')
         self.live_label.grid(row=2,column=0,columnspan=2,sticky='ew',pady=(12,0))
+        if not self.live_enabled:self.live_label.grid_remove()
         self._live_view=None
         self.live_notice=tk.Label(box,text=_ui_tr('\n짧은 출력·전체 조합키·프로필 전환 등은 확인하지 못할 수 있음').lstrip(),bg=BG,fg=GOLD,wraplength=425,justify='left',anchor='w')
         self.live_notice.grid(row=3,column=0,columnspan=2,sticky='ew',pady=(6,0))
@@ -339,6 +346,9 @@ class MacroTools:
         self.render_fields();self.live_poll()
     def stop_live(self):
         self.live_enabled=False
+        for name in ('live_label','live_notice'):
+            label=getattr(self,name,None)
+            if label is not None and label.winfo_exists():label.grid_remove()
         monitor=getattr(self,'monitor',None)
         if monitor:
             monitor.stop.set();monitor.visible.set()
@@ -363,7 +373,9 @@ class MacroTools:
         try:
             result=self.monitor.results.get_nowait()
             if result.get('error'):
-                self.stop_live();self.render_fields();self.live_text.set(_ui_tr('입력 확인 실패 · ')+result['error']);return
+                self.stop_live();self.render_fields()
+                self.progress.configure(text=_ui_tr('입력 확인 실패 · ')+result['error'],kind='error')
+                self.update_state();return
             self.live_result=result;self.show_live_result(result)
         except queue.Empty:pass
         self.live_job=self.parent.after(100,self.live_poll)

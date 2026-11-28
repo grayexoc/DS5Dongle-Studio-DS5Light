@@ -21,7 +21,91 @@ def info(i=0, valid=1, name='Audio Haptics', status=0):
 def activate(status=0, reconnect=0):
     return bytes([132, 102, 9, status, 0, reconnect, 0]) + bytes(57)
 
+
+class StoredFieldsDevice(Fake):
+    def __init__(self, fault=None):
+        super().__init__([])
+        self.fault = fault
+
+    def send_feature_report(self, packet):
+        from studio_settings_protocol import encode
+        from studio_scope import EDITABLE
+
+        super().send_feature_report(packet)
+        command = packet[2]
+        if command == 0x0a:
+            reply = bytearray(info())
+            reply[23:31] = b'SLT1SBR1'
+            reply[31:35] = bytes((8, 0, 0, 0))
+        elif command == 0x29:
+            slot, count = packet[3:5]
+            reply = bytearray((132, 102, command, 0, slot, count, 8, 0, 0, 0))
+            for fid in packet[5:5 + count]:
+                field = next(f for f in EDITABLE.values() if f[0] == fid)
+                value = encode(field, 60 if field[1] == 'auto_haptics_lowpass_hz' else 0)
+                reply.extend((fid, len(value)))
+                reply.extend(value)
+            reply = reply.ljust(60, b'\0') + packet[60:64]
+            if self.fault == 'revision':reply[6] = 9
+            if self.fault == 'status':reply[3] = 1
+            if self.fault == 'count':reply[5] -= 1
+            if self.fault == 'length':reply[11] += 1
+            if self.fault == 'tag':reply[61] ^= 0x01
+            if self.fault == 'interference':
+                reply[2] = 0x27
+                self.fault = None
+        else:
+            raise AssertionError(f'unexpected command {command:02x}')
+        self.replies.append(reply)
+        return len(packet)
+
+
 class Tests(unittest.TestCase):
+
+    def test_stored_fields_use_tagged_bulk_after_positive_slot_info(self):
+        from studio_settings_protocol import SettingsClient
+        from studio_scope import EDITABLE
+
+        keys = ('auto_haptics_lowpass_hz', 'auto_haptics_enable', 'auto_haptics_gain',
+                'auto_haptics_smooth', 'auto_haptics_gate', 'mix_native_level',
+                'mix_native_filter', 'ah_dsp_source', 'ah_high_gain')
+        device = StoredFieldsDevice()
+        client = SettingsClient(device, sleep=lambda _: None)
+        slot = client.info(0)
+        self.assertTrue(client.bulk_stored_slot)
+        self.assertEqual(slot.catalog_revision, 8)
+        values = client.read_stored_slot(slot, (EDITABLE[key] for key in keys))
+        self.assertEqual(values, dict.fromkeys(keys, 0) | {'auto_haptics_lowpass_hz': 60})
+        self.assertEqual([packet[2] for packet in device.sent], [0x0a, 0x29, 0x29])
+
+    def test_stored_fields_reject_bad_replies_without_legacy_reads(self):
+        from unittest.mock import Mock
+        from studio_backup import backup_all
+        from studio_settings_protocol import SettingsClient
+
+        for fault in ('revision', 'status', 'count', 'length', 'tag'):
+            with self.subTest(fault=fault):
+                device = StoredFieldsDevice(fault)
+                client = SettingsClient(device, sleep=lambda _: None)
+                client.read_lightbar = Mock(return_value={})
+                client.read_rumble = Mock(return_value={})
+                client.read_one = Mock(return_value=0)
+                with self.assertRaises(TimeoutError if fault == 'tag' else ValueError):
+                    backup_all(client, indices=[0])
+                expected = [0x0a, 0x29, 0x29] if fault == 'tag' else [0x0a, 0x29]
+                self.assertEqual([packet[2] for packet in device.sent], expected)
+                self.assertTrue(all(len(call.args) == 1 for call in client.read_one.call_args_list))
+
+    def test_stored_fields_retry_read_after_another_reply_overwrites_it(self):
+        from studio_settings_protocol import SettingsClient
+        from studio_scope import EDITABLE
+
+        device = StoredFieldsDevice('interference')
+        client = SettingsClient(device, sleep=lambda _: None)
+        slot = client.info(0)
+        values = client.read_stored_slot(slot, [EDITABLE['auto_haptics_enable']])
+        self.assertEqual(values, {'auto_haptics_enable': 0})
+        self.assertEqual([packet[2] for packet in device.sent], [0x0a, 0x29, 0x29])
 
     def test_delete_checks_capability_and_slot_then_verifies_empty(self):
         from unittest.mock import Mock
@@ -57,6 +141,7 @@ class Tests(unittest.TestCase):
         c, d = self.client([info(name='테스트'), info(1, 0)])
         self.assertEqual(c.info(0).name, '테스트')
         self.assertEqual(c.info(1).label(), '02 · Empty')
+        self.assertFalse(c.bulk_stored_slot)
         self.assertTrue(all((x[2] == 10 for x in d.sent)))
 
     def test_unavailable_not_empty(self):

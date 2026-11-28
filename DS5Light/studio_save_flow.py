@@ -14,8 +14,29 @@ class SaveFlow:
             self.progress.configure(text=_ui_tr('매핑을 저장할 수 없습니다. 다른 작업을 마친 뒤 장치와 매핑 목록을 새로 고침하세요.'),kind='warning');self.update_state();return False
         return True
 
-    def save_registered_macro(self,index,record,stamp):
+    def save_registered_macro(self,index,record,stamp,*,auto_activate=False):
         mask=int(self.doc.values['macro_disable'])&~(1<<index)
+        if auto_activate:
+            target=self.current_save_target()
+            if target is None or self.profile_stamp!=stamp:return
+            other=len(set(self.doc.user_changes)-{'macro_disable'})
+            checks='macro_disable' in self.doc.user_changes
+            live=bool(stamp.get('edited'))
+            if other or checks or live:
+                from studio_dialogs import confirm_macro_profile
+                original_path=self.path
+                accepted=confirm_macro_profile(self.parent,target,other,other_checks=checks,live_changes=live,before_shared=True)
+                if (self.closed or self.app._close_requested or self.cancel.is_set() or not self.write_ready
+                        or self.busy or self.uncertain or self.external_stale or self.profile_stamp!=stamp or self.path!=original_path):return
+                if not accepted:
+                    self.save_shared_macros()
+                    return
+            self.changed('macro_disable',mask)
+            def completed():
+                self.progress.configure(text=_ui_tr('Pico 매핑 저장 확인 · 현재 프로필에서 활성화했습니다. 다른 프로필에서는 별도로 활성화하세요.'),kind='saved')
+                self.update_state()
+            self.apply(True,target=target,after=completed,new_mapping=index)
+            return
         self.save_macro_edits(stamp,mask=mask,record=(index,record))
 
     def save_macro_edits(self,stamp,*,mask=None,record=None):
@@ -29,18 +50,19 @@ class SaveFlow:
             if mask is None:return
             target=self.current_save_target()
             if target is None:return
+            other_changes=len(set(self.doc.user_changes)-{'macro_disable'})
             self.changed('macro_disable',mask)
             self.render_fields()
             self.progress.configure(text=_ui_tr('Pico 매핑 저장 확인 · 현재 프로필 사용 체크 변경됨 · 프로필 저장 대기'),kind='action');self.update_state()
             from studio_dialogs import confirm_macro_profile
-            other_changes=len(set(self.doc.user_changes)-{'macro_disable'})
             accepted=confirm_macro_profile(self.parent,target,other_changes)
             if self.closed or self.app._close_requested:return
             if (self.busy or not self.loaded or not self.write_ready or self.external_stale
-                    or self.uncertain or self.profile_stamp!=stamp):
+                    or self.uncertain or self.cancel.is_set() or self.profile_stamp!=stamp):
                 self.progress.configure(text=_ui_tr('프로필 상태가 변경되어 저장을 중단했습니다. 새로 고침으로 확인하세요.'),kind='warning');self.update_state();return
             if accepted:
-                try:self.apply(True,target=target)
+                try:
+                    self.apply(True,target=target)
                 except Exception as exc:
                     self.progress.configure(text=_ui_tr('프로필 저장 시작 실패 · 편집값은 유지됩니다. ')+str(exc),kind='error');self.update_state()
             else:

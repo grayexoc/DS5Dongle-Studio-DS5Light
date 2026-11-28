@@ -76,6 +76,26 @@ EN.update({
     '출력 장치 · DualSense': 'Output device · DualSense',
     '캡처 채널': 'Capture channels',
     '실행 옵션': 'Launch options',
+    '언어': 'Language',
+    'Pico에 저장하면 현재 프로필에서 자동으로 활성화합니다. 다른 프로필에서는 별도로 활성화하세요.':
+        'Saving to Pico automatically enables this mapping in the current profile. Enable it separately in other profiles.',
+    'Pico에 저장한 뒤 현재 프로필의 사용 여부를 저장할지 묻습니다.':
+        'After saving to Pico, you will be asked whether to save activation for the current profile.',
+    '매핑 동작은 모든 프로필이 공유합니다. 다른 프로필에서 이미 사용하는 동작을 수정하면 그 프로필에도 반영됩니다.':
+        'Mappings are shared across profiles. Editing a mapping also affects profiles that already use it.',
+    '완료하면 미저장 공용 매핑을 모두 Pico에 저장하고 현재 프로필에서 새 매핑을 활성화합니다.':
+        'Finish to save pending shared mappings to Pico and enable the new mapping in the current profile.',
+    'Pico 매핑 저장 확인 · 현재 프로필에서 활성화했습니다. 다른 프로필에서는 별도로 활성화하세요.':
+        'Pico mapping saved and enabled in the current profile. Enable it separately in other profiles.',
+    '다른 매핑의 사용 여부 변경도 함께 저장합니다.': 'Pending changes to other mapping checkboxes will also be saved.',
+    '현재 프로필에 임시 적용된 설정도 함께 저장합니다.': 'Live edits to the current profile will also be saved.',
+    '현재 프로필에서 활성': 'Active in this profile',
+    '새 매핑과 현재 프로필의 설정을 함께 저장합니다. 나중에를 선택하면 공유 매핑만 저장합니다.': 'Save the new mapping together with the current profile settings. Choose Later to save only the shared mapping.',
+    '현재 프로필에서 비활성': 'Inactive in this profile',
+    '활성 상태 미확인': 'Activation unknown',
+    '드래그하거나 방향키를 눌러 표시 순서를 바꿉니다.': 'Drag or use the arrow keys to reorder the list.',
+    '언어 변경': 'Language changed',
+    '앱을 다시 시작하면 변경한 언어가 적용됩니다.': 'Restart the app to apply the selected language.',
     '마지막 옵션 저장 및 다음 실행 시 복원': 'Save and restore options on next launch',
     '앱을 열면 자동으로 시작': 'Start automatically when the app opens',
     '01   캡처 모드': '01   Capture mode',

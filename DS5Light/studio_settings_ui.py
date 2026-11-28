@@ -11,7 +11,7 @@ from studio_scope import EDITABLE,CONSTRUCTION,FAST_TRIGGER_FIELDS,TRIGGER_FIELD
 from studio_range import RangeSlider
 from studio_help import reference_point
 from studio_macro_tools import MacroTools
-from studio_shift_ui import ShiftUI
+from studio_shift_ui import ShiftUI,layer_icon
 from studio_entry import EntryQueries
 from studio_read_view import StableReadView,READ_JOBS
 from studio_option_groups import OptionGroups
@@ -180,10 +180,15 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.notice_label.bind('<Configure>',self.fit_notice)
         FieldTip(self.notice_label,lambda:self.notice.get())
         actions=tk.Frame(footer.content,bg=CARD);actions.grid(row=0,column=1,rowspan=2,sticky='e')
-        self.revert_button=ttk.Button(actions,text=ui_text(_ui_tr('되돌리기'),'Revert'),command=self.revert,width=8);self.revert_button.pack(side='left',padx=(0,6))
+        for column in (0,1):
+            actions.columnconfigure(column,weight=1,uniform='edit_actions')
+        self.revert_button=ttk.Button(actions,text=ui_text(_ui_tr('되돌리기'),'Revert'),command=self.revert,width=0)
+        self.revert_button.grid(row=0,column=0,sticky='ew',padx=(0,6))
         FieldTip(self.revert_button,_ui_tr('마지막 조회 또는 적용 이후의 미적용 편집을 되돌립니다. 이미 장치에 적용하거나 저장한 값은 되돌리지 않습니다.'))
-        self.apply_button=ttk.Button(actions,text=ui_text(_ui_tr('임시 적용'),'Apply temporarily'),command=lambda:self.apply(False),width=9);self.apply_button.pack(side='left',padx=(0,6))
-        self.save_button=ttk.Button(actions,text=ui_text(_ui_tr('현재 프로필에 저장'),'Save to profile'),command=lambda:self.apply(True),style='Accent.TButton',width=17);self.save_button.pack(side='left')
+        self.apply_button=ttk.Button(actions,text=ui_text(_ui_tr('임시 적용'),'Apply temporarily'),command=lambda:self.apply(False),width=0)
+        self.apply_button.grid(row=0,column=1,sticky='ew',padx=(0,6))
+        self.save_button=ttk.Button(actions,text=ui_text(_ui_tr('현재 프로필에 저장'),'Save to profile'),command=lambda:self.apply(True),style='Accent.TButton',width=17)
+        self.save_button.grid(row=0,column=2)
         FieldTip(self.apply_button,_ui_tr('현재 프로필의 설정과 매크로 사용 체크를 지금 연결에만 적용합니다. 유지하려면 현재 프로필에 저장하세요. 공유 매크로 정의는 전송하지 않습니다.'))
         FieldTip(self.save_button,_ui_tr('현재 슬롯과 Pico 시작 설정에 저장합니다.\n다른 앱의 Pico 오디오 출력을 중지하세요.\n공용 매핑 동작은 편집 완료 시 자동 저장됩니다.'))
         self.render_fields();self.update_state()
@@ -885,13 +890,13 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             self.app.stop(on_complete=begin)
             self._resume_token=(self.app.run_intent.generation,route)
         else:self.task(kind,operation)
-    def apply(self,persist=False,target=None,after=None):
+    def apply(self,persist=False,target=None,after=None,*,new_mapping=None):
         if self.invalid or not self.loaded or not self.write_ready or self.busy:return
         if persist:
             target=target or self.current_save_target()
             if target is None:
                 self.select_category(5);self.progress.configure(text=_ui_tr('저장할 슬롯의 현재 설정 저장을 눌러 주세요.'));return
-        if 'macro_disable' in self.doc.changes and self.shared_changes_pending():
+        if new_mapping is None and 'macro_disable' in self.doc.changes and self.shared_changes_pending():
             messagebox.showinfo(_ui_tr('매크로 저장 순서'),_ui_tr('공용 매핑의 자동 저장이 완료되지 않았습니다. 매핑을 내보내기로 보관한 뒤 새로 고침하고 다시 가져오세요.'),parent=self.parent);return
         try:
             validate_changes(self.doc.baseline,self.doc.changes)
@@ -901,6 +906,11 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         baseline=dict(self.doc.baseline);changes=dict(self.doc.changes);effects=copy.deepcopy(self.doc.effect_changes)
         effect_baseline=copy.deepcopy(self.doc.effect_baseline)
         pending_macros=self.doc.macros_pending_flash;profile_stamp=self.profile_stamp
+        if new_mapping is not None:
+            macro_before=copy.deepcopy(self.doc.macro_baseline)
+            macro_changes=copy.deepcopy(self.doc.macro_changes)
+            macro_after={**macro_before,**{str(index):row for index,row in macro_changes.items()}}
+            activation_mask=self.doc.values['macro_disable']
         profile_revision=self.profile_revision
         refresh_macros='macro_disable' in changes
         self.after_profile_save=after
@@ -933,7 +943,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             for key in baseline:
                 if key not in current or current[key]!=baseline[key]:raise RuntimeError(_ui_tr('외부에서 설정이 변경되었습니다. 다시 읽어 주세요.'))
             reconnect_needed=reconnect
-            if refresh_macros:
+            if refresh_macros and new_mapping is None:
                 try:macros=client.read_macros()
                 except (OSError,RuntimeError,TimeoutError):macros=None
                 reconnect_needed=needs_reconnect(current,dict(current,**changes),macros)
@@ -943,6 +953,19 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                     if actual[str(trig)][index]!=effect_baseline[str(trig)][index]:raise RuntimeError(_ui_tr('효과가 외부에서 변경되었습니다. 새로 고침을 누르세요.'))
             if before is not None and 'config_token' in before and client.profile(include_revision=True)!=before:
                 raise RuntimeError(_ui_tr('외부에서 설정이 변경되었습니다. 다시 읽어 주세요.'))
+            if new_mapping is not None:
+                if (new_mapping not in macro_changes or client.read_macros()!=macro_before
+                        or any(macro_before.get(str(new_mapping),()))):
+                    raise RuntimeError(_ui_tr('공유 매크로가 외부에서 변경되었습니다. 새로 고침으로 확인하세요.'))
+                for index,row in macro_changes.items():client.write_macro(index,row)
+                if client.read_macros()!=macro_after:
+                    raise RuntimeError(_ui_tr('공유 매크로 적용값 불일치 · 새로 고침으로 확인하세요.'))
+                stages.append(ui_text('공유 매핑 저장 응답 미확인','Shared mapping save unconfirmed'))
+                client.commit_macros()
+                stages[-1]=ui_text('공유 매핑 저장 확인','Shared mapping save acknowledged')
+                if client.profile(include_revision=True)!=before:
+                    raise RuntimeError(_ui_tr('현재 프로필이 바뀌었습니다. 다시 읽어 주세요.'))
+                reconnect_needed=True
             checked=client.write_fields(changes,current)
             volume_warning=None
             if 'speaker_volume' in changes:
@@ -1002,7 +1025,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         def operation():
             try:
                 result=self.with_client(op)
-            except (OSError,RuntimeError,TimeoutError) as exc:
+            except (OSError,RuntimeError,ValueError,TimeoutError) as exc:
                 if stages and isinstance(exc,ProfileSaveConflict):
                     stages[-1]=_ui_tr('설정 충돌로 해당 저장을 실행하지 않았습니다.')
                 if stages:raise RuntimeError(' · '.join((*stages,str(exc)))) from exc
@@ -1020,6 +1043,8 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                         result['reloaded']=wait_for_macros(reconnect_path,reconnect_serial,self.cancel,
                                                           device_binding=recovery_binding)
                 except Exception as exc:
+                    if new_mapping is not None:
+                        raise RuntimeError(' · '.join((*stages,str(exc)))) from exc
                     result['persist_confirmed']=result['saved']
                     result['saved']=False
                     result['reload_error']=str(exc)
@@ -1031,6 +1056,11 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
                             pass
                 else:
                     fresh=result['reloaded']
+                    if new_mapping is not None:
+                        if fresh['macros']!=macro_after or fresh['values'].get('macro_disable')!=activation_mask:
+                            raise RuntimeError(' · '.join((*stages,ui_text('재연결 후 매핑 또는 활성 상태 불일치','Mapping or activation differs after reconnect'))))
+                        result['registered_mapping']=True
+                        result['macros_pending']=False
                     fresh_profile=fresh.get('profile') or {}
                     if any(key not in fresh_profile or fresh_profile[key]!=result['profile'][key]
                            for key in ('index','name','edited')):
@@ -1157,8 +1187,11 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
             if result.get('reloaded'):
                 fresh=result['reloaded'];self.uncertain=False
                 self.profile_revision=(fresh.get('profile') or {}).get('config_token')
+                if result.get('registered_mapping'):
+                    self.doc.macro_baseline=copy.deepcopy(fresh['macros'])
+                    self.doc.macros_pending_flash=False
                 self.doc.load(fresh['values']);self.merge_entry_snapshot(fresh)
-                if not self.doc.macro_changes:
+                if result.get('registered_mapping') or not self.doc.macro_changes:
                     self.doc.macros=copy.deepcopy(fresh['macros']);self.doc.macro_baseline=copy.deepcopy(fresh['macros'])
                 self.doc.macros_pending_flash=result.get('macros_pending',False)
                 self.doc.unsaved=not result['saved'];self.doc.save_requested=result['saved']
@@ -1369,7 +1402,7 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
     def render_macro_enable(self):
         pass # Per-profile switches live beside the definitions they enable.
     def render_macros(self):
-        from studio_macro_design import category,populated
+        from studio_macro_design import populated
         from studio_shift import POWER_OFF
         box=self.card(_ui_tr('Pico 매핑·매크로'))
         ttk.Button(box,text=_ui_tr('매핑 목록 새로 고침'),command=self.read_macro_table).grid(row=1,column=0,sticky='w',pady=(0,8))
@@ -1383,33 +1416,119 @@ class StudioSettings(ShiftUI,OptionGroups,LightbarUI,StableReadView,RecommendedP
         self.macro_warning_label.grid(row=4,column=0,columnspan=2,sticky='ew',pady=(0,12))
         self.macro_warning_button=ttk.Button(box,text=_ui_tr('겹치는 입력 모두 보기'),command=self.show_macro_conflicts);self.macro_warning_button.grid(row=5,column=0,columnspan=2,sticky='w',pady=(0,8))
         self.render_shift_controls(box)
-        mask=int(self.doc.values.get('macro_disable',0xffffffff));n=0
-        for i in range(32):
+        mask=int(self.doc.values.get('macro_disable',0xffffffff))
+        preferences=self.app.preference_store.data
+        order=list(dict.fromkeys([*preferences.get('mapping_display_order',[]),*range(32)]))
+        shifted=getattr(self,'macro_layer',False)
+        listing=tk.Frame(box,bg=CARD)
+        listing.grid(row=7,column=0,columnspan=2,sticky='ew')
+        listing.columnconfigure((0,1),weight=1,uniform='mapping')
+        rows={}
+
+        def place_rows():
+            for position,index in enumerate(visible):
+                column=position%2
+                rows[index].grid(row=position//2,column=column,sticky='nsew',
+                                 padx=(0,8) if column==0 else (8,0),pady=(0,8))
+
+        def move(index,target):
+            if target==index or target not in rows:
+                return
+            target_position=visible.index(target)
+            visible.remove(index)
+            visible.insert(target_position,index)
+            positions=[position for position,slot in enumerate(order) if slot in rows]
+            for position,slot in zip(positions,visible):
+                order[position]=slot
+            preferences['mapping_display_order']=order.copy()
+            self.app.schedule_preferences_save()
+            place_rows()
+
+        def drop(event,index):
+            x,y=event.x_root,event.y_root
+            viewport=self.canvas
+            top=viewport.winfo_rooty()
+            if not top<=y<top+viewport.winfo_height():
+                return
+            for slot,row in rows.items():
+                left,top=row.winfo_rootx(),row.winfo_rooty()
+                if left<=x<left+row.winfo_width() and top<=y<top+row.winfo_height():
+                    move(index,slot)
+                    return
+
+        def move_by_key(index,offset):
+            position=visible.index(index)+offset
+            if 0<=position<len(visible):
+                move(index,visible[position])
+            return 'break'
+
+        from battery_logo import HoverHint
+        from studio_button_names import NAMES
+        for i in order:
             data=self.doc.macros.get(str(i))
-            if not populated(data) or data[17]==31 or bool(data[5]&32)!=getattr(self,'macro_layer',False):continue
+            if not populated(data) or data[17]==31 or bool(data[5]&32)!=shifted:continue
             name=bytes(data[19:35]).split(b'\0')[0].decode('utf-8','replace')
-            row=tk.Frame(box,bg=CARD);row.grid(row=7+n,column=0,columnspan=2,sticky='ew',pady=9);row.columnconfigure(1,weight=1);n+=1
-            index_box=tk.Frame(row,bg=CARD);index_box.grid(row=0,column=0,rowspan=3,padx=(0,10),sticky='n')
-            v=tk.BooleanVar(value=not bool(mask&(1<<i)));check=CircleCheck(index_box,text=f'{i+1:02d}',variable=v,command=lambda:None,background=CARD);check.pack(side='bottom',pady=(4,0));check.set_enabled(not self.busy and 'macro_disable' in self.doc.values)
-            status=tk.StringVar(value=category(data)+' · '+(_ui_tr('활성') if v.get() else _ui_tr('비활성')))
-            widget_trace(check,v,lambda *_,v=v,i=i,status=status,kind=category(data):self.toggle_macro(i,v.get(),status,kind))
-            tk.Label(row,text=name or _ui_tr('이름 없는 매핑'),bg=CARD,fg=FG,font=(_ui_tr('맑은 고딕'),10,'bold'),anchor='w').grid(row=0,column=1,sticky='w')
-            summary=tk.Frame(row,bg=CARD);summary.grid(row=1,column=1,sticky='ew')
-            from studio_button_names import NAMES
+            row=rows[i]=tk.Frame(listing,bg=CARD,highlightthickness=1,highlightbackground=BORDER,padx=6,pady=6)
+            row.columnconfigure(1,weight=1)
+            heading=tk.Frame(row,bg=CARD)
+            heading.grid(row=0,column=0,columnspan=3,sticky='ew')
+            heading.columnconfigure(1,weight=1)
+            grip=tk.Label(heading,text='⠿',bg=CARD,fg=MUTED,cursor='fleur',
+                          takefocus=True,highlightthickness=1,highlightbackground=CARD,highlightcolor=GOLD)
+            grip.grid(row=0,column=0,sticky='w',padx=(0,4))
+            grip.bind('<Button-1>',lambda event:event.widget.focus_set())
+            grip.bind('<ButtonRelease-1>',lambda event,i=i:drop(event,i))
+            grip.bind('<Left>',lambda _,i=i:move_by_key(i,-1))
+            grip.bind('<Right>',lambda _,i=i:move_by_key(i,1))
+            grip.bind('<Up>',lambda _,i=i:move_by_key(i,-2))
+            grip.bind('<Down>',lambda _,i=i:move_by_key(i,2))
+            HoverHint(grip,_ui_tr('드래그하거나 방향키를 눌러 표시 순서를 바꿉니다.'))
+            name_label=tk.Label(heading,text=name or _ui_tr('이름 없는 매핑'),bg=CARD,fg=FG,
+                                font=(_ui_tr('맑은 고딕'),10,'bold'),width=1,anchor='w',justify='left')
+            name_label.grid(row=0,column=1,sticky='ew')
+            name_label.bind('<Configure>',lambda event:event.widget.configure(wraplength=max(1,event.width-4)))
+            v=tk.BooleanVar(value=not bool(mask&(1<<i)))
+            activation=tk.Frame(heading,bg=CARD)
+            activation.grid(row=0,column=2,sticky='e',padx=(6,0))
+            profile_known='macro_disable' in self.doc.values
+            status=tk.StringVar(value=self.macro_activation_text(v.get() if profile_known else None))
+            label=tk.Label(activation,textvariable=status,bg=CARD,fg=GOLD if profile_known and v.get() else MUTED,
+                           font=(_ui_tr('맑은 고딕'),8),padx=0)
+            label.pack(side='left',padx=(0,4))
+            widget_trace(label,status,lambda *_,label=label,v=v:label.configure(fg=GOLD if v.get() else MUTED))
+            check=CircleCheck(activation,text=f'{i+1:02d}',variable=v,command=lambda:None,background=CARD)
+            check.pack(side='left')
+            check.set_enabled(not self.busy and profile_known)
+            widget_trace(check,v,lambda *_,v=v,i=i,status=status:self.toggle_macro(i,v.get(),status))
             chord=int.from_bytes(bytes(data[:4]),'little')
             source=[_ui_tr('오른쪽 스틱') if data[4]&64 else _ui_tr('왼쪽 스틱')] if data[4]&32 else [_ui_tr('터치패드 클릭')] if data[4]&128 else [name for bit,name in enumerate(NAMES) if chord&(1<<bit)]
             if source:
-                symbols=tk.Frame(index_box,bg=CARD);symbols.pack(side='top',pady=(0,2))
+                symbols=tk.Frame(row,bg=CARD);symbols.grid(row=1,column=0,columnspan=2,sticky='w',pady=(2,0))
                 GlyphStrip(symbols,source,limit=3).pack(side='left')
                 output=data[17]
                 if 0<output<len(OUT_BUTTONS) or output==POWER_OFF:
                     tk.Label(symbols,text='→',bg=CARD,fg=GOLD,padx=0,borderwidth=0).pack(side='left',padx=1)
                     GlyphStrip(symbols,[_ui_tr('듀얼센스 전원') if output==POWER_OFF else OUT_BUTTONS[output]]).pack(side='left')
-            tk.Label(summary,text=self.macro_summary(data),bg=CARD,fg=MUTED,wraplength=255,justify='left',anchor='w').pack(anchor='w')
-            tk.Label(row,textvariable=status,bg=CARD,fg=GOLD,font=(_ui_tr('맑은 고딕'),8),anchor='w').grid(row=2,column=1,sticky='w',pady=(3,0))
-            ttk.Button(row,text=_ui_tr('편집'),command=lambda i=i:self.edit_macro(i),width=5).grid(row=0,column=2,rowspan=3,padx=4)
-            ttk.Button(row,text=_ui_tr('삭제'),command=lambda i=i:self.delete_macro(i),width=5).grid(row=0,column=3,rowspan=3)
-        if not n:
+            summary=tk.Frame(row,bg=CARD)
+            summary.grid(row=2,column=0,columnspan=2,sticky='ew',pady=(2,0))
+            if shifted:
+                icon=tk.Label(summary,bg=CARD,padx=0,pady=0,borderwidth=0)
+                icon.layer_image=layer_icon(icon)
+                icon.configure(image=icon.layer_image)
+                icon.pack(side='left',anchor='n',padx=(0,4),pady=(6,0))
+            detail=tk.Label(summary,text=self.macro_summary(data),bg=CARD,fg=MUTED,width=1,
+                            justify='left',anchor='w')
+            detail.pack(side='left',fill='x',expand=True,anchor='n')
+            detail.bind('<Configure>',lambda event:event.widget.configure(wraplength=max(1,event.width-4)))
+            actions=tk.Frame(row,bg=CARD)
+            actions.grid(row=1,column=2,rowspan=2,sticky='ne',padx=(6,0),pady=(2,0))
+            ttk.Button(actions,text=_ui_tr('편집'),command=lambda i=i:self.edit_macro(i),
+                       width=0,padding=(8,3)).pack(fill='x',pady=(0,4))
+            ttk.Button(actions,text=_ui_tr('삭제'),command=lambda i=i:self.delete_macro(i),
+                       width=0,padding=(8,3)).pack(fill='x')
+        visible=list(rows)
+        place_rows()
+        if not rows:
             text=_ui_tr('아직 추가한 매핑·매크로가 없습니다. + 매핑·매크로 추가로 시작하세요.') if self.doc.macros else _ui_tr('목록을 읽어 표시합니다. + 매핑·매크로 추가를 누르면 먼저 목록을 읽습니다.')
             tk.Label(box,text=text,bg=CARD,fg=MUTED,wraplength=420,justify='left',pady=16).grid(row=7,column=0,columnspan=2,sticky='ew')
         self.update_macro_warnings()

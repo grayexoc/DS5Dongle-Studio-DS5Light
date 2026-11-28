@@ -19,9 +19,13 @@
 // the unlock sequence. USB can connect immediately afterwards; profile reads
 // are gated by dse_profiles_ready() until the snapshot is prepared.
 void dse_on_connect();
+void dse_on_disconnect();
+
+// HIDP header + report ID + 63-byte feature payload.
+constexpr uint16_t DSE_PROFILE_PACKET_SIZE = 65;
 
 // Called from the BT control-channel handler for every received feature
-// report (0xA3 ...). Lets the module observe HID HANDSHAKE responses.
+// report (0xA3 ...). Caches full profile reports and observes HID handshakes.
 void dse_on_control_packet(const uint8_t *packet, uint16_t size);
 
 // Called when a profile slot write (SET 0x60-0x62) is forwarded, so the

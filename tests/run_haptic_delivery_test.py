@@ -42,9 +42,13 @@ struct Config {int auto_haptics_enable=1,rumble_gain=100,rumble_release=0,rumble
 Config &get_config(){return config;}
 volatile uint8_t g_rumble_l=0,g_rumble_r=0;
 RumbleShape rumble_shape;bool rumble_output_pending=false;
+struct { bool pending() const {return active;} bool active=false; } active_test;
 """
 code+=extract(audio,'bool audio_haptics_stream_active()')+'\n'
 code+=extract(source,'bool state_update(')+'\n'
+code+='void state_rumble_reset();\n#define output_test active_test\n'
+code+=extract(source,'bool state_native_pcm_resume()')+'\n#undef output_test\n'
+code+='void state_rumble_reset(){rumble_shape.reset();state.RumbleEmulationLeft=state.RumbleEmulationRight=0;g_host_cache[2]=g_host_cache[3]=0;}\n'
 code+='void apply(const Motor &update,uint8_t size=63) { const Motor old_state=state;\n'+block+'}\n'
 bt=(root/'src/bt.cpp').read_text(encoding='utf-8')
 refresh=bt[bt.index('                    if (auto *queued = pending_send.data[1]'):bt.index('                    const uint8_t status = l2cap_send')]
@@ -221,7 +225,20 @@ int main(){
    timed.EnableImprovedRumbleEmulation=false;timed.RumbleEmulationLeft=timed.RumbleEmulationRight=0;
    apply(timed);assert(state.EnableRumbleEmulation&&!state.UseRumbleNotHaptics);
  }
- puts("PASS: native unity/headroom, stereo, queued STOP/non-motor preservation, held rumble, DS-only watchdog, stream fallback/wrap/disconnect");
+ xinput=false;
+ for (int improved=0;improved<2;++improved) {
+   Motor start;start.UseRumbleNotHaptics=true;start.EnableImprovedRumbleEmulation=improved;
+   start.RumbleEmulationLeft=54;start.RumbleEmulationRight=42;
+   apply(start);g_host_cache[0]=3;g_host_cache[38]=improved?4:0;
+   assert(state_native_pcm_resume());
+   assert(state.EnableRumbleEmulation&&!state.UseRumbleNotHaptics&&!state.EnableImprovedRumbleEmulation);
+   assert(!state.RumbleEmulationLeft&&!state.RumbleEmulationRight&&rumble_output_pending);
+   assert((g_host_cache[0]&3)==1&&!(g_host_cache[38]&4));
+   assert(!state_native_pcm_resume());
+   apply(start);xinput=true;assert(!state_native_pcm_resume());xinput=false;
+   active_test.active=true;assert(!state_native_pcm_resume());active_test.active=false;
+ }
+ puts("PASS: native unity/headroom, stereo, queued STOP/non-motor preservation, held rumble, DS-only watchdog, stream fallback/wrap/disconnect, early PCM resume");
 }
 """
 (out/'test.cpp').write_text(code,encoding='utf-8')

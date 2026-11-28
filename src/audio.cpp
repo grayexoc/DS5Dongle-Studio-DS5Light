@@ -461,6 +461,7 @@ void __not_in_flash_func(audio_loop)() {
     static uint8_t usb_remainder[CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX * sizeof(int16_t)]{};
     static uint usb_remainder_bytes = 0;
     static uint8_t previous_mode = 0xff;
+    static bool native_pcm_started = false;
     const uint8_t mode = get_config().auto_haptics_enable;
     const bool link_changed = connected != was_connected;
     const bool reset_stream = stream_reset_requested != StreamReset::None || link_changed ||
@@ -477,6 +478,7 @@ void __not_in_flash_func(audio_loop)() {
         g_diag_rear_left_peak = g_diag_rear_right_peak = 0;
         audio_buf_pos = 0;
         haptic_buf_pos = 0;
+        native_pcm_started = false;
         packet_peak_l = packet_peak_r = 0;
         haptic_packet_peaks.store(0, std::memory_order_relaxed);
         usb_remainder_bytes = 0;
@@ -1011,6 +1013,10 @@ void __not_in_flash_func(audio_loop)() {
             }
             float al = genv_l * carrier_l * auto_gain;
             float ar = genv_r * carrier_r * auto_gain;
+            if (attack) {
+                al = texture_l.emphasize_onset(al, genv_l * auto_gain);
+                ar = texture_r.emphasize_onset(ar, genv_r * auto_gain);
+            }
             // Keep the generator's tanh shaping; Mix limits only combined peaks afterwards.
             al = haptic_math::soft_clip(al);
             ar = haptic_math::soft_clip(ar);
@@ -1123,6 +1129,21 @@ void __not_in_flash_func(audio_loop)() {
 
         if (haptic_buf_pos != SAMPLE_SIZE) {
             continue;
+        }
+        if (auto_mode == 0 && !synthetic_chime && !native_pcm_started &&
+            (packet_peak_l || packet_peak_r)) {
+            native_pcm_started = true;
+            if (state_native_pcm_resume()) {
+                // Native audio packets omit the state subreport. Queue the
+                // selector before the first non-silent packet of this session.
+                uint8_t control[78]{};
+                control[0] = 0x31;
+                control[1] = reportSeqCounter << 4;
+                reportSeqCounter = (reportSeqCounter + 1) & 0x0f;
+                control[2] = 0x10;
+                state_set(control + 3, 63);
+                bt_write(control, sizeof(control));
+            }
         }
         uint8_t pkt[REPORT_SIZE]{};
         pkt[0] = REPORT_ID;

@@ -6,21 +6,44 @@ from controller_glyphs import ControllerChoice
 from studio_i18n import text as tr
 from studio_shift import shift_key, set_shift_key
 from studio_button_names import NAMES
+from ui_dpi import px
 
-CARD='#151515';MUTED='#aaa393'
+CARD='#151515';MUTED='#aaa393';GOLD='#d6ad52'
+
+
+def layer_icon(widget, *, offset_y=0):
+    size = px(widget, 16)
+    offset = px(widget, offset_y) if offset_y else 0
+    # The button centers the image, so add twice the offset to its canvas.
+    image = tk.PhotoImage(master=widget, width=size, height=size + 2 * offset)
+    for x0, y0, x1, y1 in (
+        (1, 1, 11, 2), (1, 1, 2, 11), (10, 1, 11, 5), (1, 10, 5, 11),
+        (5, 5, 15, 6), (5, 14, 15, 15), (5, 5, 6, 15), (14, 5, 15, 15),
+    ):
+        image.put(GOLD, to=(px(widget, x0), px(widget, y0) + 2 * offset,
+                            px(widget, x1), px(widget, y1) + 2 * offset))
+    return image
 
 
 class ShiftUI:
     def render_shift_controls(self,box):
         host=tk.Frame(box,bg=CARD);host.grid(row=6,column=0,columnspan=2,sticky='ew',pady=8)
         bar=tk.Frame(host,bg=CARD);bar.pack(fill='x')
-        for value,title in [(False,tr('기본')),(True,tr('레이어'))]:
-            ttk.Button(bar,text=title,command=lambda v=value:self.select_macro_layer(v),
-                       style='Selected.Filter.TButton' if value==getattr(self,'macro_layer',False) else 'Filter.TButton').pack(side='left',padx=(0,5))
+        layer_tabs=tk.Frame(bar,bg=CARD)
+        layer_tabs.pack(side='left')
+        layer_tabs.columnconfigure((0,1),weight=1,uniform='layer_tabs')
+        for column,(value,title) in enumerate(((False,tr('기본')),(True,tr('레이어')))):
+            button=ttk.Button(layer_tabs,text=title,command=lambda v=value:self.select_macro_layer(v),
+                              style='Selected.Filter.TButton' if value==getattr(self,'macro_layer',False) else 'Filter.TButton')
+            if value:
+                button.layer_image=layer_icon(button, offset_y=2)
+                button.configure(image=button.layer_image,compound='left')
+            button.grid(row=0,column=column,sticky='nsew',padx=(0,5))
         ttk.Button(bar,text=tr('시프트 레이어키 지정'),command=self.open_shift_picker).pack(side='right')
         row=shift_key(self.doc.macros)
         bit=int.from_bytes(bytes(row[1][:4]),'little').bit_length()-1 if row else None
-        self.shift_key_label=tk.Label(bar,text=NAMES[bit] if bit is not None and 0<=bit<23 else tr('없음'),bg=CARD,fg=MUTED)
+        assigned=bit is not None and 0<=bit<23
+        self.shift_key_label=tk.Label(bar,text=NAMES[bit] if assigned else tr('없음'),bg=CARD,fg=GOLD if assigned else MUTED)
         self.shift_key_label.pack(side='right',padx=(8,8))
         self.shift_editor=tk.Frame(host,bg=CARD)
         self.shift_selection=tk.StringVar(value=tr('없음'))

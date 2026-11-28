@@ -251,6 +251,8 @@ static void reset_disconnected_hid() {
     audio_rear_link_disconnected();
     controller_input_on_disconnect();
     feature_data.clear();
+    dse_on_disconnect();
+    while (queue_try_remove(&control_fifo, nullptr)) {}
     wake_on_bt_disconnect();
     state_rumble_reset();
 }
@@ -928,7 +930,7 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
                 usb_identity_pending = true;
 #endif
             }
-            if (packet[0] == 0xA3) {
+            if (packet[0] == 0xA3 && !dse_is_profile_report(packet[1])) {
                 uint8_t report_id = packet[1];
                 feature_data[report_id].assign(packet + 1, packet + size);
 #if ENABLE_VERBOSE
@@ -1036,7 +1038,8 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
             } else {
                 const uint16_t psm = l2cap_event_channel_opened_get_psm(packet);
                 hid_control_cid = 0;
-            while (queue_try_remove(&control_fifo, nullptr)) {}
+                dse_on_disconnect();
+                while (queue_try_remove(&control_fifo, nullptr)) {}
                 hid_interrupt_cid = 0;
                 hid_control_open = hid_interrupt_open = false;
                 device_found = false;
@@ -1161,11 +1164,6 @@ static void __not_in_flash_func(l2cap_packet_handler)(uint8_t packet_type, uint1
             break;
         }
     }
-}
-
-// Accessors used by the DSE profile module (dse.cpp).
-uint16_t bt_control_cid() {
-    return hid_control_cid;
 }
 
 bool bt_control_send(const uint8_t *data, uint16_t len) {

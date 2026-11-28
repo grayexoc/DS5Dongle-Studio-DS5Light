@@ -419,12 +419,15 @@ constexpr int L2CAP_EVENT_CHANNEL_CLOSED=1;
 uint16_t hid_control_cid, hid_interrupt_cid;
 bool hid_control_open, hid_interrupt_open, hid_channels_failed;
 unsigned neutral, wake_resets, rumble_resets, rear_disconnects, disconnects;
+unsigned edge_resets, control_fifo;
 std::map<unsigned,unsigned> feature_data;
 uint16_t l2cap_event_channel_closed_get_local_cid(const uint16_t *p){return *p;}
 void controller_input_on_disconnect(){++neutral;}
 void wake_on_bt_disconnect(){++wake_resets;}
 void state_rumble_reset(){++rumble_resets;}
 void audio_rear_link_disconnected(){++rear_disconnects;}
+void dse_on_disconnect(){++edge_resets;}
+bool queue_try_remove(unsigned *size, void *){if (!*size) return false; --*size; return true;}
 bool bt_disconnect(){++disconnects;return true;}
 """+extract(bt,'static void reset_disconnected_hid(')+r"""
 void closed(uint16_t cid){const auto *packet=&cid;switch(1){
@@ -433,13 +436,13 @@ void closed(uint16_t cid){const auto *packet=&cid;switch(1){
 int main(){
  for(uint16_t lost:{10,11}){
   hid_control_cid=10;hid_interrupt_cid=11;hid_control_open=hid_interrupt_open=true;
-  hid_channels_failed=false;feature_data[0x81]=42;
+  hid_channels_failed=false;feature_data[0x81]=42;control_fifo=2;
   unsigned before=neutral;
   closed(99);assert(neutral==before&&hid_control_open&&hid_interrupt_open&&!feature_data.empty());
   closed(lost);closed(lost);closed(lost==10?11:10);
   assert(neutral==before+1&&wake_resets==neutral&&rumble_resets==neutral&&rear_disconnects==neutral&&disconnects==neutral);
   assert(hid_channels_failed&&!hid_control_open&&!hid_interrupt_open);
-  assert(!hid_control_cid&&!hid_interrupt_cid&&feature_data.empty());
+  assert(!hid_control_cid&&!hid_interrupt_cid&&feature_data.empty()&&control_fifo==0&&edge_resets==neutral);
  }
  puts("PASS: either required channel closes the session once; unrelated or duplicate close leaves it alone");
 }
@@ -754,24 +757,74 @@ run('edge-prefetch',r"""
 #include <cstdio>
 #include <cstring>
 #include <cassert>
+#include "dse.h"
 std::unordered_map<uint8_t,std::vector<uint8_t>> feature_data;
-uint32_t now=1;uint16_t cid=1;int request_count=0;
+uint32_t now=0;
+bool allow_handshake=true, allow_unlock=true, allow_get=true;
+std::vector<uint8_t> accepted;
 uint32_t get_absolute_time(){return now;}uint32_t to_ms_since_boot(uint32_t t){return t;}
-uint16_t bt_control_cid(){return cid;}
-bool bt_control_send(const uint8_t*,uint16_t){return true;}
-bool set_feature_data(uint8_t,uint8_t*,uint16_t){return true;}
-uint16_t get_feature_data(uint8_t,uint16_t,uint8_t* = nullptr){request_count++;return 0;}
+bool bt_control_send(const uint8_t *p,uint16_t size){
+ if(p[0]==0x53){
+  assert(p[1]==0x65&&size==63&&p[2]==0x42);
+  if(!allow_handshake)return false;
+ }else{
+  assert(p[0]==0x43&&size==2);
+  if(!allow_get)return false;
+ }
+ accepted.push_back(p[1]);return true;
+}
+bool set_feature_data(uint8_t id,uint8_t *p,uint16_t size){
+ assert(id==0x80&&size==59&&p[0]==0x70&&p[1]==1);
+ if(!allow_unlock)return false;
+ accepted.push_back(id);return true;
+}
 """+s+r"""
+void tick(uint32_t elapsed){now+=elapsed;dse_task();}
+void report(uint8_t id, uint16_t size, uint8_t payload=1){
+ uint8_t p[DSE_PROFILE_PACKET_SIZE+1]{0xa3,id,payload};
+ dse_on_control_packet(p,size);
+}
 int main(){
- dse_on_connect();now=4001;dse_task();
- for(int i=0;i<12;i++){now+=80;dse_task();}
- assert(!dse_profiles_ready());
- for(uint8_t id=0x70;id<=0x7a;id++){uint8_t p[]{0xa3,id,1};dse_on_control_packet(p,3);}
- now+=80;dse_task();assert(!dse_profiles_ready());
- uint8_t last[]{0xa3,0x7b,1};dse_on_control_packet(last,3);now+=80;dse_task();assert(dse_profiles_ready());
- prefetch_start();for(int i=0;i<45;i++){now+=80;dse_task();}assert(!dse_profiles_ready()&&prefetch_next==0);
- dse_on_connect();assert(!dse_profiles_ready()&&prefetch_next==0&&profile_written_ms==0);
- puts("PASS: no early completion, delayed final response, bounded missing-response retry, reconnect reset");
+ dse_on_connect();tick(0);assert(accepted==std::vector<uint8_t>{0x20});
+ feature_data[0x20]=std::vector<uint8_t>(64,0x42);
+ accepted.clear();
+ allow_handshake=false;tick(80);assert(accepted.empty());
+ allow_handshake=true;allow_unlock=false;tick(80);assert(accepted==std::vector<uint8_t>{0x65});
+ tick(4000);assert(prefetch_next==0&&accepted.size()==1);
+ report(0x70,DSE_PROFILE_PACKET_SIZE);assert(!feature_data.count(0x70));
+ allow_unlock=true;tick(80);assert(accepted.size()==2&&accepted.back()==0x80);
+ tick(3999);assert(prefetch_next==0);
+ allow_get=false;tick(1);assert(prefetch_next==0x70&&accepted.size()==2);
+ allow_get=true;tick(79);assert(prefetch_next==0x70);
+ tick(1);assert(prefetch_next==0x71&&accepted.back()==0x70);
+ for(uint8_t id=0x70;id<=0x7a;id++)report(id,DSE_PROFILE_PACKET_SIZE);
+ report(0x7b,DSE_PROFILE_PACKET_SIZE-1);report(0x7b,DSE_PROFILE_PACKET_SIZE+1);
+ assert(!dse_profiles_ready()&&!feature_data.count(0x7b));
+ for(int i=0;i<45;i++)tick(80);
+ assert(!dse_profiles_ready()&&prefetch_next==0);
+ report(0x7b,DSE_PROFILE_PACKET_SIZE);
+ assert(dse_profiles_ready()&&feature_data.at(0x7b).size()==64);
+ report(0x7b,3,42);assert(feature_data.at(0x7b)[1]==1);
+
+ dse_on_profile_write(0x60);
+ allow_unlock=false;tick(500);assert(post_save_stage==1);
+ allow_unlock=true;tick(79);assert(post_save_stage==1);
+ tick(1);assert(post_save_stage==2&&accepted.back()==0x80);
+ allow_get=false;tick(500);assert(post_save_stage==2);
+ allow_get=true;tick(79);assert(post_save_stage==2);
+ tick(1);assert(post_save_stage==3&&accepted.back()==0x81);
+ for(int i=0;i<5;i++)tick(250);
+ tick(3249);assert(post_save_stage==8&&dse_profiles_ready());
+ tick(1);assert(post_save_stage==0&&!dse_profiles_ready()&&!feature_data.count(0x7b));
+
+ dse_on_profile_write(0x61);allow_unlock=false;tick(500);
+ dse_on_disconnect();dse_on_profile_write(0x62);
+ auto sent=accepted.size();allow_unlock=true;tick(6000);
+ report(0x7b,DSE_PROFILE_PACKET_SIZE);
+ assert(accepted.size()==sent&&post_save_stage==0&&prefetch_next==0);
+ assert(!dse_profiles_ready()&&!feature_data.count(0x7b));
+ dse_on_connect();tick(0);assert(accepted.size()==sent+2&&accepted.back()==0x80);
+ puts("PASS: admission retry, pacing, exact report length, delayed completion, post-save and session reset");
 }
 """)
 

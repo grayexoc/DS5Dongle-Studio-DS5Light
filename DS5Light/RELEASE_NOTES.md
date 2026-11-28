@@ -1,3 +1,31 @@
+# v1.2.5
+
+### English
+
+Use `DS5Light-win-x64-v1.2.5.zip` with `ds5-studio-light_v56.uf2` for Raspberry Pi Pico 2 W.
+
+- **Audio haptics.** Refined the onset of short impacts in firmware DSP. Native haptics restore the controller output state when audio resumes, and selected-process capture drops fully expired audio packets while preserving recent samples.
+- **Mapping and Shift layer.** The mapping list uses two columns with a customizable display order. Saving a new mapping also activates it in the current profile, with a single Pico reconnection to verify both changes. Enable it separately in other profiles. Active mappings and the assigned Shift key are highlighted in gold.
+- **Studio settings and backups.** Fixed a false reconnection timeout after saving. Studio v56 supports reading stored profile fields in batches and checks whether the slot list changes during backup. The app warns before leaving Studio settings with unapplied edits.
+- **Language.** The language selector is now under **Settings & diagnostics → Launch options**. Changes apply after restarting the app.
+
+**If you’re using DS5Light for the first time or upgrading from a version earlier than v1.2.2**, we strongly recommend applying the updated Mix or Replace preset under **Studio settings → Profile slots → Recommended presets** before using audio haptics. Back up the destination slot before saving.
+
+Windows and game volume affect haptic strength. Use the bundled Mix and Replace presets as starting points.
+
+### 한국어
+
+Windows 앱 `DS5Light-win-x64-v1.2.5.zip`과 Raspberry Pi Pico 2 W용 펌웨어 `ds5-studio-light_v56.uf2`를 함께 사용하세요.
+
+- **오디오햅틱.** 펌웨어 DSP에서 짧은 타격의 시작 반응을 다듬었습니다. 오디오가 다시 들어오면 네이티브 햅틱의 출력 상태를 복원하고, 선택한 프로세스 캡처에서는 오래된 패킷만 버려 최신 샘플을 유지합니다.
+- **매핑과 시프트 레이어.** 매핑 목록을 2열로 표시하고 순서를 바꿀 수 있습니다. 새 매핑을 저장하면 현재 프로필에서도 활성화하고, Pico 재연결 한 번으로 두 결과를 확인합니다. 다른 프로필에서는 별도로 활성화하세요. 활성 매핑과 지정된 시프트키는 금색으로 표시합니다.
+- **Studio 설정과 백업.** 저장 뒤 Pico가 정상 응답해도 재연결 확인이 시간 초과되던 문제를 수정했습니다. Studio v56은 저장된 프로필의 설정값을 묶어서 읽고, 백업 도중 슬롯 목록이 바뀌었는지 확인할 수 있습니다. 미적용 편집값이 있는 상태에서 Studio 설정을 벗어날 때 안내합니다.
+- **언어 설정.** 언어 선택을 **설정·진단 → 실행 옵션**으로 옮겼습니다. 변경한 언어는 앱을 다시 시작하면 적용됩니다.
+
+처음 사용하거나 **v1.2.2보다 오래된 버전에서 업그레이드하는 경우**, 오디오햅틱을 사용하기 전에 **Studio 설정 → 프로필 슬롯 → 추천 프리셋**에서 변경된 믹스 또는 대체 프리셋을 다시 적용할 것을 강력히 권장합니다. 저장하기 전에 대상 슬롯을 백업하세요.
+
+햅틱 세기는 Windows와 게임 음량의 영향을 받습니다. 동봉된 믹스와 대체 프리셋을 시작점으로 사용할 수 있습니다.
+
 # v1.2.4
 
 ### English

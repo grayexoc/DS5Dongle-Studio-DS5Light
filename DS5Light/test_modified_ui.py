@@ -32,6 +32,29 @@ class TargetLifetimeTests(unittest.TestCase):
 
 
 class ModifiedUITests(unittest.TestCase):
+    def test_leaving_studio_prompts_only_for_unapplied_edits(self):
+        app = self.ui
+        app.select_tab(2)
+        editor = app.studio_settings
+        editor.doc.load({'speaker_volume': 16})
+        editor.doc.values['speaker_volume'] = 25
+        with patch('app.messagebox.askyesno', return_value=False) as confirm:
+            app.tabs._select_from_keyboard(1)
+            confirm.assert_called_once()
+            self.assertEqual((app.selected_tab, app.tabs.selected), (2, 2))
+        with patch('app.messagebox.askyesno', return_value=True) as confirm:
+            app.select_tab(0)
+            confirm.assert_called_once()
+            self.assertEqual((app.selected_tab, app.tabs.selected), (0, 0))
+            self.assertEqual(editor.doc.values['speaker_volume'], 25)
+        app.select_tab(2)
+        editor.doc.load({'speaker_volume': 25})
+        editor.doc.unsaved = True  # Already applied temporarily.
+        with patch('app.messagebox.askyesno') as confirm:
+            app.select_tab(1)
+            confirm.assert_not_called()
+            self.assertEqual(app.selected_tab, 1)
+
     def test_tab_strip_keyboard_selection_uses_existing_page_guard(self):
         tabs=self.ui.tabs
         self.assertEqual(int(tabs.cget('takefocus')),1)

@@ -1,8 +1,8 @@
-# DS5Light v1.2.4
+# DS5Light v1.2.5
 
 ## English
 
-Use DS5Light v1.2.4 with Studio v55 for Raspberry Pi Pico 2 W. Extract the entire ZIP to a writable folder and run DS5Light.exe with _internal beside it. No separate Python installation is required.
+Use DS5Light v1.2.5 with Studio v56 for Raspberry Pi Pico 2 W. Extract the entire ZIP to a writable folder and run DS5Light.exe with _internal beside it. No separate Python installation is required.
 
 Choose whole-device or selected-game capture. Selected-game capture requires Windows build 20348 or later. Select a Mix or Replace Studio profile to start audio haptics. If the controller appears as a two-channel output, set it to four channels in Windows. After reconnection, the app waits up to eight seconds for the same Pico output.
 
@@ -16,7 +16,7 @@ Studio Presert contains DS_Native.json, Audio_Haptic_01.json and Audio_Haptic_02
 
 ## 한국어
 
-DS5Light v1.2.4은 Raspberry Pi Pico 2 W용 Studio v55와 함께 사용합니다. ZIP 전체를 쓰기 가능한 폴더에 풀고 _internal을 유지한 채 DS5Light.exe를 실행하세요. Python은 별도로 설치하지 않아도 됩니다.
+DS5Light v1.2.5는 Raspberry Pi Pico 2 W용 Studio v56와 함께 사용합니다. ZIP 전체를 쓰기 가능한 폴더에 풀고 _internal을 유지한 채 DS5Light.exe를 실행하세요. Python은 별도로 설치하지 않아도 됩니다.
 
 장치 전체 또는 선택한 게임의 캡처를 지정하세요. 게임별 캡처에는 Windows 빌드 20348 이상이 필요합니다. 오디오 햅틱을 시작하려면 Studio에서 Mix 또는 대체 프로필을 선택하세요. 패드 출력이 2채널이면 Windows에서 4채널로 설정하세요. 재연결 후 앱은 같은 Pico의 출력을 최대 8초간 확인합니다.
 

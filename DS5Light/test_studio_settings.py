@@ -155,7 +155,10 @@ class SchemaTests(unittest.TestCase):
         rows,_=validate_backup(backup_all(Client(None)))
         self.assertEqual(set(rows[0]['fields']),{k for k in EDITABLE if not k.startswith('ce_')})
         for key,value in dict(rumble_gain=100,rumble_release=0,rumble_mode=0,haptics_gain=1.0,
-                              ah_xover_hz=0,haptics_aa=1,stick_mouse_curve=18,
+                              auto_haptics_lowpass_hz=120,auto_haptics_smooth=15,auto_haptics_gate=16,
+                              auto_haptics_slope=24,ah_high_gain=45,ah_xover_hz=55,
+                              r2t_frequency=255,at_threshold=255,at_l2_threshold=255,
+                              haptics_aa=1,stick_mouse_curve=18,
                               touch_mouse=0,touch_mouse_sens=100,touch_mouse_min=1,
                               touch_mouse_invert=0,touch_mouse_trackball=0,touch_mouse_friction=10,
                               macro_disable=0xffffffff).items():
@@ -164,6 +167,12 @@ class SchemaTests(unittest.TestCase):
         old=Client(None);old.touch_supported=False
         rows,_=validate_backup(backup_all(old))
         self.assertTrue(all(not any(key.startswith('touch_mouse') for key in row['fields']) for row in rows))
+
+    def test_legacy_crossover_default_uses_stored_lowpass(self):
+        from studio_backup import _slot_value
+        field = FIELDS['ah_xover_hz']
+        for cutoff, expected in ((20, 0), (55, 0), (56, 55), (65535, 55)):
+            self.assertEqual(_slot_value(field, 65535, {'auto_haptics_lowpass_hz': cutoff}), expected)
 
     def test_backup_rejects_duplicates_and_unknown_active_actions(self):
         row=dict(index=0,valid=True,name='A',fields={'auto_haptics_gain':100})

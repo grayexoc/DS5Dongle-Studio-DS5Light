@@ -342,9 +342,9 @@ if(WAKE_DEBUG)
     )
 endif()
 
-set(VERSION "55" CACHE STRING "Program version string")
+set(VERSION "56" CACHE STRING "Program version string")
 if(VERSION STREQUAL "dev")
-    set(VERSION "55" CACHE STRING "Program version string" FORCE)
+    set(VERSION "56" CACHE STRING "Program version string" FORCE)
 endif()
 set_target_properties(ds5-bridge PROPERTIES OUTPUT_NAME "ds5-studio-light_v${VERSION}")
 

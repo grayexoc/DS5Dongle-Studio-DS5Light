@@ -17,6 +17,7 @@ class MacroEditor(InlineCapture):
     def __init__(self,ui,index,embedded=False,initial=None):
         from studio_settings_ui import BUTTONS,OUT_BUTTONS,HID_KEYS,CircleCheck
         self.ui=ui;self.index=index;self.draft=MacroDraft(initial if initial is not None else ui.doc.macros[str(index)])
+        self.new_mapping=initial is not None and not any(ui.doc.macros.get(str(index), ()))
         self.profile_stamp=copy.deepcopy(ui.profile_stamp);self.device_path=ui.path
         self.BUTTONS=BUTTONS;self.HID_KEYS=HID_KEYS
         self.OUT_BUTTONS=list(OUT_BUTTONS)+[_ui_tr('프로필 {0}번').format(i) for i in range(1,9)]
@@ -40,15 +41,24 @@ class MacroEditor(InlineCapture):
         self.caption(top,_ui_tr('이름'),_ui_tr('모든 프로필이 공유하는 매크로 이름입니다. UTF-8 기준 16바이트까지 저장합니다.')).grid(row=0,column=0,padx=(0,12))
         ttk.Entry(top,style='Studio.TEntry',textvariable=self.name).grid(row=0,column=1,sticky='ew')
         activation=tk.Frame(top,bg=BG);activation.grid(row=1,column=0,columnspan=2,sticky='w',pady=(8,0))
-        tk.Label(activation,text=_ui_tr('완료하면 Pico에 저장하고 현재 프로필의 사용 체크를 자동 선택합니다.'),bg=BG,fg=MUTED,wraplength=560,justify='left').pack(side='left')
-        ui.help_icon(activation,_ui_tr('매핑 동작은 모든 프로필이 공유합니다. Pico 저장 확인 후 현재 프로필에 사용 여부를 저장할지 묻습니다. 다른 프로필에서 이미 사용하는 동작을 수정하면 그 프로필에도 반영됩니다.')).pack(side='left',padx=5)
+        activation_note = (
+            _ui_tr('Pico에 저장하면 현재 프로필에서 자동으로 활성화합니다. 다른 프로필에서는 별도로 활성화하세요.')
+            if self.new_mapping else
+            _ui_tr('Pico에 저장한 뒤 현재 프로필의 사용 여부를 저장할지 묻습니다.')
+        )
+        tk.Label(activation,text=activation_note,bg=BG,fg=MUTED,wraplength=460,justify='left').pack(side='left')
+        ui.help_icon(activation,_ui_tr('매핑 동작은 모든 프로필이 공유합니다. 다른 프로필에서 이미 사용하는 동작을 수정하면 그 프로필에도 반영됩니다.')).pack(side='left',padx=5)
         layerbar=tk.Frame(top,bg=BG);layerbar.grid(row=5,column=0,columnspan=2,sticky='w',pady=6)
         self._layerbar=layerbar
         stepbar=tk.Frame(top,bg=BG);stepbar.grid(row=2,column=0,columnspan=2,sticky='ew',pady=(12,0));self.step_buttons=[]
         for i,text in enumerate((_ui_tr('⌘ 실행 조건'),_ui_tr('▶ 실행 동작'))):
             button=ttk.Button(stepbar,text=text,command=lambda i=i:self.go_step(i),style='Filter.TButton');button.grid(row=0,column=i,sticky='ew',padx=(0,6));stepbar.columnconfigure(i,weight=1);self.step_buttons.append(button)
         self.summary=tk.StringVar(value=_ui_tr('입력과 실행할 동작을 선택하세요.'))
-        tk.Label(top,textvariable=self.summary,bg=BG,fg=GOLD,wraplength=660,anchor='w',justify='left').grid(row=3,column=0,columnspan=2,sticky='ew',pady=(10,0))
+        from studio_shift_ui import layer_icon
+        self.summary_label=tk.Label(top,textvariable=self.summary,bg=BG,fg=GOLD,
+                                   wraplength=660,anchor='w',justify='left',compound='left')
+        self.summary_layer_image=layer_icon(self.summary_label)
+        self.summary_label.grid(row=3,column=0,columnspan=2,sticky='ew',pady=(10,0))
         self.build_capture(top,4)
         host=tk.Frame(d,bg=BG);host.grid(row=1,column=0,sticky='nsew',padx=18);host.columnconfigure(0,weight=1);host.rowconfigure(0,weight=1)
         self.canvas=tk.Canvas(host,bg=BG,highlightthickness=0,width=1,height=450)
@@ -148,11 +158,13 @@ class MacroEditor(InlineCapture):
         self.form(self.release_row,0,_ui_tr('키를 놓는 순서'),_ui_tr('숫자는 위 키 입력 칸의 위치입니다. 일반적인 조합은 누른 순서의 역순이며 키보드 기록을 쓰면 해제 순서도 기록합니다.'),control)
         footer=self.footer=tk.Frame(d,bg=BG,padx=18,pady=12);footer.grid(row=2,column=0,sticky='ew');footer.columnconfigure(0,weight=1)
         self.feedback=tk.StringVar()
-        self.save_hint=_ui_tr('완료하면 미저장 공용 매핑을 모두 Pico에 저장합니다. 프로필 사용 여부는 다음 확인창에서 저장합니다.')
+        self.save_hint=(_ui_tr('완료하면 미저장 공용 매핑을 모두 Pico에 저장하고 현재 프로필에서 새 매핑을 활성화합니다.')
+                        if self.new_mapping else
+                        _ui_tr('완료하면 미저장 공용 매핑을 모두 Pico에 저장합니다. 프로필 사용 여부는 다음 확인창에서 저장합니다.'))
         feedback_label=tk.Label(footer,textvariable=self.feedback,bg=BG,fg=GOLD,wraplength=560,justify='right',anchor='e')
         feedback_label.grid(row=0,column=0,columnspan=2,sticky='ew',pady=(0,10))
         widget_trace(feedback_label,self.feedback,lambda *_:feedback_label.configure(
-            wraplength=0 if self.feedback.get()==self.save_hint else 560,
+            wraplength=0 if self.feedback.get()==self.save_hint and not self.new_mapping else 460,
             font=(_ui_tr('맑은 고딕'),8 if self.feedback.get()==self.save_hint else 10)))
         actions=tk.Frame(footer,bg=BG);actions.grid(row=1,column=1,sticky='e')
         ttk.Button(actions,text=_ui_tr('취소'),command=self.close,width=12).pack(side='left',padx=(0,8))
@@ -274,7 +286,9 @@ class MacroEditor(InlineCapture):
                 self.rules.set(self.rules.get()+'\n'+_ui_tr('조건이 충족되면 듀얼센스 전원을 끕니다. 실수로 끄지 않으려면 길게 누르기를 선택하세요.'))
             self.rules.set(self.rules.get()+'\n'+_ui_tr('마이크 버튼을 Pico 매핑·시프트로 사용하면 PC로 보내는 기본 음소거 입력과 마이크 LED 표시를 억제합니다. Edge FN 기본 조합과 PS + Create는 사용할 수 없습니다.'))
             self.release_name.set(next((k for k,v in self.orders.items() if v==int(self.release.get())),_ui_tr('기존 순서 {0}').format(f'{self.release.get()}')))
-            preview=self.draft.build(self.state());self.summary.set(self.ui.macro_summary(preview).replace('\n',' · '))
+            preview=self.draft.build(self.state())
+            self.summary.set(self.ui.macro_summary(preview).replace('\n',' · '))
+            self.summary_label.configure(image=self.summary_layer_image if preview[5]&32 else '')
             raw=self.draft.build(self.state(),strict=True)
             records=dict(self.ui.doc.macros);records[str(self.index)]=raw;mask=int(self.ui.doc.values.get('macro_disable',0xffffffff))
             mask=mask&~(1<<self.index)
@@ -356,7 +370,7 @@ class MacroEditor(InlineCapture):
         self.ui.doc.macros[str(self.index)]=raw
         self.close()
         if not self.embedded:self.ui.render_fields()
-        try:self.ui.save_registered_macro(self.index,raw,self.profile_stamp)
+        try:self.ui.save_registered_macro(self.index,raw,self.profile_stamp,auto_activate=self.new_mapping)
         except Exception as exc:
             self.ui.progress.configure(text=_ui_tr('매핑 저장 시작 실패 · 편집값은 유지됩니다. ')+str(exc),kind='error')
             self.ui.update_state()

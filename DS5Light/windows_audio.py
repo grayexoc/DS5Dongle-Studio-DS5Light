@@ -199,6 +199,12 @@ def snapshot(include_sessions=True,channel_pid=None,*,include_inactive=False):
     return result
 
 
+def cached_render_endpoints(devices):
+    return [dict(id=row['endpoint_id'], name=row['name'], container_id=row.get('container_id'),
+                 mix_channels=row.get('mix_channels'), mix_rate=row.get('mix_rate'))
+            for row in devices if row.get('endpoint_id') and not row.get('isLoopbackDevice')]
+
+
 def attach_endpoint_ids(devices,endpoints=None):
     endpoints=snapshot(False)['endpoints'] if endpoints is None else endpoints
     for device in devices:

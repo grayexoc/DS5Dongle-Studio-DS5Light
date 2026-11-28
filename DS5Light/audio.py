@@ -36,7 +36,7 @@ from output_gain import OutputGain
 
 from stream_health import StreamHealth
 
-from windows_audio import attach_endpoint_ids, snapshot as endpoint_snapshot
+from windows_audio import attach_endpoint_ids, cached_render_endpoints, snapshot as endpoint_snapshot
 
 from channel_policy import open_capture
 
@@ -598,9 +598,7 @@ class Engine:
 
                     endpoints=(endpoint_snapshot(False)['endpoints'] if engine.reconnecting else
 
-                               [dict(id=d['endpoint_id'],name=d['name'],container_id=d.get('container_id'))
-
-                                for d in engine.input_devices if d.get('endpoint_id') and not d.get('isLoopbackDevice')])
+                               cached_render_endpoints(engine.input_devices))
 
                     attach_endpoint_ids(rows,endpoints=endpoints)
 
